@@ -8,12 +8,15 @@ if sys.platform == 'win32':
 
 import socketio
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File, HTTPException, Security, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import asyncio
 import threading
 import sys
 import os
 import json
+import numpy as np
 from datetime import datetime
 from pathlib import Path
 
@@ -23,12 +26,29 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import ada
+from dotenv import load_dotenv
+load_dotenv()
 from authenticator import FaceAuthenticator
 from kasa_agent import KasaAgent
+from web_agent import WebAgent
 
+# ─── API AUTH ─────────────────────────────────────────────────────────────────
+_bearer = HTTPBearer(auto_error=False)
+_ADA_TOKEN = os.getenv("ADA_API_TOKEN", "")
+
+def require_token(creds: HTTPAuthorizationCredentials = Security(_bearer)):
+    """Vérifie le Bearer token sur les endpoints HTTP sensibles."""
+    if not _ADA_TOKEN:
+        # Pas de token configuré → on bloque tout par sécurité
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "ADA_API_TOKEN non configuré")
+    if not creds or creds.credentials != _ADA_TOKEN:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token invalide ou manquant")
+
+# ─── SOCKETIO + APP ───────────────────────────────────────────────────────────
 # Create a Socket.IO server
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app_socketio = socketio.ASGIApp(sio, app)
 
 import signal
@@ -55,6 +75,7 @@ audio_loop = None
 loop_task = None
 authenticator = None
 kasa_agent = KasaAgent()
+standalone_web_agent = WebAgent()
 SETTINGS_FILE = "settings.json"
 
 DEFAULT_SETTINGS = {
@@ -71,7 +92,8 @@ DEFAULT_SETTINGS = {
     },
     "printers": [], # List of {host, port, name, type}
     "kasa_devices": [], # List of {ip, alias, model}
-    "camera_flipped": False # Invert cursor horizontal direction
+    "camera_flipped": False, # Invert cursor horizontal direction
+    "timezone": "Europe/Paris" # IANA timezone for Google Calendar events
 }
 
 SETTINGS = DEFAULT_SETTINGS.copy()
@@ -127,6 +149,82 @@ async def startup_event():
 @app.get("/status")
 async def status():
     return {"status": "running", "service": "A.D.A Backend"}
+
+
+SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md", ".docx", ".py", ".js", ".ts", ".jsx", ".tsx", ".json", ".csv", ".html", ".css"}
+
+def parse_file(filename: str, content: bytes) -> str:
+    """Extrait le texte d'un fichier selon son type."""
+    ext = Path(filename).suffix.lower()
+    if ext == ".pdf":
+        import pypdf, io
+        reader = pypdf.PdfReader(io.BytesIO(content))
+        return "\n\n".join(page.extract_text() or "" for page in reader.pages)
+    elif ext == ".docx":
+        import docx, io
+        doc = docx.Document(io.BytesIO(content))
+        return "\n".join(p.text for p in doc.paragraphs)
+    else:
+        return content.decode("utf-8", errors="replace")
+
+
+@app.post("/documents/upload")
+async def upload_document(file: UploadFile = File(...), _: None = Security(require_token)):
+    # ── 1. Sanitize filename — strip all path components ──────────────────────
+    safe_filename = os.path.basename(file.filename or "")
+    if not safe_filename or safe_filename.startswith('.'):
+        raise HTTPException(400, "Nom de fichier invalide")
+
+    ext = Path(safe_filename).suffix.lower()
+    if ext not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(400, f"Type non supporté: {ext}. Supportés: {', '.join(SUPPORTED_EXTENSIONS)}")
+
+    content = await file.read()
+
+    from ada import memory as ada_memory
+    original_path = ada_memory.documents_dir / safe_filename
+
+    # ── 2. Defense-in-depth: confirm path stays inside documents_dir ──────────
+    if not original_path.resolve().is_relative_to(ada_memory.documents_dir.resolve()):
+        raise HTTPException(400, "Chemin non autorisé")
+
+    original_path.write_bytes(content)
+
+    try:
+        text = parse_file(safe_filename, content)
+    except Exception as e:
+        raise HTTPException(500, f"Erreur parsing: {e}")
+
+    if not text.strip():
+        raise HTTPException(400, "Le fichier est vide ou le texte n'a pas pu être extrait.")
+
+    chunks = ada_memory.ingest_document(safe_filename, text)
+    return {"filename": safe_filename, "chunks": chunks, "status": "ok", "chars": len(text)}
+
+
+@app.get("/documents")
+async def list_documents(_: None = Security(require_token)):
+    from ada import memory as ada_memory
+    return {"documents": ada_memory.list_documents()}
+
+
+@app.delete("/documents/{filename}")
+async def delete_document(filename: str, _: None = Security(require_token)):
+    # ── Sanitize filename ─────────────────────────────────────────────────────
+    safe_filename = os.path.basename(filename)
+    if not safe_filename:
+        raise HTTPException(400, "Nom de fichier invalide")
+
+    from ada import memory as ada_memory
+    original_path = ada_memory.documents_dir / safe_filename
+
+    if not original_path.resolve().is_relative_to(ada_memory.documents_dir.resolve()):
+        raise HTTPException(400, "Chemin non autorisé")
+
+    ada_memory.delete_document(safe_filename)
+    if original_path.exists():
+        original_path.unlink()
+    return {"status": "ok"}
 
 @sio.event
 async def connect(sid, environ):
@@ -207,11 +305,20 @@ async def start_audio(sid, data=None):
              return
 
 
-    # Callback to send audio data to frontend
+    # Callback to send audio data to frontend (visualizer only)
+    # Throttled to ~10Hz and downsampled to 64 values to avoid hammering the event loop
+    _viz_counter = [0]
     def on_audio_data(data_bytes):
-        # We need to schedule this on the event loop
-        # This is high frequency, so we might want to downsample or batch if it's too much
-        asyncio.create_task(sio.emit('audio_data', {'data': list(data_bytes)}))
+        _viz_counter[0] += 1
+        if _viz_counter[0] % 2 != 0:  # emit every 2nd chunk ≈ 11Hz
+            return
+        arr = np.frombuffer(data_bytes, dtype=np.int16).astype(np.int32)
+        n = len(arr)
+        if n < 64:
+            return
+        trimmed = arr[:n - n % 64]
+        viz = (np.max(np.abs(trimmed.reshape(64, -1)), axis=1) >> 7).clip(0, 255).tolist()
+        asyncio.create_task(sio.emit('audio_data', {'data': viz}))
 
     # Callback to send CAL data to frontend
     def on_cad_data(data):
@@ -263,6 +370,11 @@ async def start_audio(sid, data=None):
         print(f"Sending Kasa Device Update: {len(devices)} devices")
         asyncio.create_task(sio.emit('kasa_devices', devices))
 
+    # Callback to send Terminal output to frontend
+    def on_terminal_output(data):
+        # data = {"command": str, "output": str}
+        asyncio.create_task(sio.emit('terminal_output', data))
+
     # Callback to send Error to frontend
     def on_error(msg):
         print(f"Sending Error to frontend: {msg}")
@@ -282,6 +394,7 @@ async def start_audio(sid, data=None):
             on_cad_thought=on_cad_thought,
             on_project_update=on_project_update,
             on_device_update=on_device_update,
+            on_terminal_output=on_terminal_output,
             on_error=on_error,
 
             input_device_index=device_index,
@@ -520,6 +633,7 @@ async def save_memory(sid, data):
             for msg in messages:
                 sender = msg.get('sender', 'Unknown')
                 text = msg.get('text', '')
+                f.write(f"{sender}: {text}\n")
         print(f"Conversation saved to {filename}")
         await sio.emit('status', {'msg': 'Memory Saved Successfully'})
 
@@ -665,34 +779,28 @@ async def generate_cad(sid, data):
 
 @sio.event
 async def prompt_web_agent(sid, data):
-    # data: { prompt: "find xyz" }
-    prompt = data.get('prompt')
-    print(f"Received web agent prompt: '{prompt}'")
-    
-    if not audio_loop or not audio_loop.web_agent:
-        await sio.emit('error', {'msg': "Web Agent not available"})
+    prompt = data.get('prompt', '').strip()
+    if not prompt:
         return
+    print(f"[WEB AGENT] Received prompt: '{prompt}'")
+    await sio.emit('status', {'msg': 'Web Agent running...'}, to=sid)
 
-    try:
-        await sio.emit('status', {'msg': 'Web Agent running...'})
-        
-        # We assume web_agent has a run method or similar.
-        # This might block the loop if not strictly async or offloaded.
-        # Ideally web_agent.run is async.
-        # And it should emit 'browser_snap' and logs automatically via hooks if setup.
-        
-        # We might need to launch this as a task if it's long running?
-        # asyncio.create_task(audio_loop.web_agent.run(prompt))
-        # But we want to catch errors here.
-        
-        # Based on typical agent design, run() is the entry point.
-        await audio_loop.web_agent.run(prompt)
-        
-        await sio.emit('status', {'msg': 'Web Agent finished'})
-        
-    except Exception as e:
-        print(f"Error running Web Agent: {e}")
-        await sio.emit('error', {'msg': f"Web Agent Error: {str(e)}"})
+    async def update_callback(image_b64, log_text):
+        payload = {'log': log_text}
+        if image_b64:
+            payload['image'] = image_b64
+        await sio.emit('browser_frame', payload, to=sid)
+
+    async def run():
+        try:
+            # Prefer audio_loop's agent if a session is active (shares context)
+            agent = audio_loop.web_agent if (audio_loop and audio_loop.web_agent) else standalone_web_agent
+            await agent.run_task(prompt, update_callback=update_callback)
+        except Exception as e:
+            print(f"[WEB AGENT] Error: {e}")
+            await sio.emit('error', {'msg': f"Web Agent Error: {str(e)}"}, to=sid)
+
+    asyncio.create_task(run())
 
 @sio.event
 async def discover_printers(sid):
@@ -957,9 +1065,26 @@ async def update_settings(sid, data):
         SETTINGS["camera_flipped"] = data["camera_flipped"]
         print(f"[SERVER] Camera flip set to: {data['camera_flipped']}")
 
+    # Generic fallback: persist any other scalar/string keys not handled above
+    _handled = {"tool_permissions", "face_auth_enabled", "camera_flipped"}
+    for key, value in data.items():
+        if key not in _handled:
+            SETTINGS[key] = value
+
     save_settings()
     # Broadcast new full settings
     await sio.emit('settings', SETTINGS)
+
+@sio.event
+async def set_vision_mode(sid, data):
+    """Switch Ada's vision mode: 'none' | 'camera' | 'screen'"""
+    mode = data.get("mode", "none")
+    print(f"[SERVER] Vision mode change requested: '{mode}'")
+    if audio_loop:
+        audio_loop.set_video_mode(mode)
+        await sio.emit('vision_mode', {'mode': mode})
+    else:
+        print("[SERVER] No audio_loop active — vision mode not changed.")
 
 
 # Deprecated/Mapped for compatibility if frontend still uses specific events

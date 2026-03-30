@@ -2,12 +2,16 @@
 __pycache__/
 *.py[cod]
 *$py.class
-.env
 venv/
 .venv/
 env/
 
-# ADA Specific Local Data
+# Secrets & environnement local (NE JAMAIS COMMITTER)
+.env
+.env.local
+.env.*.local
+
+# ADA — Données runtime locales (non versionnées)
 backend/reference.jpg
 backend/settings.json
 backend/last_cad_generation.json
@@ -15,6 +19,10 @@ long_term_memory/
 projects/
 output.stl
 cad_outputs/
+# ChromaDB + last_session.json — données utilisateur locales
+backend/memory/
+# Script de configuration locale
+backend/start_remote.sh
 
 # Node.js
 node_modules/
@@ -35,3 +43,21 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+
+# Google OAuth — tokens personnels
+backend/google_credentials.json
+backend/google_token.json
+
+# Claude Code — fichiers internes
+.claude/
+backend/.claude/
+
+# WebAssembly MediaPipe — fichiers binaires lourds (à régénérer)
+public/vision_wasm_internal.js
+public/vision_wasm_internal.wasm
+public/vision_wasm_nosimd_internal.js
+public/vision_wasm_nosimd_internal.wasm
+
+# Scripts & notes locaux
+Jarvis.command
+IDEAS/

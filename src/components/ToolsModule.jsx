@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Globe, Box } from 'lucide-react';
+import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Globe, Box, Monitor, BookOpen } from 'lucide-react';
 
 const ToolsModule = ({
     isConnected,
@@ -21,6 +21,9 @@ const ToolsModule = ({
     showCadWindow,
     onToggleBrowser,
     showBrowserWindow,
+    isScreenMode,
+    onToggleScreenMode,
+    onToggleDocuments,
     activeDragElement,
 
     position,
@@ -131,6 +134,18 @@ const ToolsModule = ({
                     <Box size={24} />
                 </button>
 
+                {/* Screen Mode (Ada sees your screen) */}
+                <button
+                    onClick={onToggleScreenMode}
+                    title="Screen Mode — Ada sees your screen"
+                    className={`p-3 rounded-full border-2 transition-all duration-300 ${isScreenMode
+                        ? 'border-emerald-400 bg-emerald-400/10 text-emerald-400 hover:bg-emerald-400/20 shadow-[0_0_15px_rgba(52,211,153,0.3)]'
+                        : 'border-cyan-900 text-cyan-700 hover:border-emerald-500 hover:text-emerald-500'
+                        } `}
+                >
+                    <Monitor size={24} />
+                </button>
+
                 {/* Web Agent Toggle */}
                 <button
                     onClick={onToggleBrowser}
@@ -140,6 +155,15 @@ const ToolsModule = ({
                         } `}
                 >
                     <Globe size={24} />
+                </button>
+
+                {/* Documents / RAG */}
+                <button
+                    onClick={onToggleDocuments}
+                    title="Base de connaissances"
+                    className="p-3 rounded-full border-2 border-cyan-900 text-cyan-700 hover:border-violet-500 hover:text-violet-400 transition-all duration-300"
+                >
+                    <BookOpen size={24} />
                 </button>
             </div>
         </div>

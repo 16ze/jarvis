@@ -39,7 +39,7 @@ const BrowserWindow = ({ imageSrc, logs, onClose, socket }) => {
             <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
                 {imageSrc ? (
                     <img
-                        src={`data:image/jpeg;base64,${imageSrc}`}
+                        src={`data:image/png;base64,${imageSrc}`}
                         alt="Browser View"
                         className="max-w-full max-h-full object-contain"
                     />
@@ -65,7 +65,7 @@ const BrowserWindow = ({ imageSrc, logs, onClose, socket }) => {
 
             {/* Logs Overlay (Bottom) */}
             <div className="h-24 bg-black/90 backdrop-blur border-t border-gray-800 p-2 font-mono text-[10px] overflow-y-auto text-green-500/80">
-                {logs.map((log, i) => (
+                {logs.slice(-100).map((log, i) => (
                     <div key={i} className="mb-1 border-l-2 border-cyan-900 pl-1 break-words">
                         <span className="opacity-50 mr-2">[{new Date().toLocaleTimeString().split(' ')[0]}]</span>
                         {log}
