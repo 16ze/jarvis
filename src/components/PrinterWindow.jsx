@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { X, RefreshCw, Printer, Thermometer, Clock, FileText, CheckCircle, AlertTriangle, ExternalLink } from 'lucide-react';
 
-const { shell } = window.require('electron');
+const shell = (() => {
+    try {
+        return window.require('electron').shell;
+    } catch {
+        return { openExternal: (url) => window.open(url, '_blank') };
+    }
+})();
 
 const PrinterWindow = ({
     socket,

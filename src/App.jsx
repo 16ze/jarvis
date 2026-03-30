@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import io from 'socket.io-client';
 
 import Visualizer from './components/Visualizer';
 import TopAudioBar from './components/TopAudioBar';
 import CadWindow from './components/CadWindow';
 import BrowserWindow from './components/BrowserWindow';
+import TerminalWindow from './components/TerminalWindow';
 import ChatModule from './components/ChatModule';
 import ToolsModule from './components/ToolsModule';
 import { Mic, MicOff, Settings, X, Minus, Power, Video, VideoOff, Layout, Hand, Printer, Clock } from 'lucide-react';
@@ -15,11 +16,25 @@ import AuthLock from './components/AuthLock';
 import KasaWindow from './components/KasaWindow';
 import PrinterWindow from './components/PrinterWindow';
 import SettingsWindow from './components/SettingsWindow';
+import DocumentsWindow from './components/DocumentsWindow';
+import MobileApp from './components/MobileApp';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+const socket = io(BACKEND_URL);
+const ipcRenderer = (() => {
+    try {
+        return window.require('electron').ipcRenderer;
+    } catch {
+        // Running in browser (mobile/web) — no Electron
+        return {
+            send: () => {},
+            on: () => {},
+            off: () => {},
+        };
+    }
+})();
 
-
-const socket = io('http://localhost:8000');
-const { ipcRenderer } = window.require('electron');
+const isMobile = window.innerWidth < 768 || /iPhone|iPad|Android/i.test(navigator.userAgent);
 
 function App() {
     const [status, setStatus] = useState('Disconnected');
@@ -47,6 +62,7 @@ function App() {
     const [isConnected, setIsConnected] = useState(true); // Power state DEFAULT ON
     const [isMuted, setIsMuted] = useState(true); // Mic state DEFAULT MUTED
     const [isVideoOn, setIsVideoOn] = useState(false); // Video state
+    const [isScreenMode, setIsScreenMode] = useState(false); // Ada sees screen
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [cadData, setCadData] = useState(null);
@@ -58,8 +74,11 @@ function App() {
     const [kasaDevices, setKasaDevices] = useState([]);
     const [showKasaWindow, setShowKasaWindow] = useState(false);
     const [showPrinterWindow, setShowPrinterWindow] = useState(false);
+    const [showDocumentsWindow, setShowDocumentsWindow] = useState(false);
     const [showCadWindow, setShowCadWindow] = useState(false);
     const [showBrowserWindow, setShowBrowserWindow] = useState(false);
+    const [showTerminalWindow, setShowTerminalWindow] = useState(false);
+    const [terminalEntries, setTerminalEntries] = useState([]);
 
     // Printing workflow status (for top toolbar display)
     const [slicingStatus, setSlicingStatus] = useState({ active: false, percent: 0, message: '' });
@@ -116,9 +135,10 @@ function App() {
     ]);
 
     // Hand Control State
-    const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
-    const [isPinching, setIsPinching] = useState(false);
     const [isHandTrackingEnabled, setIsHandTrackingEnabled] = useState(false); // DEFAULT OFF
+    // Cursor uses refs + direct DOM — no state to avoid 60fps re-renders
+    const cursorElRef = useRef(null);
+    const isPinchingRef = useRef(false);
     const [cursorSensitivity, setCursorSensitivity] = useState(2.0);
     const [isCameraFlipped, setIsCameraFlipped] = useState(false); // Gesture control camera flip
 
@@ -423,8 +443,8 @@ function App() {
         });
         socket.on('browser_frame', (data) => {
             setBrowserData(prev => ({
-                image: data.image,
-                logs: [...prev.logs, data.log].filter(l => l).slice(-50) // Keep last 50 logs
+                image: data.image ?? prev.image, // keep last image if new frame has none
+                logs: [...prev.logs, data.log].filter(l => l).slice(-50)
             }));
             setShowBrowserWindow(true);
             // Auto-show browser window if hidden, clamped to viewport
@@ -436,6 +456,11 @@ function App() {
                     browser: clamped
                 }));
             }
+        });
+
+        socket.on('terminal_output', (data) => {
+            setTerminalEntries(prev => [...prev, { command: data.command, output: data.output }].slice(-100));
+            setShowTerminalWindow(true);
         });
 
         // Handle streaming transcription
@@ -568,13 +593,27 @@ function App() {
                 setSelectedSpeakerId(audioOutputs[0].deviceId);
             }
 
-            // Restore saved webcam or use first available
+            // Restore saved webcam, skipping virtual cameras
+            const virtualKeywords = /obs|virtual|snap|manycam|xsplit|ndi|dshow/i;
             const savedWebcamId = localStorage.getItem('selectedWebcamId');
-            if (savedWebcamId && videoInputs.some(d => d.deviceId === savedWebcamId)) {
+            const savedDevice = videoInputs.find(d => d.deviceId === savedWebcamId);
+            const isVirtual = savedDevice && virtualKeywords.test(savedDevice.label);
+
+            if (savedWebcamId && savedDevice && !isVirtual) {
+                // Saved device exists and is a real camera
                 setSelectedWebcamId(savedWebcamId);
-            } else if (videoInputs.length > 0) {
-                setSelectedWebcamId(videoInputs[0].deviceId);
+            } else {
+                // No valid saved camera (or it was OBS) — pick first real camera
+                if (isVirtual) localStorage.removeItem('selectedWebcamId');
+                const realCam = videoInputs.find(d => !virtualKeywords.test(d.label));
+                if (realCam || videoInputs.length > 0) {
+                    setSelectedWebcamId((realCam || videoInputs[0]).deviceId);
+                }
             }
+        });
+
+        socket.on('vision_mode', (data) => {
+            setIsScreenMode(data.mode === 'screen');
         });
 
         // Initialize Hand Landmarker
@@ -592,17 +631,15 @@ function App() {
 
                 // 2. Initialize Vision
                 console.log("Initializing FilesetResolver...");
-                const vision = await FilesetResolver.forVisionTasks(
-                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
-                );
+                const vision = await FilesetResolver.forVisionTasks("/");
                 console.log("FilesetResolver initialized.");
 
                 // 3. Create Landmarker
-                console.log("Creating HandLandmarker (GPU)...");
+                console.log("Creating HandLandmarker (CPU)...");
                 handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
                     baseOptions: {
                         modelAssetPath: `/hand_landmarker.task`,
-                        delegate: "GPU" // Enable GPU acceleration
+                        delegate: "CPU"
                     },
                     runningMode: "VIDEO",
                     numHands: 1
@@ -615,7 +652,7 @@ function App() {
                 addMessage('System', `Hand Tracking Error: ${error.message}`);
             }
         };
-        initHandLandmarker();
+        if (!isMobile) initHandLandmarker();
 
         return () => {
             socket.off('connect');
@@ -633,6 +670,7 @@ function App() {
             socket.off('slicing_progress');
             socket.off('print_status_update');
             socket.off('error');
+            socket.off('vision_mode');
 
             stopMicVisualizer();
             stopVideo();
@@ -663,9 +701,14 @@ function App() {
     }, [selectedSpeakerId]);
 
     useEffect(() => {
-        if (selectedWebcamId) {
-            localStorage.setItem('selectedWebcamId', selectedWebcamId);
-            console.log('[Settings] Saved webcam:', selectedWebcamId);
+        if (!selectedWebcamId) return;
+        localStorage.setItem('selectedWebcamId', selectedWebcamId);
+        console.log('[Settings] Saved webcam:', selectedWebcamId);
+        // If video is currently running, restart it with the new camera
+        if (isVideoOnRef.current) {
+            stopVideo();
+            // Small delay to let the old stream release the device
+            setTimeout(() => startVideo(), 200);
         }
     }, [selectedWebcamId]);
 
@@ -690,11 +733,15 @@ function App() {
             sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
             sourceRef.current.connect(analyserRef.current);
 
+            let micFrameCount = 0;
             const updateMicData = () => {
                 if (!analyserRef.current) return;
-                const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-                analyserRef.current.getByteFrequencyData(dataArray);
-                setMicAudioData(Array.from(dataArray));
+                micFrameCount++;
+                if (micFrameCount % 3 === 0) { // throttle to ~20fps instead of 60fps
+                    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+                    analyserRef.current.getByteFrequencyData(dataArray);
+                    setMicAudioData(Array.from(dataArray));
+                }
                 animationFrameRef.current = requestAnimationFrame(updateMicData);
             };
 
@@ -804,7 +851,14 @@ function App() {
         // Use Ref for toggle check
         if (isHandTrackingEnabledRef.current && handLandmarkerRef.current && videoRef.current.currentTime !== lastVideoTimeRef.current) {
             lastVideoTimeRef.current = videoRef.current.currentTime;
-            const results = handLandmarkerRef.current.detectForVideo(videoRef.current, startTimeMs);
+            let results;
+            try {
+                results = handLandmarkerRef.current.detectForVideo(videoRef.current, startTimeMs);
+            } catch (err) {
+                console.error("[HandTracking] detectForVideo error:", err);
+                requestAnimationFrame(predictWebcam);
+                return;
+            }
 
             // Log every 100 frames to confirm loop is running
             if (frameCountRef.current % 100 === 0) {
@@ -814,10 +868,7 @@ function App() {
             if (results.landmarks && results.landmarks.length > 0) {
                 const landmarks = results.landmarks[0];
 
-                // Log on first detection
-                if (cursorPos.x === 0 && cursorPos.y === 0) {
-                    console.log("First hand detection!", landmarks);
-                }
+
 
                 // Index Finger Tip (8)
                 const indexTip = landmarks[8];
@@ -915,8 +966,11 @@ function App() {
                     }
                 }
 
-                // Update Cursor Loop
-                setCursorPos({ x: finalX, y: finalY });
+                // Update cursor via direct DOM — zero React re-renders
+                if (cursorElRef.current) {
+                    cursorElRef.current.style.left = finalX + 'px';
+                    cursorElRef.current.style.top = finalY + 'px';
+                }
 
                 // Trail Logic: Removed per user request
 
@@ -926,15 +980,10 @@ function App() {
                 );
 
                 const isPinchNow = distance < 0.05; // Threshold
-                if (isPinchNow && !isPinching) {
+                if (isPinchNow && !isPinchingRef.current) {
                     // Click Triggered
-                    console.log("Click triggered at", finalX, finalY);
-
-                    // Ripple Effect: Removed per user request
-
                     const el = document.elementFromPoint(finalX, finalY);
                     if (el) {
-                        // Find closest clickable element (button, input, etc.)
                         const clickable = el.closest('button, input, a, [role="button"]');
                         if (clickable && typeof clickable.click === 'function') {
                             clickable.click();
@@ -943,7 +992,19 @@ function App() {
                         }
                     }
                 }
-                setIsPinching(isPinchNow);
+                isPinchingRef.current = isPinchNow;
+                // Update cursor pinch appearance via direct DOM — no re-render
+                if (cursorElRef.current) {
+                    if (isPinchNow) {
+                        cursorElRef.current.style.backgroundColor = 'rgba(34,211,238,1)';
+                        cursorElRef.current.style.boxShadow = '0 0 15px rgba(34,211,238,0.8)';
+                        cursorElRef.current.style.transform = 'translate(-50%,-50%) scale(0.75)';
+                    } else {
+                        cursorElRef.current.style.backgroundColor = '';
+                        cursorElRef.current.style.boxShadow = '0 0 10px rgba(34,211,238,0.3)';
+                        cursorElRef.current.style.transform = 'translate(-50%,-50%)';
+                    }
+                }
 
                 // Fist Detection for Gesture-Based Dragging (Popup Windows Only)
                 // Detects if all fingers are folded (tips closer to wrist than MCPs)
@@ -1067,6 +1128,14 @@ function App() {
         }
     };
 
+    const toggleScreenMode = () => {
+        const newMode = !isScreenMode;
+        setIsScreenMode(newMode);
+        if (socket) {
+            socket.emit('set_vision_mode', { mode: newMode ? 'screen' : 'none' });
+        }
+    };
+
     const addMessage = (sender, text) => {
         setMessages(prev => [...prev, { sender, text, time: new Date().toLocaleTimeString() }]);
     };
@@ -1075,6 +1144,7 @@ function App() {
         if (isConnected) {
             socket.emit('stop_audio');
             setIsConnected(false);
+            hasAutoConnectedRef.current = false; // Reset so auto-connect can fire again on next power-on
             setIsMuted(false); // Reset mute state
         } else {
             const index = micDevices.findIndex(d => d.deviceId === selectedMicId);
@@ -1325,8 +1395,10 @@ function App() {
         window.removeEventListener('mouseup', handleMouseUp);
     };
 
-    // Calculate Average Audio Amplitude for Background Pulse
-    const audioAmp = aiAudioData.reduce((a, b) => a + b, 0) / aiAudioData.length / 255;
+    const audioAmp = useMemo(
+        () => aiAudioData.reduce((a, b) => a + b, 0) / aiAudioData.length / 255,
+        [aiAudioData]
+    );
 
     const toggleKasaWindow = () => {
         if (!showKasaWindow) {
@@ -1341,6 +1413,24 @@ function App() {
     };
 
 
+
+    if (isMobile) {
+        return (
+            <MobileApp
+                socket={socket}
+                isConnected={isConnected}
+                isMuted={isMuted}
+                togglePower={togglePower}
+                toggleMute={toggleMute}
+                messages={messages}
+                aiAudioData={aiAudioData}
+                audioAmp={audioAmp}
+                inputValue={inputValue}
+                setInputValue={setInputValue}
+                handleSend={handleSend}
+            />
+        );
+    }
 
     return (
         <div className="h-screen w-screen bg-black text-cyan-100 font-mono overflow-hidden flex flex-col relative selection:bg-cyan-900 selection:text-white">
@@ -1369,14 +1459,10 @@ function App() {
             {/* Hand Cursor - Only show if tracking is enabled */}
             {isVideoOn && isHandTrackingEnabled && (
                 <div
-                    className={`fixed w-6 h-6 border-2 rounded-full pointer-events-none z-[100] transition-transform duration-75 ${isPinching ? 'bg-cyan-400 border-cyan-400 scale-75 shadow-[0_0_15px_rgba(34,211,238,0.8)]' : 'border-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.3)]'}`}
-                    style={{
-                        left: cursorPos.x,
-                        top: cursorPos.y,
-                        transform: 'translate(-50%, -50%)'
-                    }}
+                    ref={cursorElRef}
+                    className="fixed w-6 h-6 border-2 border-cyan-400 rounded-full pointer-events-none z-[100]"
+                    style={{ left: 0, top: 0, transform: 'translate(-50%,-50%)', boxShadow: '0 0 10px rgba(34,211,238,0.3)' }}
                 >
-                    {/* Center Dot for precision */}
                     <div className="absolute top-1/2 left-1/2 w-1 h-1 bg-white rounded-full -translate-x-1/2 -translate-y-1/2" />
                 </div>
             )}
@@ -1386,7 +1472,6 @@ function App() {
                 className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-900 via-black to-black z-0 pointer-events-none"
                 style={{ opacity: 0.6 }}
             ></div>
-            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 z-0 pointer-events-none mix-blend-overlay"></div>
 
             {/* Ambient Glow (Fixed: Static) */}
             <div
@@ -1609,6 +1694,34 @@ function App() {
                 )}
 
 
+                {/* Terminal Window */}
+                {showTerminalWindow && (
+                    <div
+                        id="terminal"
+                        className={`absolute flex flex-col transition-all duration-200
+                        backdrop-blur-xl bg-black/40 border border-white/10 shadow-2xl overflow-hidden rounded-lg
+                        ${activeDragElement === 'terminal' ? 'ring-2 ring-green-500 bg-green-500/10' : ''}
+                    `}
+                        style={{
+                            left: elementPositions.terminal?.x || window.innerWidth / 2 + 100,
+                            top: elementPositions.terminal?.y || window.innerHeight / 2 - 100,
+                            transform: 'translate(-50%, -50%)',
+                            width: '520px',
+                            height: '340px',
+                            pointerEvents: 'auto',
+                            zIndex: getZIndex('terminal')
+                        }}
+                        onMouseDown={(e) => handleMouseDown(e, 'terminal')}
+                    >
+                        <div className="relative z-20 w-full h-full">
+                            <TerminalWindow
+                                entries={terminalEntries}
+                                onClose={() => setShowTerminalWindow(false)}
+                            />
+                        </div>
+                    </div>
+                )}
+
                 {/* Chat Module */}
                 <ChatModule
                     messages={messages}
@@ -1635,7 +1748,13 @@ function App() {
                         onToggleMute={toggleMute}
                         onToggleVideo={toggleVideo}
                         onToggleSettings={() => setShowSettings(!showSettings)}
-                        onToggleHand={() => setIsHandTrackingEnabled(!isHandTrackingEnabled)}
+                        onToggleHand={() => {
+                            const enabling = !isHandTrackingEnabled;
+                            setIsHandTrackingEnabled(enabling);
+                            if (enabling && !isVideoOn) {
+                                startVideo();
+                            }
+                        }}
                         onToggleKasa={toggleKasaWindow}
                         showKasaWindow={showKasaWindow}
                         onTogglePrinter={togglePrinterWindow}
@@ -1644,6 +1763,9 @@ function App() {
                         showCadWindow={showCadWindow}
                         onToggleBrowser={() => setShowBrowserWindow(!showBrowserWindow)}
                         showBrowserWindow={showBrowserWindow}
+                        isScreenMode={isScreenMode}
+                        onToggleScreenMode={toggleScreenMode}
+                        onToggleDocuments={() => setShowDocumentsWindow(true)}
                         activeDragElement={activeDragElement}
                         position={elementPositions.tools}
                         onMouseDown={(e) => handleMouseDown(e, 'tools')}
@@ -1677,7 +1799,10 @@ function App() {
                     />
                 )}
 
-                {/* Memory Prompt removed - memory is now actively saved to project */}
+                {/* Documents / RAG Window */}
+                {showDocumentsWindow && (
+                    <DocumentsWindow onClose={() => setShowDocumentsWindow(false)} />
+                )}
 
                 {/* Tool Confirmation Modal */}
                 <ConfirmationPopup
