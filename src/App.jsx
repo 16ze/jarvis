@@ -156,6 +156,16 @@ function App() {
     const sourceRef = useRef(null);
     const animationFrameRef = useRef(null);
 
+    // Frontend mic capture with AEC (replaces PyAudio on the backend)
+    const aecStreamRef = useRef(null);
+    const aecAudioCtxRef = useRef(null);
+    const aecProcessorRef = useRef(null);
+
+    // Web Audio playback for Ada (enables browser AEC — browser knows what it's playing)
+    const playbackCtxRef = useRef(null);
+    const playbackNextTimeRef = useRef(0);
+    const playbackSourcesRef = useRef([]);  // Active sources — stopped on interrupt
+
     // Video Refs
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
@@ -326,6 +336,8 @@ function App() {
                 console.log("Auto-connecting to model with device:", deviceName, "Index:", index);
 
                 setStatus('Connecting...');
+                // Start frontend mic capture with AEC before telling backend to connect
+                startFrontendMic(selectedMicId);
                 socket.emit('start_audio', {
                     device_index: index >= 0 ? index : null,
                     device_name: deviceName,
@@ -357,6 +369,55 @@ function App() {
         });
         socket.on('audio_data', (data) => {
             setAiAudioData(data.data);
+        });
+
+        // Interrupt: stop all scheduled audio sources immediately
+        socket.on('clear_audio', () => {
+            playbackSourcesRef.current.forEach(s => { try { s.stop(); } catch (_) {} });
+            playbackSourcesRef.current = [];
+            playbackNextTimeRef.current = 0;
+        });
+
+        // Raw PCM16 from Ada — play via Web Audio API so browser AEC can cancel echo from mic
+        socket.on('audio_pcm', (data) => {
+            try {
+                // Lazy-init playback AudioContext at Ada's sample rate (24000 Hz)
+                if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
+                    playbackCtxRef.current = new AudioContext({ sampleRate: 24000 });
+                    playbackNextTimeRef.current = 0;
+                }
+                const ctx = playbackCtxRef.current;
+                if (ctx.state === 'suspended') ctx.resume();
+
+                // data is a Buffer/Uint8Array of PCM16 bytes
+                const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(Object.values(data));
+                const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+                const float32 = new Float32Array(int16.length);
+                for (let i = 0; i < int16.length; i++) {
+                    float32[i] = int16[i] / 32768.0;
+                }
+
+                const buffer = ctx.createBuffer(1, float32.length, 24000);
+                buffer.getChannelData(0).set(float32);
+
+                const source = ctx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(ctx.destination);
+
+                // Schedule gaplessly: start at next available slot
+                const now = ctx.currentTime;
+                const startAt = Math.max(now + 0.05, playbackNextTimeRef.current);
+                source.start(startAt);
+                playbackNextTimeRef.current = startAt + buffer.duration;
+
+                // Track source so we can stop it on interrupt
+                playbackSourcesRef.current.push(source);
+                source.onended = () => {
+                    playbackSourcesRef.current = playbackSourcesRef.current.filter(s => s !== source);
+                };
+            } catch (err) {
+                console.error('[Audio] Playback error:', err);
+            }
         });
         socket.on('auth_status', (data) => {
             console.log("Auth Status:", data);
@@ -630,8 +691,20 @@ function App() {
                 console.log("Model file found:", response.headers.get('content-type'), response.headers.get('content-length'));
 
                 // 2. Initialize Vision
+                // Electron: process.versions.node est writable:false mais configurable:true.
+                // L'assignation directe échoue silencieusement → utiliser Object.defineProperty.
+                // Masquer temporairement pour forcer Emscripten en mode browser (WebGL + fetch).
                 console.log("Initializing FilesetResolver...");
-                const vision = await FilesetResolver.forVisionTasks("/");
+                const savedDescriptor = Object.getOwnPropertyDescriptor(process.versions, 'node');
+                Object.defineProperty(process.versions, 'node', {
+                    value: undefined, writable: false, enumerable: true, configurable: true
+                });
+                let vision;
+                try {
+                    vision = await FilesetResolver.forVisionTasks('');
+                } finally {
+                    Object.defineProperty(process.versions, 'node', savedDescriptor);
+                }
                 console.log("FilesetResolver initialized.");
 
                 // 3. Create Landmarker
@@ -659,6 +732,8 @@ function App() {
             socket.off('disconnect');
             socket.off('status');
             socket.off('audio_data');
+            socket.off('audio_pcm');
+            socket.off('clear_audio');
             socket.off('cad_data');
             socket.off('cad_thought');
             socket.off('cad_status');
@@ -718,6 +793,63 @@ function App() {
             startMicVisualizer(selectedMicId);
         }
     }, [selectedMicId]);
+
+    const stopFrontendMic = () => {
+        if (aecProcessorRef.current) { aecProcessorRef.current.disconnect(); aecProcessorRef.current = null; }
+        if (aecAudioCtxRef.current) { aecAudioCtxRef.current.close(); aecAudioCtxRef.current = null; }
+        if (aecStreamRef.current) { aecStreamRef.current.getTracks().forEach(t => t.stop()); aecStreamRef.current = null; }
+        if (playbackCtxRef.current) { playbackCtxRef.current.close(); playbackCtxRef.current = null; }
+        playbackNextTimeRef.current = 0;
+    };
+
+    const startFrontendMic = async (deviceId) => {
+        stopFrontendMic();
+        try {
+            const constraints = {
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    channelCount: 1,
+                    ...(deviceId ? { deviceId: { exact: deviceId } } : {})
+                }
+            };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            aecStreamRef.current = stream;
+
+            // AudioContext at 16kHz — browser resamples from device native rate
+            const ctx = new AudioContext({ sampleRate: 16000 });
+            aecAudioCtxRef.current = ctx;
+
+            const source = ctx.createMediaStreamSource(stream);
+            // ScriptProcessorNode: 4096 samples @ 16kHz = 256ms per chunk
+            const processor = ctx.createScriptProcessor(4096, 1, 1);
+            aecProcessorRef.current = processor;
+
+            processor.onaudioprocess = (e) => {
+                const float32 = e.inputBuffer.getChannelData(0);
+                // Convert Float32 → PCM Int16
+                const int16 = new Int16Array(float32.length);
+                for (let i = 0; i < float32.length; i++) {
+                    const s = Math.max(-1, Math.min(1, float32[i]));
+                    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                socket.emit('mic_audio_chunk', { data: Array.from(new Uint8Array(int16.buffer)) });
+            };
+
+            // ScriptProcessor requires a destination to fire, but we must NOT route mic to speakers.
+            // Connect to a silent GainNode (gain=0) as a dead-end.
+            const silentGain = ctx.createGain();
+            silentGain.gain.value = 0;
+            silentGain.connect(ctx.destination);
+
+            source.connect(processor);
+            processor.connect(silentGain);
+            console.log('[AEC] Frontend mic capture started with echoCancellation: true');
+        } catch (err) {
+            console.error('[AEC] Failed to start frontend mic capture:', err);
+        }
+    };
 
     const startMicVisualizer = async (deviceId) => {
         stopMicVisualizer();
@@ -1142,6 +1274,7 @@ function App() {
 
     const togglePower = () => {
         if (isConnected) {
+            stopFrontendMic();
             socket.emit('stop_audio');
             setIsConnected(false);
             hasAutoConnectedRef.current = false; // Reset so auto-connect can fire again on next power-on

@@ -128,10 +128,11 @@ function startPythonBackend() {
 function applyCSP() {
     const isDev = process.env.NODE_ENV !== 'production';
 
-    // Dev: Vite HMR + React Fast Refresh inject inline scripts → needs 'unsafe-inline' + 'unsafe-eval'.
-    // Prod: only 'wasm-unsafe-eval' (WebAssembly/MediaPipe) — no arbitrary eval, no inline scripts.
+    // Dev: Vite HMR + React Fast Refresh → 'unsafe-inline' + 'unsafe-eval'.
+    //      MediaPipe WebAssembly → 'wasm-unsafe-eval' (requis séparément depuis Chrome 121+).
+    // Prod: 'wasm-unsafe-eval' uniquement — pas d'eval arbitraire, pas de scripts inline.
     const scriptSrc = isDev
-        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+        ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'"
         : "script-src 'self' 'wasm-unsafe-eval'";
 
     // Socket.IO WebSocket + REST backend (always localhost).

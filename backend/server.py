@@ -26,6 +26,7 @@ from pathlib import Path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import ada
+import external_bridge
 from dotenv import load_dotenv
 load_dotenv()
 from authenticator import FaceAuthenticator
@@ -145,6 +146,9 @@ async def startup_event():
 
     print("[SERVER] Startup: Initializing Kasa Agent...")
     await kasa_agent.initialize()
+
+    print("[SERVER] Startup: Démarrage du bridge Telegram/WhatsApp...")
+    external_bridge.start_bridge()
 
 @app.get("/status")
 async def status():
@@ -320,6 +324,11 @@ async def start_audio(sid, data=None):
         viz = (np.max(np.abs(trimmed.reshape(64, -1)), axis=1) >> 7).clip(0, 255).tolist()
         asyncio.create_task(sio.emit('audio_data', {'data': viz}))
 
+    # Callback to send raw PCM to browser for playback via Web Audio API.
+    # This lets the browser's echoCancellation know what's playing → proper AEC.
+    def on_audio_pcm(data_bytes):
+        asyncio.create_task(sio.emit('audio_pcm', data_bytes))
+
     # Callback to send CAL data to frontend
     def on_cad_data(data):
         info = f"{len(data.get('vertices', []))} vertices" if 'vertices' in data else f"{len(data.get('data', ''))} bytes (STL)"
@@ -384,8 +393,9 @@ async def start_audio(sid, data=None):
     try:
         print(f"Initializing AudioLoop with device_index={device_index}")
         audio_loop = ada.AudioLoop(
-            video_mode="none", 
+            video_mode="none",
             on_audio_data=on_audio_data,
+            on_audio_pcm=on_audio_pcm,
             on_cad_data=on_cad_data,
             on_web_data=on_web_data,
             on_transcription=on_transcription,
@@ -402,6 +412,15 @@ async def start_audio(sid, data=None):
             kasa_agent=kasa_agent
         )
         print("AudioLoop initialized successfully.")
+
+        # Partager l'AudioLoop avec le bridge Telegram/WhatsApp (capacités complètes)
+        external_bridge.set_ada_loop(audio_loop)
+
+        # Full browser audio mode: mic captured + Ada played in Electron → browser AEC works
+        audio_loop.frontend_audio_mode = True
+        audio_loop.browser_audio_mode = True
+        audio_loop.on_clear_audio = lambda: asyncio.create_task(sio.emit('clear_audio'))
+        print("[SERVER] Browser audio mode enabled (mic + playback via Web Audio API, AEC active).")
 
         # Apply current permissions
         audio_loop.update_permissions(SETTINGS["tool_permissions"])
@@ -486,10 +505,19 @@ async def monitor_printers_loop():
         await asyncio.sleep(2) # Update every 2 seconds for responsiveness
 
 @sio.event
+async def mic_audio_chunk(sid, data):
+    """Receives PCM16 audio chunk from Electron frontend (echoCancellation applied).
+    Forwards to Gemini via AudioLoop."""
+    if audio_loop and audio_loop.frontend_audio_mode:
+        raw = data.get('data')
+        if raw:
+            await audio_loop.receive_frontend_audio(bytes(raw))
+
+@sio.event
 async def stop_audio(sid):
     global audio_loop
     if audio_loop:
-        audio_loop.stop() 
+        audio_loop.stop()
         print("Stopping Audio Loop")
         audio_loop = None
         await sio.emit('status', {'msg': 'A.D.A Stopped'})
