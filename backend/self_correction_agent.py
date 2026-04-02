@@ -117,7 +117,9 @@ class SelfCorrectionAgent:
                 os.unlink(tmp_path)
 
         # Backup avant écriture
-        self._git_backup()
+        backup_result = self._git_backup()
+        if backup_result.startswith("Backup git échoué"):
+            return f"ERREUR : backup git impossible, écriture annulée. ({backup_result})"
 
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
