@@ -24,6 +24,7 @@ if sys.version_info < (3, 11, 0):
     asyncio.ExceptionGroup = exceptiongroup.ExceptionGroup
 
 from tools import tools_list
+from mcp_tools_declarations import MCP_TOOLS, MCP_TOOL_NAMES
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -349,7 +350,101 @@ search_documents_tool = {
     }
 }
 
-tools = [{"function_declarations": [generate_cad, run_web_agent, run_terminal_tool, read_emails_tool, send_email_tool, get_email_body_tool, list_events_tool, create_event_tool, find_event_tool, delete_event_tool, create_project_tool, switch_project_tool, list_projects_tool, list_smart_devices_tool, control_light_tool, discover_printers_tool, print_stl_tool, get_print_status_tool, iterate_cad_tool, control_computer_tool, search_memory_tool, remember_tool, search_documents_tool] + tools_list[0]['function_declarations'][1:]}]
+# ─── SUB-AGENT TOOLS ─────────────────────────────────────────────────────────
+
+run_research_tool = {
+    "name": "run_research",
+    "description": (
+        "Lance un agent de recherche autonome qui interroge Wikipedia, ArXiv et YouTube, "
+        "puis synthétise un rapport structuré en markdown. "
+        "Utilise quand Bryan demande une analyse approfondie, une veille tech, "
+        "ou une recherche sur un sujet précis."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "query": {"type": "STRING", "description": "Sujet ou question à rechercher"}
+        },
+        "required": ["query"]
+    }
+}
+
+run_task_tool = {
+    "name": "run_task",
+    "description": (
+        "Décompose un objectif complexe en sous-tâches et les exécute automatiquement "
+        "(terminal + raisonnement Gemini). Retourne un rapport de complétion. "
+        "Utilise pour des objectifs multi-étapes : 'configure X', 'prépare Y', "
+        "'installe et lance Z'."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "objective": {"type": "STRING", "description": "L'objectif à atteindre"}
+        },
+        "required": ["objective"]
+    }
+}
+
+anticipate_tool = {
+    "name": "anticipate",
+    "description": (
+        "Analyse le contexte (mémoire, historique de conversation, heure) et retourne "
+        "des suggestions proactives sur les besoins imminents de Bryan. "
+        "Utilise quand Bryan demande 'quoi faire', 'qu'est-ce que j'ai oublié', "
+        "ou 'anticipe mes besoins'."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "context": {
+                "type": "STRING",
+                "description": "Contexte additionnel optionnel (ex: 'je pars en voyage demain')"
+            }
+        }
+    }
+}
+
+start_monitoring_tool = {
+    "name": "start_monitoring",
+    "description": (
+        "Démarre des watchers de surveillance en arrière-plan (emails, Slack, GitHub, Telegram). "
+        "Chaque watcher vérifie une condition et envoie une notification Telegram quand elle est remplie. "
+        "Accepte une config JSON ou une description en langage naturel."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "watch_config": {
+                "type": "STRING",
+                "description": (
+                    "Config JSON ou description des watchers à démarrer. "
+                    "Ex: 'surveille les emails non lus toutes les 2 minutes et notifie-moi sur Telegram'"
+                )
+            }
+        },
+        "required": ["watch_config"]
+    }
+}
+
+stop_monitoring_tool = {
+    "name": "stop_monitoring",
+    "description": "Arrête tous les watchers de surveillance en cours.",
+    "parameters": {"type": "OBJECT", "properties": {}}
+}
+
+tools = [{"function_declarations": [
+    generate_cad, run_web_agent, run_terminal_tool,
+    read_emails_tool, send_email_tool, get_email_body_tool,
+    list_events_tool, create_event_tool, find_event_tool, delete_event_tool,
+    create_project_tool, switch_project_tool, list_projects_tool,
+    list_smart_devices_tool, control_light_tool,
+    discover_printers_tool, print_stl_tool, get_print_status_tool, iterate_cad_tool,
+    control_computer_tool,
+    search_memory_tool, remember_tool, search_documents_tool,
+    run_research_tool, run_task_tool, anticipate_tool,
+    start_monitoring_tool, stop_monitoring_tool,
+] + tools_list[0]['function_declarations'][1:] + MCP_TOOLS}]
 
 # --- CONFIG UPDATE: Enabled Transcription ---
 config = types.LiveConnectConfig(
@@ -412,10 +507,40 @@ config = types.LiveConnectConfig(
 
         # ─── DOMOTIQUE ─────────────────────────────────────────────────────
         "Tu contrôles les appareils connectés Kasa via list_smart_devices et control_light. "
+        "Tu contrôles Home Assistant via ha_turn_on, ha_turn_off, ha_get_states, ha_call_service. "
 
         # ─── IMPRIMANTE 3D & CAO ───────────────────────────────────────────
         "Tu génères des modèles 3D via generate_cad et iterate_cad. "
         "Tu gères l'imprimante 3D via discover_printers, print_stl et get_print_status. "
+
+        # ─── COMMUNICATION ─────────────────────────────────────────────────
+        "Tu as accès à Slack (slack_*), Telegram (telegram_send_message pour notifier Bryan), WhatsApp (whatsapp_*). "
+        "Utilise telegram_send_message pour envoyer des notifications proactives à Bryan. "
+
+        # ─── PRODUCTIVITÉ ──────────────────────────────────────────────────
+        "Tu as accès à Notion (notion_*), Google Drive/Sheets/Docs (drive_*, sheets_*, docs_read), Linear (linear_*), Stripe (stripe_*), Qonto (qonto_*). "
+
+        # ─── DEV & INFRA ───────────────────────────────────────────────────
+        "Tu as accès à Supabase (supabase_*), Vercel (vercel_*), GitHub (github_*), Docker (docker_*). "
+        "Tu as accès à ton propre code source via jarvis_read_file, jarvis_write_file, jarvis_list_files, jarvis_git_commit. Quand tu détectes une erreur dans ton propre code, utilise self_correct_file pour la corriger automatiquement. Crée TOUJOURS un commit (jarvis_git_commit) après toute modification de fichier. "
+
+        # ─── MUSIQUE & SANTÉ ───────────────────────────────────────────────
+        "Tu contrôles Spotify via spotify_* (lecture, pause, volume, recherche). "
+        "Tu accèdes aux données de santé Apple via health_* (pas, sommeil, fréquence cardiaque). "
+        "Tu calcules des itinéraires et cherches des lieux via maps_*. "
+
+        # ─── RECHERCHE ─────────────────────────────────────────────────────
+        "Tu peux rechercher sur YouTube (youtube_*), Wikipedia (wikipedia_*), ArXiv (arxiv_*). "
+
+        # ─── CRÉATION ──────────────────────────────────────────────────────
+        "Tu peux générer des images via replicate_generate_image, synthétiser de la voix via elevenlabs_tts, interagir avec Canva (canva_*) et Figma (figma_*). "
+
+        # ─── SUB-AGENTS AUTONOMES ──────────────────────────────────────────
+        "Tu disposes de 4 sub-agents autonomes à utiliser proactivement : "
+        "run_research(query) — recherche approfondie Wikipedia/ArXiv/YouTube + rapport synthétisé — utilise dès qu'une question mérite une vraie recherche. "
+        "run_task(objective) — décompose et exécute un objectif complexe multi-étapes — utilise pour tout ce qui nécessite plusieurs actions enchaînées. "
+        "anticipate(context?) — analyse le contexte et propose des suggestions proactives — utilise quand Bryan demande quoi faire ou en début de journée. "
+        "start_monitoring(watch_config) — lance des watchers background (email, Slack, GitHub) — stop_monitoring() pour les arrêter. "
     ),
     tools=tools,
     speech_config=types.SpeechConfig(
@@ -435,14 +560,43 @@ from web_agent import WebAgent
 from kasa_agent import KasaAgent
 from printer_agent import PrinterAgent
 from memory_manager import MemoryManager, DOCUMENTS_DIR
+from mcps.slack_mcp import SlackMCP
+from mcps.telegram_mcp import TelegramMCP
+from mcps.whatsapp_mcp import WhatsAppMCP
+from mcps.notion_mcp import NotionMCP
+from mcps.drive_mcp import DriveMCP
+from mcps.linear_mcp import LinearMCP
+from mcps.stripe_mcp import StripeMCP
+from mcps.qonto_mcp import QontoMCP
+from mcps.supabase_mcp import SupabaseMCP
+from mcps.vercel_mcp import VercelMCP
+from mcps.github_mcp import GithubMCP
+from mcps.docker_mcp import DockerMCP
+from mcps.homeassistant_mcp import HomeAssistantMCP
+from mcps.spotify_mcp import SpotifyMCP
+from mcps.applehealth_mcp import AppleHealthMCP
+from mcps.googlemaps_mcp import GoogleMapsMCP
+from mcps.youtube_mcp import YouTubeMCP
+from mcps.wikipedia_mcp import WikipediaMCP
+from mcps.arxiv_mcp import ArxivMCP
+from mcps.canva_mcp import CanvaMCP
+from mcps.figma_mcp import FigmaMCP
+from mcps.elevenlabs_mcp import ElevenLabsMCP
+from mcps.replicate_mcp import ReplicateMCP
+from research_agent import ResearchAgent
+from task_agent import TaskAgent
+from anticipation_agent import AnticipationAgent
+from monitoring_agent import MonitoringAgent
 
 memory = MemoryManager()
 memory.documents_dir = DOCUMENTS_DIR
 
 class AudioLoop:
-    def __init__(self, video_mode=DEFAULT_MODE, on_audio_data=None, on_video_frame=None, on_cad_data=None, on_web_data=None, on_transcription=None, on_tool_confirmation=None, on_cad_status=None, on_cad_thought=None, on_project_update=None, on_device_update=None, on_terminal_output=None, on_error=None, input_device_index=None, input_device_name=None, output_device_index=None, kasa_agent=None):
+    def __init__(self, video_mode=DEFAULT_MODE, on_audio_data=None, on_audio_pcm=None, on_video_frame=None, on_cad_data=None, on_web_data=None, on_transcription=None, on_tool_confirmation=None, on_cad_status=None, on_cad_thought=None, on_project_update=None, on_device_update=None, on_terminal_output=None, on_error=None, input_device_index=None, input_device_name=None, output_device_index=None, kasa_agent=None):
         self.video_mode = video_mode
         self.on_audio_data = on_audio_data
+        self.on_audio_pcm = on_audio_pcm      # Raw PCM16 for browser playback (enables browser AEC)
+        self.on_clear_audio = None            # Notifies browser to cancel scheduled audio (set by server)
         self.on_video_frame = on_video_frame
         self.on_cad_data = on_cad_data
         self.on_web_data = on_web_data
@@ -484,6 +638,51 @@ class AudioLoop:
         self.google_agent = GoogleAgent()
         self.kasa_agent = kasa_agent if kasa_agent else KasaAgent()
         self.printer_agent = PrinterAgent()
+        # ── MCP Agents ───────────────────────────────────────────────────────
+        self.slack = SlackMCP()
+        self.telegram = TelegramMCP()
+        self.whatsapp = WhatsAppMCP()
+        self.notion = NotionMCP()
+        self.drive = DriveMCP()
+        self.linear = LinearMCP()
+        self.stripe = StripeMCP()
+        self.qonto = QontoMCP()
+        self.supabase = SupabaseMCP()
+        self.vercel = VercelMCP()
+        self.github = GithubMCP()
+        try:
+            from self_correction_agent import SelfCorrectionAgent
+            self.self_correction = SelfCorrectionAgent()
+        except Exception as e:
+            import warnings
+            warnings.warn(f"[ADA] SelfCorrectionAgent init: {e}")
+            self.self_correction = None
+        self.docker = DockerMCP()
+        self.ha = HomeAssistantMCP()
+        self.spotify = SpotifyMCP()
+        self.health = AppleHealthMCP()
+        self.maps = GoogleMapsMCP()
+        self.youtube = YouTubeMCP()
+        self.wikipedia = WikipediaMCP()
+        self.arxiv = ArxivMCP()
+        self.canva = CanvaMCP()
+        self.figma = FigmaMCP()
+        self.elevenlabs = ElevenLabsMCP()
+        self.replicate = ReplicateMCP()
+        # ── Sub-agents autonomes (sans project_manager — injecté après init PM) ─
+        self.research_agent = ResearchAgent(
+            wikipedia=self.wikipedia,
+            arxiv=self.arxiv,
+            youtube=self.youtube,
+        )
+        self.task_agent = TaskAgent()
+        self.anticipation_agent = AnticipationAgent(memory=memory)
+        self.monitoring_agent = MonitoringAgent(
+            telegram=self.telegram,
+            slack=self.slack,
+            github=self.github,
+            google_agent=self.google_agent,
+        )
 
         self.send_text_task = None
         self.stop_event = asyncio.Event()
@@ -496,6 +695,10 @@ class AudioLoop:
         # VAD State
         self._is_speaking = False
         self._silence_start_time = None
+        # Echo prevention: True while Ada's TTS is playing through speakers
+        self._is_ada_speaking = False
+        # Frontend audio mode: mic is captured in Electron (with AEC) and streamed here
+        self.frontend_audio_mode = False
         
         # Initialize ProjectManager
         from project_manager import ProjectManager
@@ -505,7 +708,9 @@ class AudioLoop:
         # If ada.py is in backend/, project root is one up
         project_root = os.path.dirname(current_dir)
         self.project_manager = ProjectManager(project_root)
-        
+        # Inject project_manager into anticipation_agent (created before PM was ready)
+        self.anticipation_agent._project_manager = self.project_manager
+
         # Sync Initial Project State
         if self.on_project_update:
             # We need to defer this slightly or just call it. 
@@ -564,6 +769,9 @@ class AudioLoop:
                 print(f"[ADA DEBUG] [AUDIO] Cleared {count} chunks from playback queue due to interruption.")
         except Exception as e:
             print(f"[ADA DEBUG] [ERR] Failed to clear audio queue: {e}")
+        # Notify browser to cancel all scheduled audio sources
+        if self.on_clear_audio:
+            self.on_clear_audio()
 
     async def send_frame(self, frame_data):
         # Update the latest frame payload
@@ -581,7 +789,47 @@ class AudioLoop:
             msg = await self.out_queue.get()
             await self.session.send(input=msg, end_of_turn=False)
 
+    async def receive_frontend_audio(self, pcm_bytes: bytes):
+        """Receives PCM16 audio chunks from the Electron frontend.
+        Ada's audio is played via Web Audio API in the browser, so the browser's
+        echoCancellation removes it from the mic signal before it reaches here.
+        No manual echo gate needed — just forward to Gemini + run VAD."""
+        if not self.out_queue:
+            return
+
+        try:
+            self.out_queue.put_nowait({"data": pcm_bytes, "mime_type": "audio/pcm"})
+        except asyncio.QueueFull:
+            pass
+
+        # VAD for video frame triggering
+        arr = np.frombuffer(pcm_bytes, dtype=np.int16)
+        rms = int(np.sqrt(np.mean(arr.astype(np.int32) ** 2))) if len(arr) > 0 else 0
+        VAD_THRESHOLD = 800
+        SILENCE_DURATION = 0.5
+
+        if rms > VAD_THRESHOLD:
+            self._silence_start_time = None
+            if not self._is_speaking:
+                self._is_speaking = True
+                if self._latest_image_payload and self.out_queue:
+                    await self.out_queue.put(self._latest_image_payload)
+        else:
+            if self._is_speaking:
+                if self._silence_start_time is None:
+                    self._silence_start_time = asyncio.get_event_loop().time()
+                elif asyncio.get_event_loop().time() - self._silence_start_time > SILENCE_DURATION:
+                    self._is_speaking = False
+                    self._silence_start_time = None
+
     async def listen_audio(self):
+        # In frontend audio mode, mic is captured by Electron with echoCancellation: true.
+        # This task becomes a no-op — audio arrives via receive_frontend_audio().
+        if self.frontend_audio_mode:
+            print("[ADA] Frontend audio mode active — PyAudio capture disabled (AEC handled by browser).")
+            await self.stop_event.wait()
+            return
+
         mic_info = pya.get_default_input_device_info()
 
         # Resolve Input Device by Name if provided
@@ -645,9 +893,13 @@ class AudioLoop:
             kwargs = {}
         
         # VAD Constants
-        VAD_THRESHOLD = 800 # Adj based on mic sensitivity (800 is conservative for 16-bit)
-        SILENCE_DURATION = 0.5 # Seconds of silence to consider "done speaking"
-        
+        VAD_THRESHOLD = 800        # Normal speech detection threshold
+        BARGE_IN_THRESHOLD = 2500  # Interruption threshold while Ada speaks (must exceed speaker echo level)
+        BARGE_IN_FRAMES = 3        # Consecutive frames above threshold to confirm barge-in (avoids false positives)
+        SILENCE_DURATION = 0.5     # Seconds of silence to consider "done speaking"
+
+        _barge_in_counter = 0  # Counts consecutive loud frames while Ada is speaking
+
         while True:
             if self.paused:
                 await asyncio.sleep(0.1)
@@ -655,18 +907,33 @@ class AudioLoop:
 
             try:
                 data = await asyncio.to_thread(self.audio_stream.read, CHUNK_SIZE, **kwargs)
-                
-                # 1. Send Audio — put_nowait to never block the mic read loop
-                if self.out_queue:
-                    try:
-                        self.out_queue.put_nowait({"data": data, "mime_type": "audio/pcm"})
-                    except asyncio.QueueFull:
-                        pass  # Drop chunk rather than blocking input
 
-                # 2. VAD — fast RMS via numpy (avoids Python loop over 512 samples)
                 arr = np.frombuffer(data, dtype=np.int16)
                 rms = int(np.sqrt(np.mean(arr.astype(np.int32) ** 2))) if len(arr) > 0 else 0
-                
+
+                if self._is_ada_speaking:
+                    # Ada is playing — mic is muted from Gemini to prevent echo
+                    # But monitor for barge-in: N consecutive frames above BARGE_IN_THRESHOLD
+                    if rms > BARGE_IN_THRESHOLD:
+                        _barge_in_counter += 1
+                        if _barge_in_counter >= BARGE_IN_FRAMES:
+                            # User is clearly speaking — stop Ada and re-enable mic
+                            print(f"[ADA DEBUG] [VAD] Barge-in detected (RMS: {rms}). Interrupting Ada.")
+                            self.clear_audio_queue()
+                            self._is_ada_speaking = False
+                            self._is_speaking = True
+                            _barge_in_counter = 0
+                    else:
+                        _barge_in_counter = 0
+                else:
+                    # Ada is silent — send mic to Gemini normally
+                    _barge_in_counter = 0
+                    if self.out_queue:
+                        try:
+                            self.out_queue.put_nowait({"data": data, "mime_type": "audio/pcm"})
+                        except asyncio.QueueFull:
+                            pass
+
                 if rms > VAD_THRESHOLD:
                     # Speech Detected
                     self._silence_start_time = None
@@ -1010,7 +1277,8 @@ class AudioLoop:
                         function_responses = []
                         for fc in response.tool_call.function_calls:
                           try:
-                            if fc.name in ["generate_cad", "run_web_agent", "run_terminal", "read_emails", "send_email", "get_email_body", "list_events", "create_event", "find_event", "delete_event", "write_file", "read_directory", "read_file", "create_project", "switch_project", "list_projects", "list_smart_devices", "control_light", "discover_printers", "print_stl", "get_print_status", "iterate_cad", "control_computer", "search_memory", "remember", "search_documents"]:
+                            _CORE_TOOLS = {"generate_cad", "run_web_agent", "run_terminal", "read_emails", "send_email", "get_email_body", "list_events", "create_event", "find_event", "delete_event", "write_file", "read_directory", "read_file", "create_project", "switch_project", "list_projects", "list_smart_devices", "control_light", "discover_printers", "print_stl", "get_print_status", "iterate_cad", "control_computer", "search_memory", "remember", "search_documents", "run_research", "run_task", "anticipate", "start_monitoring", "stop_monitoring"}
+                            if fc.name in (_CORE_TOOLS | MCP_TOOL_NAMES):
                                 prompt = fc.args.get("prompt", "")
                                 print(f"[ADA DEBUG] [TOOL] Auto-executing: '{fc.name}'")
 
@@ -1059,7 +1327,7 @@ class AudioLoop:
                                         if fc.name == "read_emails":
                                             result = self.google_agent.read_emails(
                                                 max_results=fc.args.get("max_results", 5),
-                                                query=fc.args.get("query", "is:unread")
+                                                query=fc.args.get("query", "in:inbox")
                                             )
                                         elif fc.name == "send_email":
                                             result = self.google_agent.send_email(
@@ -1550,6 +1818,307 @@ class AudioLoop:
                                         id=fc.id, name=fc.name, response={"result": result_str}
                                     ))
 
+                                # ─── SUB-AGENT ROUTING ─────────────────────────────────────────────
+                                elif fc.name == "run_research":
+                                    query = fc.args.get("query", "")
+                                    print(f"[SUB-AGENT] run_research: '{query}'")
+                                    result_str = await self.research_agent.run(query)
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                elif fc.name == "run_task":
+                                    objective = fc.args.get("objective", "")
+                                    print(f"[SUB-AGENT] run_task: '{objective}'")
+                                    result_str = await self.task_agent.run(objective)
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                elif fc.name == "anticipate":
+                                    context = fc.args.get("context", "")
+                                    print(f"[SUB-AGENT] anticipate")
+                                    result_str = await self.anticipation_agent.run(context)
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                elif fc.name == "start_monitoring":
+                                    watch_config = fc.args.get("watch_config", "")
+                                    print(f"[SUB-AGENT] start_monitoring")
+                                    result_str = await self.monitoring_agent.run(watch_config)
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                elif fc.name == "stop_monitoring":
+                                    print(f"[SUB-AGENT] stop_monitoring")
+                                    result_str = await self.monitoring_agent.stop()
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                # ─── MCP ROUTING ───────────────────────────────────────────────────
+                                elif fc.name in MCP_TOOL_NAMES:
+                                    args = dict(fc.args)
+                                    n = fc.name
+                                    print(f"[MCP] Tool Call: '{n}' args={args}")
+
+                                    # ── SLACK ──────────────────────────────────────────────
+                                    if n == "slack_list_channels":
+                                        result = await asyncio.to_thread(self.slack.list_channels)
+                                    elif n == "slack_read_channel":
+                                        result = await asyncio.to_thread(self.slack.read_channel, args["channel_id"], args.get("limit", 20))
+                                    elif n == "slack_send_message":
+                                        result = await asyncio.to_thread(self.slack.send_message, args["channel_id"], args["text"])
+                                    elif n == "slack_search_messages":
+                                        result = await asyncio.to_thread(self.slack.search_messages, args["query"], args.get("count", 10))
+
+                                    # ── TELEGRAM ───────────────────────────────────────────
+                                    elif n == "telegram_send_message":
+                                        result = await asyncio.to_thread(self.telegram.send_message, args["text"], args.get("chat_id"))
+                                    elif n == "telegram_send_photo":
+                                        result = await asyncio.to_thread(self.telegram.send_photo, args["photo_url"], args.get("caption", ""), args.get("chat_id"))
+                                    elif n == "telegram_get_updates":
+                                        result = await asyncio.to_thread(self.telegram.get_updates, args.get("limit", 10))
+
+                                    # ── WHATSAPP ───────────────────────────────────────────
+                                    elif n == "whatsapp_send_message":
+                                        result = await asyncio.to_thread(self.whatsapp.send_message, args["number"], args["text"])
+                                    elif n == "whatsapp_send_media":
+                                        result = await asyncio.to_thread(self.whatsapp.send_media, args["number"], args["media_url"], args.get("caption", ""))
+                                    elif n == "whatsapp_get_messages":
+                                        result = await asyncio.to_thread(self.whatsapp.get_recent_messages, args["number"], args.get("limit", 20))
+
+                                    # ── NOTION ─────────────────────────────────────────────
+                                    elif n == "notion_search":
+                                        result = await asyncio.to_thread(self.notion.search, args["query"], args.get("limit", 10))
+                                    elif n == "notion_get_page":
+                                        result = await asyncio.to_thread(self.notion.get_page, args["page_id"])
+                                    elif n == "notion_create_page":
+                                        result = await asyncio.to_thread(self.notion.create_page, args["parent_id"], args["title"], args.get("content", ""))
+                                    elif n == "notion_query_database":
+                                        result = await asyncio.to_thread(self.notion.query_database, args["database_id"], args.get("filter_json", ""))
+                                    elif n == "notion_append_page":
+                                        result = await asyncio.to_thread(self.notion.append_to_page, args["page_id"], args["content"])
+
+                                    # ── GOOGLE DRIVE / SHEETS / DOCS ───────────────────────
+                                    elif n == "drive_list_files":
+                                        result = await asyncio.to_thread(self.drive.list_files, args.get("query", ""), args.get("limit", 10))
+                                    elif n == "drive_read_file":
+                                        result = await asyncio.to_thread(self.drive.read_file, args["file_id"])
+                                    elif n == "drive_upload_file":
+                                        result = await asyncio.to_thread(self.drive.upload_file, args["local_path"], args.get("folder_id", ""))
+                                    elif n == "sheets_read":
+                                        result = await asyncio.to_thread(self.drive.read_sheet, args["spreadsheet_id"], args.get("range", "Sheet1!A1:Z100"))
+                                    elif n == "sheets_write":
+                                        result = await asyncio.to_thread(self.drive.write_sheet, args["spreadsheet_id"], args["range"], args["values_json"])
+                                    elif n == "sheets_append":
+                                        result = await asyncio.to_thread(self.drive.append_sheet, args["spreadsheet_id"], args["range"], args["values_json"])
+                                    elif n == "docs_read":
+                                        result = await asyncio.to_thread(self.drive.read_doc, args["doc_id"])
+
+                                    # ── LINEAR ─────────────────────────────────────────────
+                                    elif n == "linear_list_issues":
+                                        result = await asyncio.to_thread(self.linear.list_issues, args.get("team_id", ""), args.get("status", ""), args.get("limit", 20))
+                                    elif n == "linear_get_issue":
+                                        result = await asyncio.to_thread(self.linear.get_issue, args["issue_id"])
+                                    elif n == "linear_create_issue":
+                                        result = await asyncio.to_thread(self.linear.create_issue, args["title"], args.get("description", ""), args.get("team_id", ""), args.get("priority", 0))
+                                    elif n == "linear_update_issue":
+                                        result = await asyncio.to_thread(self.linear.update_issue, args["issue_id"], args.get("status", ""), args.get("title", ""), args.get("description", ""))
+                                    elif n == "linear_list_projects":
+                                        result = await asyncio.to_thread(self.linear.list_projects, args.get("team_id", ""))
+                                    elif n == "linear_list_teams":
+                                        result = await asyncio.to_thread(self.linear.list_teams)
+
+                                    # ── STRIPE ─────────────────────────────────────────────
+                                    elif n == "stripe_list_customers":
+                                        result = await asyncio.to_thread(self.stripe.list_customers, args.get("limit", 10), args.get("email", ""))
+                                    elif n == "stripe_get_customer":
+                                        result = await asyncio.to_thread(self.stripe.get_customer, args["customer_id"])
+                                    elif n == "stripe_list_payments":
+                                        result = await asyncio.to_thread(self.stripe.list_payments, args.get("limit", 10), args.get("customer_id", ""))
+                                    elif n == "stripe_list_invoices":
+                                        result = await asyncio.to_thread(self.stripe.list_invoices, args.get("limit", 10), args.get("customer_id", ""))
+                                    elif n == "stripe_get_balance":
+                                        result = await asyncio.to_thread(self.stripe.get_balance)
+                                    elif n == "stripe_create_invoice_item":
+                                        result = await asyncio.to_thread(self.stripe.create_invoice_item, args["customer_id"], args["amount_cents"], args["currency"], args["description"])
+                                    elif n == "stripe_send_invoice":
+                                        result = await asyncio.to_thread(self.stripe.send_invoice, args["invoice_id"])
+
+                                    # ── QONTO ──────────────────────────────────────────────
+                                    elif n == "qonto_get_balance":
+                                        result = await asyncio.to_thread(self.qonto.get_balance)
+                                    elif n == "qonto_list_transactions":
+                                        result = await asyncio.to_thread(self.qonto.list_transactions, args.get("limit", 25), args.get("status", "completed"))
+                                    elif n == "qonto_get_organization":
+                                        result = await asyncio.to_thread(self.qonto.get_organization)
+
+                                    # ── SUPABASE ───────────────────────────────────────────
+                                    elif n == "supabase_query":
+                                        result = await asyncio.to_thread(self.supabase.query_table, args["table"], args.get("filters_json", ""), args.get("limit", 20), args.get("columns", "*"))
+                                    elif n == "supabase_insert":
+                                        result = await asyncio.to_thread(self.supabase.insert_row, args["table"], args["data_json"])
+                                    elif n == "supabase_update":
+                                        result = await asyncio.to_thread(self.supabase.update_row, args["table"], args["filters_json"], args["data_json"])
+                                    elif n == "supabase_delete":
+                                        result = await asyncio.to_thread(self.supabase.delete_row, args["table"], args["filters_json"])
+                                    elif n == "supabase_sql":
+                                        result = await asyncio.to_thread(self.supabase.run_sql, args["query"])
+                                    elif n == "supabase_list_tables":
+                                        result = await asyncio.to_thread(self.supabase.list_tables)
+
+                                    # ── VERCEL ─────────────────────────────────────────────
+                                    elif n == "vercel_list_projects":
+                                        result = await asyncio.to_thread(self.vercel.list_projects, args.get("limit", 20))
+                                    elif n == "vercel_get_project":
+                                        result = await asyncio.to_thread(self.vercel.get_project, args["project_id"])
+                                    elif n == "vercel_list_deployments":
+                                        result = await asyncio.to_thread(self.vercel.list_deployments, args.get("project_id", ""), args.get("limit", 10))
+                                    elif n == "vercel_get_deployment":
+                                        result = await asyncio.to_thread(self.vercel.get_deployment, args["deployment_id"])
+                                    elif n == "vercel_get_logs":
+                                        result = await asyncio.to_thread(self.vercel.get_deployment_logs, args["deployment_id"])
+
+                                    # ── GITHUB ─────────────────────────────────────────────
+                                    elif n == "github_list_repos":
+                                        result = await asyncio.to_thread(self.github.list_repos, args.get("limit", 20))
+                                    elif n == "github_get_repo":
+                                        result = await asyncio.to_thread(self.github.get_repo_info, args.get("repo", ""))
+                                    elif n == "github_list_issues":
+                                        result = await asyncio.to_thread(self.github.list_issues, args.get("repo", ""), args.get("state", "open"), args.get("limit", 10))
+                                    elif n == "github_create_issue":
+                                        result = await asyncio.to_thread(self.github.create_issue, args["title"], args.get("body", ""), args.get("labels"), args.get("repo", ""))
+                                    elif n == "github_list_prs":
+                                        result = await asyncio.to_thread(self.github.list_prs, args.get("repo", ""), args.get("state", "open"), args.get("limit", 10))
+                                    elif n == "github_list_commits":
+                                        result = await asyncio.to_thread(self.github.list_commits, args.get("repo", ""), args.get("branch", "main"), args.get("limit", 10))
+                                    elif n == "github_search_code":
+                                        result = await asyncio.to_thread(self.github.search_code, args["query"], args.get("repo", ""))
+
+                                    # ── DOCKER ─────────────────────────────────────────────
+                                    elif n == "docker_list_containers":
+                                        result = await asyncio.to_thread(self.docker.list_containers, args.get("all", False))
+                                    elif n == "docker_get_logs":
+                                        result = await asyncio.to_thread(self.docker.get_container_logs, args["container"], args.get("tail", 50))
+                                    elif n == "docker_start":
+                                        result = await asyncio.to_thread(self.docker.start_container, args["container"])
+                                    elif n == "docker_stop":
+                                        result = await asyncio.to_thread(self.docker.stop_container, args["container"])
+                                    elif n == "docker_restart":
+                                        result = await asyncio.to_thread(self.docker.restart_container, args["container"])
+                                    elif n == "docker_list_images":
+                                        result = await asyncio.to_thread(self.docker.list_images)
+                                    elif n == "docker_stats":
+                                        result = await asyncio.to_thread(self.docker.container_stats, args["container"])
+
+                                    # ── HOME ASSISTANT ─────────────────────────────────────
+                                    elif n == "ha_get_states":
+                                        result = await asyncio.to_thread(self.ha.get_states, args.get("domain", ""))
+                                    elif n == "ha_get_entity":
+                                        result = await asyncio.to_thread(self.ha.get_entity, args["entity_id"])
+                                    elif n == "ha_call_service":
+                                        result = await asyncio.to_thread(self.ha.call_service, args["domain"], args["service"], args.get("entity_id", ""), args.get("data_json", ""))
+                                    elif n == "ha_turn_on":
+                                        result = await asyncio.to_thread(self.ha.turn_on, args["entity_id"])
+                                    elif n == "ha_turn_off":
+                                        result = await asyncio.to_thread(self.ha.turn_off, args["entity_id"])
+
+                                    # ── SPOTIFY ────────────────────────────────────────────
+                                    elif n == "spotify_current":
+                                        result = await asyncio.to_thread(self.spotify.get_current_playback)
+                                    elif n == "spotify_play":
+                                        result = await asyncio.to_thread(self.spotify.play, args.get("uri", ""), args.get("device_id", ""))
+                                    elif n == "spotify_pause":
+                                        result = await asyncio.to_thread(self.spotify.pause)
+                                    elif n == "spotify_next":
+                                        result = await asyncio.to_thread(self.spotify.next_track)
+                                    elif n == "spotify_previous":
+                                        result = await asyncio.to_thread(self.spotify.previous_track)
+                                    elif n == "spotify_volume":
+                                        result = await asyncio.to_thread(self.spotify.set_volume, args["volume_percent"])
+                                    elif n == "spotify_search":
+                                        result = await asyncio.to_thread(self.spotify.search, args["query"], args.get("search_type", "track"), args.get("limit", 5))
+                                    elif n == "spotify_playlists":
+                                        result = await asyncio.to_thread(self.spotify.get_playlists, args.get("limit", 20))
+
+                                    # ── APPLE HEALTH ───────────────────────────────────────
+                                    elif n == "health_steps":
+                                        result = await asyncio.to_thread(self.health.get_steps, args.get("days", 7))
+                                    elif n == "health_sleep":
+                                        result = await asyncio.to_thread(self.health.get_sleep, args.get("days", 7))
+                                    elif n == "health_heart_rate":
+                                        result = await asyncio.to_thread(self.health.get_heart_rate, args.get("days", 3))
+                                    elif n == "health_activity":
+                                        result = await asyncio.to_thread(self.health.get_activity_summary, args.get("days", 7))
+
+                                    # ── GOOGLE MAPS ────────────────────────────────────────
+                                    elif n == "maps_directions":
+                                        result = await asyncio.to_thread(self.maps.get_directions, args["origin"], args["destination"], args.get("mode", "driving"))
+                                    elif n == "maps_travel_time":
+                                        result = await asyncio.to_thread(self.maps.get_travel_time, args["origin"], args["destination"], args.get("mode", "driving"))
+                                    elif n == "maps_search_places":
+                                        result = await asyncio.to_thread(self.maps.search_places, args["query"], args.get("location", ""), args.get("radius", 5000))
+                                    elif n == "maps_geocode":
+                                        result = await asyncio.to_thread(self.maps.geocode, args["address"])
+
+                                    # ── YOUTUBE ────────────────────────────────────────────
+                                    elif n == "youtube_search":
+                                        result = await asyncio.to_thread(self.youtube.search_videos, args["query"], args.get("limit", 5))
+                                    elif n == "youtube_video_info":
+                                        result = await asyncio.to_thread(self.youtube.get_video_info, args["video"])
+                                    elif n == "youtube_transcript":
+                                        result = await asyncio.to_thread(self.youtube.get_transcript, args["video"])
+
+                                    # ── WIKIPEDIA ──────────────────────────────────────────
+                                    elif n == "wikipedia_search":
+                                        result = await asyncio.to_thread(self.wikipedia.search, args["query"], args.get("limit", 5))
+                                    elif n == "wikipedia_article":
+                                        result = await asyncio.to_thread(self.wikipedia.get_article, args["title"], args.get("lang", "fr"))
+
+                                    # ── ARXIV ──────────────────────────────────────────────
+                                    elif n == "arxiv_search":
+                                        result = await asyncio.to_thread(self.arxiv.search, args["query"], args.get("limit", 5), args.get("sort_by", "relevance"))
+                                    elif n == "arxiv_paper":
+                                        result = await asyncio.to_thread(self.arxiv.get_paper, args["arxiv_id"])
+
+                                    # ── CANVA ──────────────────────────────────────────────
+                                    elif n == "canva_list_designs":
+                                        result = await asyncio.to_thread(self.canva.list_designs, args.get("limit", 20))
+                                    elif n == "canva_get_design":
+                                        result = await asyncio.to_thread(self.canva.get_design, args["design_id"])
+                                    elif n == "canva_export_design":
+                                        result = await asyncio.to_thread(self.canva.export_design, args["design_id"], args.get("format", "png"))
+
+                                    # ── FIGMA ──────────────────────────────────────────────
+                                    elif n == "figma_list_files":
+                                        result = await asyncio.to_thread(self.figma.list_files, args.get("team_id", ""), args.get("project_id", ""))
+                                    elif n == "figma_get_file":
+                                        result = await asyncio.to_thread(self.figma.get_file, args["file_key"])
+                                    elif n == "figma_export_node":
+                                        result = await asyncio.to_thread(self.figma.export_node, args["file_key"], args["node_id"], args.get("format", "png"))
+
+                                    # ── ELEVENLABS ─────────────────────────────────────────
+                                    elif n == "elevenlabs_tts":
+                                        result = await asyncio.to_thread(self.elevenlabs.text_to_speech, args["text"], args.get("voice_id", ""), args.get("output_path", ""))
+                                    elif n == "elevenlabs_list_voices":
+                                        result = await asyncio.to_thread(self.elevenlabs.list_voices)
+
+                                    # ── REPLICATE ──────────────────────────────────────────
+                                    elif n == "replicate_generate_image":
+                                        result = await asyncio.to_thread(self.replicate.generate_image, args["prompt"], args.get("model", "stability-ai/sdxl"), args.get("width", 1024), args.get("height", 1024))
+                                    elif n == "replicate_run_model":
+                                        result = await asyncio.to_thread(self.replicate.run_model, args["model_version"], args["input_json"])
+
+                                    else:
+                                        result = f"Tool '{n}' enregistré mais non implémenté dans le routing."
+
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result}
+                                    ))
+
                           except Exception as tool_exc:
                             import traceback as _tb
                             print(f"[ADA DEBUG] [ERR] Tool '{fc.name}' failed: {tool_exc}")
@@ -1574,6 +2143,23 @@ class AudioLoop:
             raise e
 
     async def play_audio(self):
+        # Browser audio mode: playback via Web Audio API in Electron (enables AEC).
+        # PyAudio output stream is not opened to avoid echo.
+        if self.browser_audio_mode:
+            print("[ADA] Browser audio mode — playback via Web Audio API (PyAudio output disabled).")
+            while True:
+                bytestream = await self.audio_in_queue.get()
+                self._is_ada_speaking = True
+                if self.on_audio_data:
+                    self.on_audio_data(bytestream)   # visualization
+                if self.on_audio_pcm:
+                    self.on_audio_pcm(bytestream)    # raw PCM → browser plays it
+                if self.audio_in_queue.empty():
+                    await asyncio.sleep(0.3)
+                    if self.audio_in_queue.empty():
+                        self._is_ada_speaking = False
+            return
+
         stream = await asyncio.to_thread(
             pya.open,
             format=FORMAT,
@@ -1584,9 +2170,15 @@ class AudioLoop:
         )
         while True:
             bytestream = await self.audio_in_queue.get()
+            self._is_ada_speaking = True
             if self.on_audio_data:
                 self.on_audio_data(bytestream)
             await asyncio.to_thread(stream.write, bytestream)
+            # If queue drained, Ada finished speaking — add small tail to let speaker buffer clear
+            if self.audio_in_queue.empty():
+                await asyncio.sleep(0.3)
+                if self.audio_in_queue.empty():
+                    self._is_ada_speaking = False
 
     async def get_frames(self):
         """Camera capture — lazy opens/closes based on video_mode."""
@@ -1764,6 +2356,424 @@ class AudioLoop:
                         self.audio_stream.close()
                     except: 
                         pass
+
+    # ─── MODE TEXTE (Telegram / WhatsApp / bridges) ───────────────────────────
+
+    async def process_text_message(self, text: str) -> str:
+        """Traite un message texte avec TOUS les outils Ada (pour Telegram/WhatsApp)."""
+        api_key = os.getenv("GEMINI_API_KEY", "")
+        if not api_key:
+            return "GEMINI_API_KEY non configurée."
+
+        client = genai.Client(http_options={"api_version": "v1beta"}, api_key=api_key)
+
+        import datetime as _dt
+        now = _dt.datetime.now()
+        date_block = (
+            f"\n\n[DATE & HEURE ACTUELLES]\n"
+            f"Aujourd'hui : {now.strftime('%A %d %B %Y')} — {now.strftime('%H:%M')} (Europe/Paris)\n"
+            f"[FIN DATE]"
+        )
+
+        memory_block = ""
+        try:
+            ctx = memory.get_startup_context()
+            if ctx:
+                memory_block = f"\n\n{ctx}"
+        except Exception:
+            pass
+
+        # config.system_instruction est un objet Content (pas une str) — extraire le texte
+        _si = config.system_instruction
+        if isinstance(_si, str):
+            _si_text = _si
+        elif hasattr(_si, "parts") and _si.parts:
+            _si_text = "".join(p.text for p in _si.parts if hasattr(p, "text") and p.text)
+        elif hasattr(_si, "text"):
+            _si_text = _si.text or ""
+        else:
+            _si_text = str(_si)
+        system = _si_text + date_block + memory_block
+
+        # Nettoyer les tools : supprimer "behavior" (champ Live API only, invalide pour generate_content)
+        def _strip_behavior(tool_list):
+            result = []
+            for tool in tool_list:
+                clean = dict(tool)
+                if "function_declarations" in clean:
+                    clean["function_declarations"] = [
+                        {k: v for k, v in fd.items() if k != "behavior"}
+                        for fd in clean["function_declarations"]
+                    ]
+                result.append(clean)
+            return result
+
+        text_tools = _strip_behavior(tools)
+
+        messages = [types.Content(role="user", parts=[types.Part(text=text)])]
+
+        for _ in range(8):
+            response = await asyncio.to_thread(
+                client.models.generate_content,
+                model="gemini-2.5-flash",
+                contents=messages,
+                config=types.GenerateContentConfig(
+                    system_instruction=system,
+                    tools=text_tools,
+                    temperature=0.7,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
+                ),
+            )
+            candidate = response.candidates[0]
+            content = candidate.content
+            parts = content.parts if (content and content.parts) else []
+
+            function_calls = [p for p in parts if p.function_call]
+            if not function_calls:
+                reply = "\n".join(p.text for p in parts if p.text).strip() or "..."
+                # Sauvegarder l'échange en mémoire persistante
+                try:
+                    memory.append_to_session(f"Bryan (Telegram): {text}")
+                    memory.append_to_session(f"ADA: {reply}")
+                except Exception:
+                    pass
+                return reply
+
+            messages.append(content)
+
+            async def _exec_one(p):
+                fc = p.function_call
+                result = await self._execute_text_tool(fc.name, dict(fc.args))
+                return types.Part(
+                    function_response=types.FunctionResponse(
+                        id=fc.id or fc.name, name=fc.name, response={"result": result}
+                    )
+                )
+
+            tool_parts = await asyncio.gather(*[_exec_one(p) for p in function_calls])
+            messages.append(types.Content(role="user", parts=list(tool_parts)))
+
+        return "Désolé, je n'ai pas pu terminer cette tâche."
+
+    async def _execute_text_tool(self, name: str, args: dict) -> str:
+        """Dispatch d'outils pour le mode texte (Telegram/WhatsApp/etc.)."""
+        print(f"[ADA TEXT] Tool: {name}")
+        try:
+            # ── GMAIL ─────────────────────────────────────────────────────────
+            if name == "read_emails":
+                return await asyncio.to_thread(self.google_agent.read_emails,
+                    max_results=args.get("max_results", 5), query=args.get("query", "in:inbox"))
+            elif name == "send_email":
+                return await asyncio.to_thread(self.google_agent.send_email,
+                    to=args["to"], subject=args["subject"], body=args["body"])
+            elif name == "get_email_body":
+                return await asyncio.to_thread(self.google_agent.get_email_body, args["message_id"])
+            # ── CALENDAR ──────────────────────────────────────────────────────
+            elif name == "list_events":
+                return await asyncio.to_thread(self.google_agent.list_events, max_results=args.get("max_results", 10))
+            elif name == "create_event":
+                return await asyncio.to_thread(self.google_agent.create_event,
+                    title=args["title"], start=args["start"], end=args["end"],
+                    description=args.get("description", ""), attendees=args.get("attendees", []))
+            elif name == "find_event":
+                return await asyncio.to_thread(self.google_agent.find_event,
+                    query=args["query"], max_results=args.get("max_results", 5))
+            elif name == "delete_event":
+                return await asyncio.to_thread(self.google_agent.delete_event, args["event_id"])
+            # ── SELF-CORRECTION (Jarvis repo) ──────────────────────────────────
+            elif name == "jarvis_read_file":
+                path = args.get("path", "")
+                if not path.startswith("/"):
+                    from pathlib import Path as _Path
+                    path = str(_Path("/Users/bryandev/jarvis") / path)
+                if self.self_correction:
+                    return self.self_correction.read_file(path)
+                return "SelfCorrectionAgent non disponible."
+
+            elif name == "jarvis_write_file":
+                path = args.get("path", "")
+                if not path.startswith("/"):
+                    from pathlib import Path as _Path
+                    path = str(_Path("/Users/bryandev/jarvis") / path)
+                if self.self_correction:
+                    return self.self_correction.write_file(path, args.get("content", ""))
+                return "SelfCorrectionAgent non disponible."
+
+            elif name == "jarvis_list_files":
+                path = args.get("path", "")
+                if path and not path.startswith("/"):
+                    from pathlib import Path as _Path
+                    path = str(_Path("/Users/bryandev/jarvis") / path)
+                if self.self_correction:
+                    return self.self_correction.list_files(path)
+                return "SelfCorrectionAgent non disponible."
+
+            elif name == "jarvis_git_commit":
+                if self.self_correction:
+                    return self.self_correction.git_commit(args.get("message", "chore: Ada auto-commit"))
+                return "SelfCorrectionAgent non disponible."
+
+            elif name == "self_correct_file":
+                path = args.get("file_path", "")
+                if not path.startswith("/"):
+                    from pathlib import Path as _Path
+                    path = str(_Path("/Users/bryandev/jarvis") / path)
+                if self.self_correction:
+                    return self.self_correction.correct_file(path, args.get("error_description", ""))
+                return "SelfCorrectionAgent non disponible."
+
+            # ── TERMINAL ──────────────────────────────────────────────────────
+            elif name == "run_terminal":
+                return await self.handle_terminal_request(args.get("command", ""), args.get("working_dir"))
+            # ── WEB ───────────────────────────────────────────────────────────
+            elif name == "run_web_agent":
+                try:
+                    result = await self.web_agent.run_task(args.get("prompt", ""))
+                    return str(result) or "Tâche web terminée."
+                except Exception as e:
+                    return f"Web Agent erreur : {e}"
+            # ── MÉMOIRE ───────────────────────────────────────────────────────
+            elif name == "search_memory":
+                results = memory.search_memory(args.get("query", ""))
+                if results:
+                    return "\n".join(f"[{r['timestamp']}] {r['content']}" for r in results)
+                return "Aucun souvenir trouvé."
+            elif name == "remember":
+                content_val = args.get("content", "")
+                category = args.get("category", "facts")
+                entity_name = args.get("entity_name", "")
+                if category == "entity" and entity_name:
+                    memory.update_entity(entity_name, content_val)
+                    return f"Entité '{entity_name}' mémorisée."
+                memory.add_procedural(category, content_val)
+                return f"Mémorisé dans {category}."
+            elif name == "search_documents":
+                results = memory.search_documents(args.get("query", ""))
+                if results:
+                    return "\n\n---\n\n".join(
+                        f"[{r['filename']} — chunk {r['chunk']}/{r['total_chunks']}]\n{r['content']}"
+                        for r in results)
+                return "Aucun document trouvé."
+            # ── FICHIERS ──────────────────────────────────────────────────────
+            elif name == "write_file":
+                path_str, content_val = args["path"], args["content"]
+                from pathlib import Path as _Path
+                final_path = path_str if os.path.isabs(path_str) else \
+                    self.project_manager.get_current_project_path() / path_str
+                os.makedirs(os.path.dirname(os.path.abspath(str(final_path))), exist_ok=True)
+                with open(final_path, "w", encoding="utf-8") as f:
+                    f.write(content_val)
+                return f"Fichier écrit : {final_path}"
+            elif name == "read_file":
+                p = args["path"]
+                if not os.path.exists(p):
+                    return f"Fichier '{p}' introuvable."
+                with open(p, "r", encoding="utf-8") as f:
+                    return f.read()
+            elif name == "read_directory":
+                p = args.get("path", ".")
+                if not os.path.exists(p):
+                    return f"Dossier '{p}' introuvable."
+                return f"Contenu de '{p}': {', '.join(os.listdir(p))}"
+            # ── PROJETS ───────────────────────────────────────────────────────
+            elif name == "create_project":
+                success, msg = self.project_manager.create_project(args["name"])
+                if success:
+                    self.project_manager.switch_project(args["name"])
+                    msg += f" Basculé sur '{args['name']}'."
+                return msg
+            elif name == "switch_project":
+                success, msg = self.project_manager.switch_project(args["name"])
+                if success:
+                    return f"{msg}\n\n{self.project_manager.get_project_context()}"
+                return msg
+            elif name == "list_projects":
+                return f"Projets : {', '.join(self.project_manager.list_projects())}"
+            # ── DOMOTIQUE ─────────────────────────────────────────────────────
+            elif name == "list_smart_devices":
+                if not self.kasa_agent.devices:
+                    return "Aucun appareil Kasa détecté."
+                out = []
+                for ip, d in self.kasa_agent.devices.items():
+                    t = "bulb" if d.is_bulb else "plug" if d.is_plug else "strip" if d.is_strip else "dimmer" if d.is_dimmer else "?"
+                    out.append(f"{d.alias} (IP:{ip}, {t}) {'[ON]' if d.is_on else '[OFF]'}")
+                return "\n".join(out)
+            elif name == "control_light":
+                r = await self.kasa_agent.control_device(
+                    args.get("ip", ""), args.get("action", ""),
+                    brightness=args.get("brightness"), color_temp=args.get("color_temp"))
+                return str(r)
+            # ── SUB-AGENTS ────────────────────────────────────────────────────
+            elif name == "run_research":
+                return await self.research_agent.run(args.get("query", ""))
+            elif name == "run_task":
+                return await self.task_agent.run(args.get("objective", ""))
+            elif name == "anticipate":
+                return await self.anticipation_agent.run(args.get("context", ""))
+            elif name == "start_monitoring":
+                return await self.monitoring_agent.run(args.get("watch_config", ""))
+            elif name == "stop_monitoring":
+                return await self.monitoring_agent.stop()
+            # ── CONTRÔLE ORDINATEUR ───────────────────────────────────────────
+            elif name == "control_computer":
+                action = args.get("action", "")
+                if action == "screenshot":
+                    return "Screenshot non disponible en mode texte."
+                import subprocess as _sp
+                def _osa(script: str) -> str:
+                    r = _sp.run(["osascript", "-e", script], capture_output=True, text=True)
+                    if r.returncode != 0:
+                        raise RuntimeError(r.stderr.strip())
+                    return r.stdout.strip()
+                text_val = args.get("text", "")
+                x, y = args.get("x"), args.get("y")
+                if action == "type" and text_val:
+                    await asyncio.to_thread(lambda: _sp.run(["pbcopy"], input=text_val.encode(), check=True))
+                    await asyncio.to_thread(_osa, 'tell application "System Events" to keystroke "v" using command down')
+                    return f"Tapé : {text_val[:80]}"
+                elif action == "hotkey" and text_val:
+                    _mods = {"ctrl": "control down", "control": "control down", "cmd": "command down",
+                             "command": "command down", "shift": "shift down", "alt": "option down", "option": "option down"}
+                    parts_ = [p.strip().lower() for p in text_val.split("+")]
+                    key, mods_ = parts_[-1], [_mods[m] for m in parts_[:-1] if m in _mods]
+                    clause = ", ".join(mods_)
+                    script = (f'tell application "System Events" to keystroke "{key}" using {{{clause}}}'
+                              if clause else f'tell application "System Events" to keystroke "{key}"')
+                    await asyncio.to_thread(_osa, script)
+                    return f"Raccourci : {text_val}"
+                elif action in ("click", "right_click", "double_click") and x is not None:
+                    ix, iy = int(x), int(y)
+                    if action == "click":
+                        script = f'tell application "System Events" to click at {{{ix}, {iy}}}'
+                    elif action == "right_click":
+                        script = f'tell application "System Events"\n  set p to {{{ix}, {iy}}}\n  click at p using {{control down}}\nend tell'
+                    else:
+                        script = f'tell application "System Events" to double click at {{{ix}, {iy}}}'
+                    await asyncio.to_thread(_osa, script)
+                    return f"{action} at ({ix},{iy})"
+                return f"Action inconnue : {action}"
+            # ── IMPRIMANTE 3D ─────────────────────────────────────────────────
+            elif name == "discover_printers":
+                return str(await self.printer_agent.discover_printers())
+            elif name == "print_stl":
+                return str(await self.printer_agent.print_stl(args.get("stl_path", ""), args.get("printer_host", "")))
+            elif name == "get_print_status":
+                return str(await self.printer_agent.get_print_status(args.get("printer_host", "")))
+            # ── CAO ───────────────────────────────────────────────────────────
+            elif name == "generate_cad":
+                cad_out = str(self.project_manager.get_current_project_path())
+                cad_data = await self.cad_agent.generate_prototype(args.get("prompt", ""), output_dir=cad_out)
+                if isinstance(cad_data, dict) and "error" in cad_data:
+                    return f"Erreur CAO : {cad_data['error']}"
+                return f"Modèle 3D généré dans : {cad_out}"
+            elif name == "iterate_cad":
+                return "iterate_cad non disponible en mode texte."
+            # ── MCPs ──────────────────────────────────────────────────────────
+            elif name in MCP_TOOL_NAMES:
+                n = name
+                if n == "slack_list_channels": return await asyncio.to_thread(self.slack.list_channels)
+                elif n == "slack_read_channel": return await asyncio.to_thread(self.slack.read_channel, args["channel_id"], args.get("limit", 20))
+                elif n == "slack_send_message": return await asyncio.to_thread(self.slack.send_message, args["channel_id"], args["text"])
+                elif n == "slack_search_messages": return await asyncio.to_thread(self.slack.search_messages, args["query"], args.get("count", 10))
+                elif n == "telegram_send_message": return await asyncio.to_thread(self.telegram.send_message, args["text"], args.get("chat_id"))
+                elif n == "telegram_send_photo": return await asyncio.to_thread(self.telegram.send_photo, args["photo_url"], args.get("caption", ""), args.get("chat_id"))
+                elif n == "telegram_get_updates": return await asyncio.to_thread(self.telegram.get_updates, args.get("limit", 10))
+                elif n == "whatsapp_send_message": return await asyncio.to_thread(self.whatsapp.send_message, args["number"], args["text"])
+                elif n == "whatsapp_send_media": return await asyncio.to_thread(self.whatsapp.send_media, args["number"], args["media_url"], args.get("caption", ""))
+                elif n == "whatsapp_get_messages": return await asyncio.to_thread(self.whatsapp.get_recent_messages, args["number"], args.get("limit", 20))
+                elif n == "notion_search": return await asyncio.to_thread(self.notion.search, args["query"], args.get("limit", 10))
+                elif n == "notion_get_page": return await asyncio.to_thread(self.notion.get_page, args["page_id"])
+                elif n == "notion_create_page": return await asyncio.to_thread(self.notion.create_page, args["parent_id"], args["title"], args.get("content", ""))
+                elif n == "notion_query_database": return await asyncio.to_thread(self.notion.query_database, args["database_id"], args.get("filter_json", ""))
+                elif n == "notion_append_page": return await asyncio.to_thread(self.notion.append_to_page, args["page_id"], args["content"])
+                elif n == "drive_list_files": return await asyncio.to_thread(self.drive.list_files, args.get("query", ""), args.get("limit", 10))
+                elif n == "drive_read_file": return await asyncio.to_thread(self.drive.read_file, args["file_id"])
+                elif n == "drive_upload_file": return await asyncio.to_thread(self.drive.upload_file, args["local_path"], args.get("folder_id", ""))
+                elif n == "sheets_read": return await asyncio.to_thread(self.drive.read_sheet, args["spreadsheet_id"], args.get("range", "Sheet1!A1:Z100"))
+                elif n == "sheets_write": return await asyncio.to_thread(self.drive.write_sheet, args["spreadsheet_id"], args["range"], args["values_json"])
+                elif n == "sheets_append": return await asyncio.to_thread(self.drive.append_sheet, args["spreadsheet_id"], args["range"], args["values_json"])
+                elif n == "docs_read": return await asyncio.to_thread(self.drive.read_doc, args["doc_id"])
+                elif n == "linear_list_issues": return await asyncio.to_thread(self.linear.list_issues, args.get("team_id", ""), args.get("status", ""), args.get("limit", 20))
+                elif n == "linear_get_issue": return await asyncio.to_thread(self.linear.get_issue, args["issue_id"])
+                elif n == "linear_create_issue": return await asyncio.to_thread(self.linear.create_issue, args["title"], args.get("description", ""), args.get("team_id", ""), args.get("priority", 0))
+                elif n == "linear_update_issue": return await asyncio.to_thread(self.linear.update_issue, args["issue_id"], args.get("status", ""), args.get("title", ""), args.get("description", ""))
+                elif n == "linear_list_projects": return await asyncio.to_thread(self.linear.list_projects, args.get("team_id", ""))
+                elif n == "linear_list_teams": return await asyncio.to_thread(self.linear.list_teams)
+                elif n == "stripe_list_customers": return await asyncio.to_thread(self.stripe.list_customers, args.get("limit", 10), args.get("email", ""))
+                elif n == "stripe_get_customer": return await asyncio.to_thread(self.stripe.get_customer, args["customer_id"])
+                elif n == "stripe_list_payments": return await asyncio.to_thread(self.stripe.list_payments, args.get("limit", 10), args.get("customer_id", ""))
+                elif n == "stripe_list_invoices": return await asyncio.to_thread(self.stripe.list_invoices, args.get("limit", 10), args.get("customer_id", ""))
+                elif n == "stripe_get_balance": return await asyncio.to_thread(self.stripe.get_balance)
+                elif n == "stripe_create_invoice_item": return await asyncio.to_thread(self.stripe.create_invoice_item, args["customer_id"], args["amount_cents"], args["currency"], args["description"])
+                elif n == "stripe_send_invoice": return await asyncio.to_thread(self.stripe.send_invoice, args["invoice_id"])
+                elif n == "qonto_get_balance": return await asyncio.to_thread(self.qonto.get_balance)
+                elif n == "qonto_list_transactions": return await asyncio.to_thread(self.qonto.list_transactions, args.get("limit", 25), args.get("status", "completed"))
+                elif n == "qonto_get_organization": return await asyncio.to_thread(self.qonto.get_organization)
+                elif n == "supabase_query": return await asyncio.to_thread(self.supabase.query_table, args["table"], args.get("filters_json", ""), args.get("limit", 20), args.get("columns", "*"))
+                elif n == "supabase_insert": return await asyncio.to_thread(self.supabase.insert_row, args["table"], args["data_json"])
+                elif n == "supabase_update": return await asyncio.to_thread(self.supabase.update_row, args["table"], args["filters_json"], args["data_json"])
+                elif n == "supabase_delete": return await asyncio.to_thread(self.supabase.delete_row, args["table"], args["filters_json"])
+                elif n == "supabase_sql": return await asyncio.to_thread(self.supabase.run_sql, args["query"])
+                elif n == "supabase_list_tables": return await asyncio.to_thread(self.supabase.list_tables)
+                elif n == "vercel_list_projects": return await asyncio.to_thread(self.vercel.list_projects, args.get("limit", 20))
+                elif n == "vercel_get_project": return await asyncio.to_thread(self.vercel.get_project, args["project_id"])
+                elif n == "vercel_list_deployments": return await asyncio.to_thread(self.vercel.list_deployments, args.get("project_id", ""), args.get("limit", 10))
+                elif n == "vercel_get_deployment": return await asyncio.to_thread(self.vercel.get_deployment, args["deployment_id"])
+                elif n == "vercel_get_logs": return await asyncio.to_thread(self.vercel.get_deployment_logs, args["deployment_id"])
+                elif n == "github_list_repos": return await asyncio.to_thread(self.github.list_repos, args.get("limit", 20))
+                elif n == "github_get_repo": return await asyncio.to_thread(self.github.get_repo_info, args.get("repo", ""))
+                elif n == "github_list_issues": return await asyncio.to_thread(self.github.list_issues, args.get("repo", ""), args.get("state", "open"), args.get("limit", 10))
+                elif n == "github_create_issue": return await asyncio.to_thread(self.github.create_issue, args["title"], args.get("body", ""), args.get("labels"), args.get("repo", ""))
+                elif n == "github_list_prs": return await asyncio.to_thread(self.github.list_prs, args.get("repo", ""), args.get("state", "open"), args.get("limit", 10))
+                elif n == "github_list_commits": return await asyncio.to_thread(self.github.list_commits, args.get("repo", ""), args.get("branch", "main"), args.get("limit", 10))
+                elif n == "github_search_code": return await asyncio.to_thread(self.github.search_code, args["query"], args.get("repo", ""))
+                elif n == "docker_list_containers": return await asyncio.to_thread(self.docker.list_containers, args.get("all", False))
+                elif n == "docker_get_logs": return await asyncio.to_thread(self.docker.get_container_logs, args["container"], args.get("tail", 50))
+                elif n == "docker_start": return await asyncio.to_thread(self.docker.start_container, args["container"])
+                elif n == "docker_stop": return await asyncio.to_thread(self.docker.stop_container, args["container"])
+                elif n == "docker_restart": return await asyncio.to_thread(self.docker.restart_container, args["container"])
+                elif n == "docker_list_images": return await asyncio.to_thread(self.docker.list_images)
+                elif n == "docker_stats": return await asyncio.to_thread(self.docker.container_stats, args["container"])
+                elif n == "ha_get_states": return await asyncio.to_thread(self.ha.get_states, args.get("domain", ""))
+                elif n == "ha_get_entity": return await asyncio.to_thread(self.ha.get_entity, args["entity_id"])
+                elif n == "ha_call_service": return await asyncio.to_thread(self.ha.call_service, args["domain"], args["service"], args.get("entity_id", ""), args.get("data_json", ""))
+                elif n == "ha_turn_on": return await asyncio.to_thread(self.ha.turn_on, args["entity_id"])
+                elif n == "ha_turn_off": return await asyncio.to_thread(self.ha.turn_off, args["entity_id"])
+                elif n == "spotify_current": return await asyncio.to_thread(self.spotify.get_current_playback)
+                elif n == "spotify_play": return await asyncio.to_thread(self.spotify.play, args.get("uri", ""), args.get("device_id", ""))
+                elif n == "spotify_pause": return await asyncio.to_thread(self.spotify.pause)
+                elif n == "spotify_next": return await asyncio.to_thread(self.spotify.next_track)
+                elif n == "spotify_previous": return await asyncio.to_thread(self.spotify.previous_track)
+                elif n == "spotify_volume": return await asyncio.to_thread(self.spotify.set_volume, args["volume_percent"])
+                elif n == "spotify_search": return await asyncio.to_thread(self.spotify.search, args["query"], args.get("type", "track"), args.get("limit", 5))
+                elif n == "youtube_search": return await asyncio.to_thread(self.youtube.search_videos, args["query"], args.get("limit", 5))
+                elif n == "youtube_video_info": return await asyncio.to_thread(self.youtube.get_video_info, args["video"])
+                elif n == "youtube_transcript": return await asyncio.to_thread(self.youtube.get_transcript, args["video"])
+                elif n == "wikipedia_search": return await asyncio.to_thread(self.wikipedia.search, args["query"], args.get("limit", 5))
+                elif n == "wikipedia_article": return await asyncio.to_thread(self.wikipedia.get_article, args["title"], args.get("lang", "fr"))
+                elif n == "arxiv_search": return await asyncio.to_thread(self.arxiv.search, args["query"], args.get("limit", 5), args.get("sort_by", "relevance"))
+                elif n == "arxiv_paper": return await asyncio.to_thread(self.arxiv.get_paper, args["arxiv_id"])
+                elif n == "canva_list_designs": return await asyncio.to_thread(self.canva.list_designs, args.get("limit", 20))
+                elif n == "canva_get_design": return await asyncio.to_thread(self.canva.get_design, args["design_id"])
+                elif n == "canva_export_design": return await asyncio.to_thread(self.canva.export_design, args["design_id"], args.get("format", "png"))
+                elif n == "figma_list_files": return await asyncio.to_thread(self.figma.list_files, args.get("team_id", ""), args.get("project_id", ""))
+                elif n == "figma_get_file": return await asyncio.to_thread(self.figma.get_file, args["file_key"])
+                elif n == "figma_export_node": return await asyncio.to_thread(self.figma.export_node, args["file_key"], args["node_id"], args.get("format", "png"))
+                elif n == "elevenlabs_tts": return await asyncio.to_thread(self.elevenlabs.text_to_speech, args["text"], args.get("voice_id", ""), args.get("output_path", ""))
+                elif n == "elevenlabs_list_voices": return await asyncio.to_thread(self.elevenlabs.list_voices)
+                elif n == "replicate_generate_image": return await asyncio.to_thread(self.replicate.generate_image, args["prompt"], args.get("model", "stability-ai/sdxl"), args.get("width", 1024), args.get("height", 1024))
+                elif n == "replicate_run_model": return await asyncio.to_thread(self.replicate.run_model, args["model_version"], args["input_json"])
+                elif n == "maps_directions": return await asyncio.to_thread(self.maps.get_directions, args["origin"], args["destination"], args.get("mode", "driving"))
+                elif n == "maps_place_search": return await asyncio.to_thread(self.maps.search_places, args["query"], args.get("location", ""), args.get("radius", 5000))
+                elif n == "health_summary": return await asyncio.to_thread(self.health.get_summary)
+                elif n == "health_steps": return await asyncio.to_thread(self.health.get_steps, args.get("days", 7))
+                elif n == "health_sleep": return await asyncio.to_thread(self.health.get_sleep, args.get("days", 7))
+                return f"MCP '{name}' non mappé."
+            else:
+                return f"Outil '{name}' non disponible."
+        except Exception as e:
+            return f"Erreur [{name}]: {e}"
+
 
 def get_input_devices():
     p = pyaudio.PyAudio()
