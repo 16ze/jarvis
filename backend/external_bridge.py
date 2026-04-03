@@ -824,6 +824,48 @@ async def _send_voice(source: Literal["telegram", "whatsapp"], sender: str, ogg_
             )
 
 
+# ─── TRANSCRIPTION VOCALE ─────────────────────────────────────────────────────
+
+async def _download_telegram_file(file_id: str) -> bytes | None:
+    """Télécharge un fichier depuis Telegram et retourne ses bytes."""
+    try:
+        async with httpx.AsyncClient(timeout=20) as c:
+            resp = await c.get(_tg_url("getFile"), params={"file_id": file_id})
+            data = resp.json()
+            if not data.get("ok"):
+                warnings.warn(f"[ExternalBridge] getFile erreur: {data.get('description')}")
+                return None
+            file_path = data["result"]["file_path"]
+            file_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}"
+            audio_resp = await c.get(file_url)
+            audio_resp.raise_for_status()
+            return audio_resp.content
+    except Exception as e:
+        warnings.warn(f"[ExternalBridge] Téléchargement fichier Telegram erreur : {e}")
+        return None
+
+
+async def _transcribe_audio(audio_bytes: bytes, mime_type: str = "audio/ogg") -> str | None:
+    """Transcrit un message vocal via Gemini Flash multimodal."""
+    try:
+        client = _agent._get_client()
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model=TEXT_MODEL,
+            contents=[
+                types.Content(parts=[
+                    types.Part(inline_data=types.Blob(mime_type=mime_type, data=audio_bytes)),
+                    types.Part(text="Transcris exactement ce message vocal en français. Retourne uniquement la transcription, sans commentaire."),
+                ]),
+            ],
+        )
+        text = response.candidates[0].content.parts[0].text.strip()
+        return text if text else None
+    except Exception as e:
+        warnings.warn(f"[ExternalBridge] Transcription audio erreur : {e}")
+        return None
+
+
 # ─── POLLING TELEGRAM ─────────────────────────────────────────────────────────
 
 async def _telegram_polling_loop() -> None:
@@ -851,15 +893,32 @@ async def _telegram_polling_loop() -> None:
                     offset = update["update_id"] + 1
                     msg = update.get("message", {})
                     chat_id = str(msg.get("chat", {}).get("id", ""))
-                    text = msg.get("text", "").strip()
 
-                    if not text:
-                        continue
                     if allowed_chat and chat_id != allowed_chat:
                         print(f"[ExternalBridge] Message ignoré (chat_id={chat_id} ≠ {allowed_chat})")
                         continue
 
-                    print(f"[ExternalBridge] Telegram message reçu: {text[:80]}")
+                    text = msg.get("text", "").strip()
+
+                    # Message vocal : transcription avant traitement
+                    if not text:
+                        voice_obj = msg.get("voice") or msg.get("audio")
+                        if voice_obj:
+                            file_id = voice_obj.get("file_id", "")
+                            if not file_id:
+                                continue
+                            mime_type = voice_obj.get("mime_type", "audio/ogg")
+                            print(f"[ExternalBridge] Message vocal reçu (file_id={file_id[:20]}…)")
+                            audio_bytes = await _download_telegram_file(file_id)
+                            if audio_bytes:
+                                transcribed = await _transcribe_audio(audio_bytes, mime_type=mime_type)
+                                if transcribed:
+                                    print(f"[ExternalBridge] Transcription: {transcribed[:80]}")
+                                    text = transcribed
+                        if not text:
+                            continue
+
+                    print(f"[ExternalBridge] Telegram message traité: {text[:80]}")
                     asyncio.create_task(handle_external_message("telegram", chat_id, text))
 
             except asyncio.CancelledError:
