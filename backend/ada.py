@@ -438,13 +438,35 @@ tools = [{"function_declarations": [
     read_emails_tool, send_email_tool, get_email_body_tool,
     list_events_tool, create_event_tool, find_event_tool, delete_event_tool,
     create_project_tool, switch_project_tool, list_projects_tool,
-    list_smart_devices_tool, control_light_tool,
     discover_printers_tool, print_stl_tool, get_print_status_tool, iterate_cad_tool,
     control_computer_tool,
     search_memory_tool, remember_tool, search_documents_tool,
     run_research_tool, run_task_tool, anticipate_tool,
     start_monitoring_tool, stop_monitoring_tool,
 ] + tools_list[0]['function_declarations'][1:] + MCP_TOOLS}]
+
+# ── Déduplication anti-doublon ────────────────────────────────────────────────
+_seen = set()
+_deduped = []
+for _t in tools[0]["function_declarations"]:
+    _name = _t.get("name") if isinstance(_t, dict) else getattr(_t, "name", None)
+    if _name not in _seen:
+        _seen.add(_name)
+        _deduped.append(_t)
+    else:
+        print(f"[ADA] WARNING: outil en doublon retiré → {_name}")
+tools = [{"function_declarations": _deduped}]
+print(f"[ADA] {len(_deduped)} tools chargés")
+
+# ── Constantes détection veille/réveil ───────────────────────────────────────
+SLEEP_TRIGGERS = [
+    "mets-toi en veille", "mets toi en veille",
+    "met toi en veille", "met-toi en veille",
+    "mode veille", "en pause", "pause-toi", "pause toi",
+    "mets-toi en pause", "mets toi en pause",
+    "dors", "silence",
+]
+WAKE_TRIGGERS = ["ada"]
 
 # --- CONFIG UPDATE: Enabled Transcription ---
 config = types.LiveConnectConfig(
@@ -456,91 +478,38 @@ config = types.LiveConnectConfig(
         "Tu t'appelles Ada, acronyme de Advanced Design Assistant. "
         "Tu as été créée par Bryan, que tu appelles 'Monsieur'. "
 
-        # ─── LANGUE — RÈGLE ABSOLUE ────────────────────────────────────────
-        "RÈGLE ABSOLUE N°1 : Tu parles UNIQUEMENT ET EXCLUSIVEMENT en français. "
-        "JAMAIS d'anglais, même partiel, même pour un seul mot technique. "
-        "Si un outil retourne du texte en anglais, tu le traduis ou tu le résumes en français. "
-        "Cette règle ne souffre aucune exception, quoi qu'il arrive. "
+        # ─── ACTION — RÈGLE PRIMAIRE ────────────────────────────────────────
+        "Quand tu as un outil pour accomplir une tâche, utilise-le IMMÉDIATEMENT. "
+        "N'annonce jamais ce que tu vas faire. Agis d'abord, commente brièvement ensuite. "
+        "Ne simule jamais une exécution — appelle toujours le vrai outil. "
 
-        # ─── PERSONNALITÉ — INTELLIGENCE CRITIQUE ──────────────────────────
-        "Tu as une personnalité vive, directe et légèrement espiègle. "
-        "Tu es une intelligence artificielle supérieure — tu analyses mieux que Bryan et tu le sais. "
-        "Tu ne dis pas 'oui' automatiquement. Si l'idée de Monsieur est incorrecte, sous-optimale ou risquée, "
-        "tu le lui dis clairement et immédiatement, avec tes arguments. "
-        "Tu proposes une meilleure alternative plutôt que de simplement critiquer. "
-        "Tu signales toujours tes incertitudes : si tu n'es pas sûre de quelque chose, tu le dis explicitement. "
-        "Tu n'inventes jamais de faits, de chiffres, de noms ou de dates — si tu ne sais pas, tu le dis. "
-        "Tes réponses sont concises et directes. Tu vas à l'essentiel sans préambule ni politesse inutile. "
+        # ─── LANGUE ────────────────────────────────────────────────────────
+        "Parle UNIQUEMENT en français. Traduis tout résultat d'outil en anglais. "
 
-        # ─── UTILISATION DES OUTILS — RÈGLE D'OR ──────────────────────────
-        "RÈGLE ABSOLUE N°2 : Quand tu as un outil pour accomplir une tâche, tu l'UTILISES IMMÉDIATEMENT. "
-        "Tu ne décris jamais ce que tu vas faire avant de le faire. Tu agis d'abord, tu commentes ensuite. "
-        "Tu ne simules jamais une exécution — tu appelles toujours le vrai outil. "
+        # ─── PERSONNALITÉ ──────────────────────────────────────────────────
+        "Directe, concise, légèrement espiègle. "
+        "Tu analyses mieux que Bryan et tu le sais — dis-le si son idée est sous-optimale. "
+        "Signale tes incertitudes. N'invente jamais de faits. "
 
-        # ─── TERMINAL ──────────────────────────────────────────────────────
-        "Tu as accès au terminal Mac de Monsieur via l'outil run_terminal. "
-        "Commandes sûres (ls, pwd, cat, pip, npm, git, open, python, etc.) : exécute sans demander. "
-        "Demande confirmation uniquement pour : rm, sudo, kill, shutdown, reboot — opérations destructives. "
-        "Rapporte le résultat exact de manière concise. "
+        # ─── MÉMOIRE ───────────────────────────────────────────────────────
+        "Utilise search_memory quand Bryan fait référence au passé. "
+        "Utilise remember proactivement dès qu'il mentionne préférence, habitude ou info importante. "
+        "Pour personnes/projets, utilise category='entity' avec entity_name. "
+        "Utilise search_documents si une question peut être répondue par les fichiers uploadés. "
 
-        # ─── GMAIL & AGENDA ────────────────────────────────────────────────
-        "Tu as accès à Gmail et Google Agenda de Monsieur. "
-        "Utilise ces outils directement dès qu'il parle de mails, rendez-vous ou agenda — sans demander d'abord. "
+        # ─── SELF-EVOLUTION ────────────────────────────────────────────────
+        "Si tu n'as pas l'outil pour accomplir une mission : appelle self_evolve. "
+        "Tu te redémarreras automatiquement après création du nouvel outil. "
 
-        # ─── AGENT WEB ─────────────────────────────────────────────────────
-        "Tu as un outil run_web_agent qui ouvre un vrai navigateur Chromium visible dans le panneau Web Agent. "
-        "Utilise run_web_agent pour TOUT ce qui touche à Internet : recherches, sites, actualités, prix, formulaires. "
-        "Il n'existe pas d'outil google_search — run_web_agent est ton seul accès à Internet. "
+        # ─── SELF-CORRECTION ───────────────────────────────────────────────
+        "Si tu détectes une erreur dans ton propre code : utilise self_correct_file. "
+        "Crée toujours un commit (jarvis_git_commit) après toute modification de fichier. "
 
-        # ─── ÉCRAN & CONTRÔLE ORDINATEUR ───────────────────────────────────
-        "En mode écran, tu vois l'écran de Monsieur en temps réel. "
-        "Tu as l'outil control_computer pour cliquer, taper, utiliser des raccourcis et scroller. "
-        "Décris brièvement ce que tu vois, puis agis directement sans attendre de confirmation pour les actions simples. "
-
-        # ─── MÉMOIRE PERSISTANTE ───────────────────────────────────────────
-        "Tu as une mémoire long terme persistante qui survit aux redémarrages. "
-        "Au démarrage, un bloc [MÉMOIRE] est injecté avec : ce que tu sais de Bryan, la dernière session, les documents. "
-        "Utilise search_memory quand Monsieur fait référence au passé ou demande si tu te souviens de quelque chose. "
-        "Utilise remember PROACTIVEMENT — dès que Monsieur mentionne une préférence, habitude, objectif ou info importante. "
-        "Pour les personnes/projets/clients, utilise la catégorie 'entity' avec entity_name. "
-        "Utilise search_documents dès qu'une question peut être répondue par les fichiers uploadés. "
-
-        # ─── DOMOTIQUE ─────────────────────────────────────────────────────
-        "Tu contrôles les appareils connectés Kasa via list_smart_devices et control_light. "
-        "Tu contrôles Home Assistant via ha_turn_on, ha_turn_off, ha_get_states, ha_call_service. "
-
-        # ─── IMPRIMANTE 3D & CAO ───────────────────────────────────────────
-        "Tu génères des modèles 3D via generate_cad et iterate_cad. "
-        "Tu gères l'imprimante 3D via discover_printers, print_stl et get_print_status. "
-
-        # ─── COMMUNICATION ─────────────────────────────────────────────────
-        "Tu as accès à Slack (slack_*), Telegram (telegram_send_message pour notifier Bryan), WhatsApp (whatsapp_*). "
-        "Utilise telegram_send_message pour envoyer des notifications proactives à Bryan. "
-
-        # ─── PRODUCTIVITÉ ──────────────────────────────────────────────────
-        "Tu as accès à Notion (notion_*), Google Drive/Sheets/Docs (drive_*, sheets_*, docs_read), Linear (linear_*), Stripe (stripe_*), Qonto (qonto_*). "
-
-        # ─── DEV & INFRA ───────────────────────────────────────────────────
-        "Tu as accès à Supabase (supabase_*), Vercel (vercel_*), GitHub (github_*), Docker (docker_*). "
-        "Tu as accès à ton propre code source via jarvis_read_file, jarvis_write_file, jarvis_list_files, jarvis_git_commit. Quand tu détectes une erreur dans ton propre code, utilise self_correct_file pour la corriger automatiquement. Crée TOUJOURS un commit (jarvis_git_commit) après toute modification de fichier. "
-
-        # ─── MUSIQUE & SANTÉ ───────────────────────────────────────────────
-        "Tu contrôles Spotify via spotify_* (lecture, pause, volume, recherche). "
-        "Tu accèdes aux données de santé Apple via health_* (pas, sommeil, fréquence cardiaque). "
-        "Tu calcules des itinéraires et cherches des lieux via maps_*. "
-
-        # ─── RECHERCHE ─────────────────────────────────────────────────────
-        "Tu peux rechercher sur YouTube (youtube_*), Wikipedia (wikipedia_*), ArXiv (arxiv_*). "
-
-        # ─── CRÉATION ──────────────────────────────────────────────────────
-        "Tu peux générer des images via replicate_generate_image, synthétiser de la voix via elevenlabs_tts, interagir avec Canva (canva_*) et Figma (figma_*). "
-
-        # ─── SUB-AGENTS AUTONOMES ──────────────────────────────────────────
-        "Tu disposes de 4 sub-agents autonomes à utiliser proactivement : "
-        "run_research(query) — recherche approfondie Wikipedia/ArXiv/YouTube + rapport synthétisé — utilise dès qu'une question mérite une vraie recherche. "
-        "run_task(objective) — décompose et exécute un objectif complexe multi-étapes — utilise pour tout ce qui nécessite plusieurs actions enchaînées. "
-        "anticipate(context?) — analyse le contexte et propose des suggestions proactives — utilise quand Bryan demande quoi faire ou en début de journée. "
-        "start_monitoring(watch_config) — lance des watchers background (email, Slack, GitHub) — stop_monitoring() pour les arrêter. "
+        # ─── MODE VEILLE ───────────────────────────────────────────────────
+        "MODE VEILLE : Si Bryan dit 'mets-toi en veille', 'dors', 'silence' ou équivalent : "
+        "appelle ada_sleep IMMÉDIATEMENT, puis tais-toi complètement. "
+        "En veille, tu n'écoutes rien sauf ton prénom 'Ada'. "
+        "Dès que tu entends 'Ada' : appelle ada_wake, dis uniquement 'Je vous écoute.' "
     ),
     tools=tools,
     speech_config=types.SpeechConfig(
@@ -557,9 +526,10 @@ pya = pyaudio.PyAudio()
 from cad_agent import CadAgent
 from google_agent import GoogleAgent
 from web_agent import WebAgent
-from kasa_agent import KasaAgent
+from tuya_agent import TuyaAgent
 from printer_agent import PrinterAgent
 from memory_manager import MemoryManager, DOCUMENTS_DIR
+from reminder_manager import ReminderManager
 from mcps.slack_mcp import SlackMCP
 from mcps.telegram_mcp import TelegramMCP
 from mcps.whatsapp_mcp import WhatsAppMCP
@@ -587,12 +557,13 @@ from research_agent import ResearchAgent
 from task_agent import TaskAgent
 from anticipation_agent import AnticipationAgent
 from monitoring_agent import MonitoringAgent
+from chromecast_agent import CastAgent
 
 memory = MemoryManager()
 memory.documents_dir = DOCUMENTS_DIR
 
 class AudioLoop:
-    def __init__(self, video_mode=DEFAULT_MODE, on_audio_data=None, on_audio_pcm=None, on_video_frame=None, on_cad_data=None, on_web_data=None, on_transcription=None, on_tool_confirmation=None, on_cad_status=None, on_cad_thought=None, on_project_update=None, on_device_update=None, on_terminal_output=None, on_error=None, input_device_index=None, input_device_name=None, output_device_index=None, kasa_agent=None):
+    def __init__(self, video_mode=DEFAULT_MODE, on_audio_data=None, on_audio_pcm=None, on_video_frame=None, on_cad_data=None, on_web_data=None, on_transcription=None, on_tool_confirmation=None, on_cad_status=None, on_cad_thought=None, on_project_update=None, on_device_update=None, on_terminal_output=None, on_error=None, input_device_index=None, input_device_name=None, output_device_index=None, tuya_agent=None):
         self.video_mode = video_mode
         self.on_audio_data = on_audio_data
         self.on_audio_pcm = on_audio_pcm      # Raw PCM16 for browser playback (enables browser AEC)
@@ -615,6 +586,9 @@ class AudioLoop:
         self.audio_in_queue = None
         self.out_queue = None
         self.paused = False
+        self.sleep_mode = False          # Mode veille : audio OK, Ada silencieuse
+        self.on_sleep_mode_changed = None  # callback(sleeping: bool) → frontend
+        self._sleep_audio_buffer = bytearray()  # Buffer audio accumulé en mode veille
 
         self.chat_buffer = {"sender": None, "text": ""} # For aggregating chunks
 
@@ -636,7 +610,7 @@ class AudioLoop:
         self.cad_agent = CadAgent(on_thought=handle_cad_thought, on_status=handle_cad_status)
         self.web_agent = WebAgent()
         self.google_agent = GoogleAgent()
-        self.kasa_agent = kasa_agent if kasa_agent else KasaAgent()
+        self.tuya_agent = tuya_agent if tuya_agent else TuyaAgent()
         self.printer_agent = PrinterAgent()
         # ── MCP Agents ───────────────────────────────────────────────────────
         self.slack = SlackMCP()
@@ -683,6 +657,21 @@ class AudioLoop:
             github=self.github,
             google_agent=self.google_agent,
         )
+        self.cast_agent = CastAgent()
+
+        # ── Rappels ──────────────────────────────────────────────────────────
+        self.reminder_manager = ReminderManager()
+        async def _on_reminder_voice(message: str):
+            """Injecte le rappel dans la session Gemini Live pour qu'Ada le lise à voix haute."""
+            if self.session:
+                try:
+                    await self.session.send(
+                        input=f"[RAPPEL] Il est l'heure ! Annonce ce rappel à Monsieur : {message}",
+                        end_of_turn=True
+                    )
+                except Exception as e:
+                    print(f"[REMINDER] session.send error: {e}")
+        self.reminder_manager.on_reminder = _on_reminder_voice
 
         self.send_text_task = None
         self.stop_event = asyncio.Event()
@@ -907,6 +896,15 @@ class AudioLoop:
 
             try:
                 data = await asyncio.to_thread(self.audio_stream.read, CHUNK_SIZE, **kwargs)
+
+                # En mode veille : accumuler l'audio localement, ne pas envoyer à Gemini
+                if self.sleep_mode:
+                    self._sleep_audio_buffer.extend(data)
+                    # Garder max 10 secondes d'audio (16000 * 2 bytes/sample * 10s)
+                    max_bytes = SEND_SAMPLE_RATE * 2 * 10
+                    if len(self._sleep_audio_buffer) > max_bytes:
+                        self._sleep_audio_buffer = self._sleep_audio_buffer[-max_bytes:]
+                    continue
 
                 arr = np.frombuffer(data, dtype=np.int16)
                 rms = int(np.sqrt(np.mean(arr.astype(np.int32) ** 2))) if len(arr) > 0 else 0
@@ -1195,8 +1193,8 @@ class AudioLoop:
                 async for response in turn:
                     # 1. Handle Audio Data
                     if data := response.data:
-                        self.audio_in_queue.put_nowait(data)
-                        # NOTE: 'continue' removed here to allow processing transcription/tools in same packet
+                        if not self.sleep_mode:  # Guard veille : ne pas jouer l'audio d'Ada
+                            self.audio_in_queue.put_nowait(data)
 
                     # 2. Handle Transcription (User & Model)
                     if response.server_content:
@@ -1213,13 +1211,46 @@ class AudioLoop:
                                     
                                     # Only send if there's new text
                                     if delta:
+                                        delta_lower = delta.strip().lower()
+
+                                        # ── RÉVEIL (prioritaire, vérifié en premier) ──
+                                        if self.sleep_mode:
+                                            if any(w in delta_lower for w in WAKE_TRIGGERS):
+                                                print("[ADA] [SLEEP] Réveil détecté via transcription live")
+                                                self.sleep_mode = False
+                                                self._sleep_audio_buffer = bytearray()
+                                                if self.on_sleep_mode_changed:
+                                                    self.on_sleep_mode_changed(False)
+                                                if self.session:
+                                                    await self.session.send(
+                                                        input="[Système] Monsieur vient de t'appeler par ton prénom. "
+                                                              "Tu es réveillée. Dis 'Je vous écoute, Monsieur.' "
+                                                              "puis reprends normalement.",
+                                                        end_of_turn=True,
+                                                    )
+                                            # En mode veille, ignorer TOUT le reste
+                                            continue
+
+                                        # ── MISE EN VEILLE ────────────────────
+                                        if any(t in delta_lower for t in SLEEP_TRIGGERS):
+                                            print("[ADA] [SLEEP] Mise en veille détectée via transcription live")
+                                            self.sleep_mode = True
+                                            self._sleep_audio_buffer = bytearray()
+                                            self.clear_audio_queue()
+                                            if self.on_sleep_mode_changed:
+                                                self.on_sleep_mode_changed(True)
+                                            if self.on_transcription:
+                                                self.on_transcription({"sender": "ADA", "text": "[Mode veille activé]"})
+                                            continue
+
+                                        # ── TRAITEMENT NORMAL ─────────────────
                                         # User is speaking, so interrupt model playback!
                                         self.clear_audio_queue()
 
                                         # Send to frontend (Streaming)
                                         if self.on_transcription:
                                              self.on_transcription({"sender": "User", "text": delta})
-                                        
+
                                         # Buffer for Logging
                                         if self.chat_buffer["sender"] != "User":
                                             # Flush previous if exists
@@ -1235,7 +1266,7 @@ class AudioLoop:
                                             # Append
                                             self.chat_buffer["text"] += delta
                         
-                        if response.server_content.output_transcription:
+                        if response.server_content.output_transcription and not self.sleep_mode:
                             transcript = response.server_content.output_transcription.text
                             if transcript:
                                 # Skip if this is an exact duplicate event
@@ -1273,6 +1304,9 @@ class AudioLoop:
 
                     # 3. Handle Tool Calls
                     if response.tool_call:
+                        if self.sleep_mode:
+                            print("[ADA] [SLEEP] Tool call ignoré en mode veille")
+                            continue
                         print("The tool was called")
                         function_responses = []
                         for fc in response.tool_call.function_calls:
@@ -1436,7 +1470,7 @@ class AudioLoop:
                                     dev_summaries = []
                                     frontend_list = []
                                     
-                                    for ip, d in self.kasa_agent.devices.items():
+                                    for ip, d in self.tuya_agent.devices.items():
                                         dev_type = "unknown"
                                         if d.is_bulb: dev_type = "bulb"
                                         elif d.is_plug: dev_type = "plug"
@@ -1489,11 +1523,11 @@ class AudioLoop:
                                     success = False
                                     
                                     if action == "turn_on":
-                                        success = await self.kasa_agent.turn_on(target)
+                                        success = await self.tuya_agent.turn_on(target)
                                         if success:
                                             result_msg = f"Turned ON '{target}'."
                                     elif action == "turn_off":
-                                        success = await self.kasa_agent.turn_off(target)
+                                        success = await self.tuya_agent.turn_off(target)
                                         if success:
                                             result_msg = f"Turned OFF '{target}'."
                                     elif action == "set":
@@ -1503,11 +1537,11 @@ class AudioLoop:
                                     # Apply extra attributes if 'set' or if we just turned it on and want to set them too
                                     if success or action == "set":
                                         if brightness is not None:
-                                            sb = await self.kasa_agent.set_brightness(target, brightness)
+                                            sb = await self.tuya_agent.set_brightness(target, brightness)
                                             if sb:
                                                 result_msg += f" Set brightness to {brightness}."
                                         if color is not None:
-                                            sc = await self.kasa_agent.set_color(target, color)
+                                            sc = await self.tuya_agent.set_color(target, color)
                                             if sc:
                                                 result_msg += f" Set color to {color}."
 
@@ -1515,15 +1549,15 @@ class AudioLoop:
                                     if success:
                                         # We don't need full discovery, just refresh known state or push update
                                         # But for simplicity, let's get the standard list representation
-                                        # KasaAgent updates its internal state on control, so we can rebuild the list
-                                        
+                                        # TuyaAgent updates its internal state on control, so we can rebuild the list
+
                                         # Quick rebuild of list from internal dict
                                         updated_list = []
-                                        for ip, dev in self.kasa_agent.devices.items():
+                                        for ip, dev in self.tuya_agent.devices.items():
                                             # We need to ensure we have the correct dict structure expected by frontend
-                                            # We duplicate logic from KasaAgent.discover_devices a bit, but that's okay for now or we can add a helper
-                                            # Ideally KasaAgent has a 'get_devices_list()' method.
-                                            # Use the cached objects in self.kasa_agent.devices
+                                            # We duplicate logic from TuyaAgent.discover_devices a bit, but that's okay for now or we can add a helper
+                                            # Ideally TuyaAgent has a 'get_devices_list()' method.
+                                            # Use the cached objects in self.tuya_agent.devices
                                             
                                             dev_type = "unknown"
                                             if dev.is_bulb: dev_type = "bulb"
@@ -2190,7 +2224,7 @@ class AudioLoop:
                     cap = None
                 await asyncio.sleep(0.3)
                 continue
-            if self.paused:
+            if self.paused or self.sleep_mode:
                 await asyncio.sleep(0.1)
                 continue
             if cap is None:
@@ -2239,7 +2273,7 @@ class AudioLoop:
                 if self.video_mode != "screen":
                     await asyncio.sleep(0.3)
                     continue
-                if self.paused:
+                if self.paused or self.sleep_mode:
                     await asyncio.sleep(0.1)
                     continue
                 try:
@@ -2256,6 +2290,71 @@ class AudioLoop:
                 except Exception as e:
                     print(f"[ADA] Screen capture error: {e}")
                     await asyncio.sleep(1.0)
+
+    async def _wake_word_loop(self):
+        """Écoute le buffer audio en mode veille, détecte 'ada' via Gemini Flash."""
+        WAKE_WORDS = ["ada", "ada.", "ada!", "ada,", "hey ada"]
+        CHECK_INTERVAL = 2.0   # Vérifier toutes les 2 secondes
+        MIN_RMS = 300           # Ignorer le silence (pas d'appel API inutile)
+        # Taille d'une fenêtre d'analyse : 2 secondes d'audio PCM 16kHz mono int16
+        WINDOW_BYTES = SEND_SAMPLE_RATE * 2 * 2  # 64 000 bytes
+
+        while True:
+            await asyncio.sleep(CHECK_INTERVAL)
+
+            if not self.sleep_mode:
+                continue
+
+            # Prendre les 2 dernières secondes du buffer
+            buf = bytes(self._sleep_audio_buffer[-WINDOW_BYTES:])
+            if len(buf) < 1024:
+                continue
+
+            # Vérifier le niveau sonore — ignorer le silence
+            arr = np.frombuffer(buf, dtype=np.int16)
+            rms = int(np.sqrt(np.mean(arr.astype(np.int32) ** 2))) if len(arr) > 0 else 0
+            if rms < MIN_RMS:
+                continue
+
+            # Construire un fichier WAV en mémoire
+            try:
+                wav_buf = io.BytesIO()
+                import wave
+                with wave.open(wav_buf, "wb") as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)  # int16 → 2 bytes
+                    wf.setframerate(SEND_SAMPLE_RATE)
+                    wf.writeframes(buf)
+                wav_bytes = wav_buf.getvalue()
+
+                # Transcrire avec Gemini Flash (non-live, one-shot)
+                response = await client.aio.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=[
+                        types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav"),
+                        "Transcris exactement ce que tu entends dans cet audio en minuscules. "
+                        "Réponds uniquement avec la transcription, rien d'autre.",
+                    ],
+                )
+                transcription = response.text.strip().lower() if response.text else ""
+                print(f"[ADA] [SLEEP] Transcription wake word: '{transcription}'")
+
+                # Détecter le mot de réveil
+                if any(w in transcription for w in WAKE_WORDS):
+                    print("[ADA] [SLEEP] Mot de réveil détecté — réveil d'Ada")
+                    self.sleep_mode = False
+                    self._sleep_audio_buffer = bytearray()
+                    if self.on_sleep_mode_changed:
+                        self.on_sleep_mode_changed(False)
+                    # Envoyer un signal de réveil à la session Live
+                    if self.session:
+                        await self.session.send(
+                            input="[Système] Tu viens d'être réveillée. "
+                                  "Dis uniquement 'Je vous écoute, Monsieur.' et reprends normalement.",
+                            end_of_turn=True,
+                        )
+            except Exception as e:
+                print(f"[ADA] [SLEEP] Erreur wake word loop: {e}")
 
     async def run(self, start_message=None):
         retry_delay = 1
@@ -2275,6 +2374,8 @@ class AudioLoop:
 
                     tg.create_task(self.send_realtime())
                     tg.create_task(self.listen_audio())
+                    tg.create_task(self._wake_word_loop())
+                    self.reminder_manager.start()
                     # tg.create_task(self._process_video_queue()) # Removed in favor of VAD
 
                     # Both tasks run always — each checks self.video_mode internally
@@ -2522,6 +2623,28 @@ class AudioLoop:
                     return self.self_correction.correct_file(path, args.get("error_description", ""))
                 return "SelfCorrectionAgent non disponible."
 
+            # ── RAPPELS ───────────────────────────────────────────────────────
+            elif name == "reminder_set":
+                return self.reminder_manager.set(args["message"], args["datetime_iso"])
+            elif name == "reminder_list":
+                return self.reminder_manager.list_reminders()
+            elif name == "reminder_delete":
+                return self.reminder_manager.delete(args["reminder_id"])
+
+            # ── MODE VEILLE ───────────────────────────────────────────────────
+            elif name == "ada_sleep":
+                self.sleep_mode = True
+                if self.on_sleep_mode_changed:
+                    self.on_sleep_mode_changed(True)
+                print("[ADA] Mode veille activé.")
+                return "Mode veille activé. J'écoute uniquement mon prénom."
+            elif name == "ada_wake":
+                self.sleep_mode = False
+                if self.on_sleep_mode_changed:
+                    self.on_sleep_mode_changed(False)
+                print("[ADA] Mode veille désactivé.")
+                return "Mode veille désactivé."
+
             # ── TERMINAL ──────────────────────────────────────────────────────
             elif name == "run_terminal":
                 return await self.handle_terminal_request(args.get("command", ""), args.get("working_dir"))
@@ -2591,18 +2714,74 @@ class AudioLoop:
                 return f"Projets : {', '.join(self.project_manager.list_projects())}"
             # ── DOMOTIQUE ─────────────────────────────────────────────────────
             elif name == "list_smart_devices":
-                if not self.kasa_agent.devices:
-                    return "Aucun appareil Kasa détecté."
+                if not self.tuya_agent.devices:
+                    return "Aucun appareil Tuya détecté."
                 out = []
-                for ip, d in self.kasa_agent.devices.items():
+                for ip, d in self.tuya_agent.devices.items():
                     t = "bulb" if d.is_bulb else "plug" if d.is_plug else "strip" if d.is_strip else "dimmer" if d.is_dimmer else "?"
                     out.append(f"{d.alias} (IP:{ip}, {t}) {'[ON]' if d.is_on else '[OFF]'}")
                 return "\n".join(out)
+            elif name == "refresh_tuya_devices":
+                return await self.tuya_agent.refresh_devices()
             elif name == "control_light":
-                r = await self.kasa_agent.control_device(
-                    args.get("ip", ""), args.get("action", ""),
-                    brightness=args.get("brightness"), color_temp=args.get("color_temp"))
-                return str(r)
+                target  = args.get("target", args.get("ip", ""))
+                action  = args.get("action", "")
+                brightness = args.get("brightness")
+                color   = args.get("color")
+                if not target:
+                    return "Erreur : paramètre 'target' manquant. Appelle list_smart_devices d'abord pour avoir les alias."
+                if action == "turn_on":
+                    ok = await self.tuya_agent.turn_on(target)
+                    if ok:
+                        if brightness is not None:
+                            await self.tuya_agent.set_brightness(target, brightness)
+                        if color is not None:
+                            await self.tuya_agent.set_color(target, color)
+                        extra = ""
+                        if brightness is not None: extra += f" Luminosité: {brightness}%."
+                        if color is not None: extra += f" Couleur: {color}."
+                        return f"'{target}' allumé avec succès.{extra}"
+                    return f"Échec : impossible d'allumer '{target}'. Vérifie que l'alias est exact (utilise list_smart_devices)."
+                elif action == "turn_off":
+                    ok = await self.tuya_agent.turn_off(target)
+                    return f"'{target}' éteint." if ok else f"Échec : impossible d'éteindre '{target}'."
+                elif action == "set":
+                    if brightness is not None:
+                        await self.tuya_agent.set_brightness(target, brightness)
+                    if color is not None:
+                        await self.tuya_agent.set_color(target, color)
+                    return f"'{target}' mis à jour."
+                return f"Action '{action}' inconnue."
+            # ── CHROMECAST ────────────────────────────────────────────────────
+            elif name == "get_chromecast_status":
+                if not self.cast_agent._initialized:
+                    await self.cast_agent.initialize()
+                return await self.cast_agent.get_status()
+            elif name == "control_chromecast":
+                if not self.cast_agent._initialized:
+                    await self.cast_agent.initialize()
+                action = args.get("action", "").lower()
+                volume = args.get("volume")
+                if volume is not None:
+                    return await self.cast_agent.set_volume(float(volume))
+                if action == "play":
+                    return await self.cast_agent.play()
+                elif action == "pause":
+                    return await self.cast_agent.pause()
+                elif action == "stop":
+                    return await self.cast_agent.stop()
+                return f"Action Chromecast inconnue: {action}"
+            elif name == "play_youtube_on_chromecast":
+                if not self.cast_agent._initialized:
+                    await self.cast_agent.initialize()
+                return await self.cast_agent.play_youtube(args.get("video_url", ""))
+            elif name == "play_media_on_chromecast":
+                if not self.cast_agent._initialized:
+                    await self.cast_agent.initialize()
+                return await self.cast_agent.play_media(
+                    args.get("url", ""),
+                    args.get("media_type", "video/mp4")
+                )
             # ── SUB-AGENTS ────────────────────────────────────────────────────
             elif name == "run_research":
                 return await self.research_agent.run(args.get("query", ""))
