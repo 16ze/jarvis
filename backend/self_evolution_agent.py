@@ -425,6 +425,25 @@ class SelfEvolutionAgent:
         except Exception as e:
             errors.append(f"ada.py dispatch: {e}")
 
+        # 3b. Injecter dispatch dans external_bridge.py — _execute_tool
+        bridge_dispatch_path = BACKEND_DIR / "external_bridge.py"
+        try:
+            content = bridge_dispatch_path.read_text(encoding="utf-8")
+            bridge_dispatch_anchor = "        return f\"Outil '{name}' non disponible ou non configuré.\""
+            if bridge_dispatch_anchor in content:
+                idx = content.find(bridge_dispatch_anchor)
+                dispatch = blocks["dispatch"]
+                dispatch_indented = "\n".join(
+                    "        " + line if line.strip() else line
+                    for line in dispatch.split("\n")
+                )
+                content = content[:idx] + dispatch_indented + "\n" + content[idx:]
+                bridge_dispatch_path.write_text(content, encoding="utf-8")
+            else:
+                errors.append("Marqueur dispatch introuvable dans external_bridge.py (_execute_tool)")
+        except Exception as e:
+            errors.append(f"external_bridge.py dispatch: {e}")
+
         # 4. Injecter init dans external_bridge.py — fin de _init_agents
         bridge_path = BACKEND_DIR / "external_bridge.py"
         try:
