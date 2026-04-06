@@ -631,6 +631,14 @@ class AudioLoop:
             import warnings
             warnings.warn(f"[ADA] SelfCorrectionAgent init: {e}")
             self.self_correction = None
+        self.evolution_agent = None
+        try:
+            from self_evolution_agent import SelfEvolutionAgent
+            self.evolution_agent = SelfEvolutionAgent()
+        except Exception as e:
+            import warnings
+            warnings.warn(f"[ADA] SelfEvolutionAgent init: {e}")
+            self.evolution_agent = None
         self.docker = DockerMCP()
         self.ha = HomeAssistantMCP()
         self.spotify = SpotifyMCP()
@@ -2622,6 +2630,15 @@ class AudioLoop:
                 if self.self_correction:
                     return self.self_correction.correct_file(path, args.get("error_description", ""))
                 return "SelfCorrectionAgent non disponible."
+
+            # ── SELF-EVOLUTION ─────────────────────────────────────────────────
+            elif name == "self_evolve":
+                if self.evolution_agent:
+                    return await self.evolution_agent.evolve(
+                        goal=args.get("goal", ""),
+                        failed_context=args.get("failed_context", ""),
+                    )
+                return "SelfEvolutionAgent non disponible."
 
             # ── RAPPELS ───────────────────────────────────────────────────────
             elif name == "reminder_set":
