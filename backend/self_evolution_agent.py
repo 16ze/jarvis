@@ -21,7 +21,7 @@ from google.genai import types
 
 load_dotenv()
 
-JARVIS_ROOT    = Path("/Users/bryandev/jarvis").resolve()
+JARVIS_ROOT    = Path(os.getenv("JARVIS_ROOT", "/Users/bryandev/jarvis")).resolve()
 BACKEND_DIR    = JARVIS_ROOT / "backend"
 MCPS_DIR       = BACKEND_DIR / "mcps"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -284,7 +284,7 @@ class SelfEvolutionAgent:
         # Étape 2 : import subprocess isolé
         with tempfile.NamedTemporaryFile(
             suffix=".py", mode="w", encoding="utf-8",
-            dir=MCPS_DIR, delete=False,
+            dir=tempfile.gettempdir(), delete=False,
             prefix=f"_test_{service_name}_"
         ) as tmp:
             tmp.write(mcp_code)
@@ -293,10 +293,12 @@ class SelfEvolutionAgent:
         try:
             result = subprocess.run(
                 [sys.executable, "-c",
-                 f"import importlib.util; "
-                 f"spec = importlib.util.spec_from_file_location('test_mcp', '{tmp_path}'); "
-                 f"mod = importlib.util.module_from_spec(spec); "
-                 f"spec.loader.exec_module(mod); print('OK')"],
+                 "import importlib.util, sys; "
+                 "p = sys.argv[1]; "
+                 "spec = importlib.util.spec_from_file_location('test_mcp', p); "
+                 "mod = importlib.util.module_from_spec(spec); "
+                 "spec.loader.exec_module(mod); print('OK')",
+                 tmp_path],
                 capture_output=True, text=True, timeout=15,
                 cwd=str(BACKEND_DIR)
             )
@@ -385,6 +387,20 @@ class SelfEvolutionAgent:
                     + content[idx:]
                 )
                 decl_path.write_text(content, encoding="utf-8")
+                # Injecter aussi les noms de variables dans la liste MCP_TOOLS
+                import re as _re
+                # Extraire les noms de variables de type: var_name = {
+                var_names = _re.findall(r'^([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*\{', blocks["declarations"], _re.MULTILINE)
+                if var_names:
+                    content2 = decl_path.read_text(encoding="utf-8")
+                    # Chercher le ] de fermeture de MCP_TOOLS
+                    list_start = content2.find("MCP_TOOLS = [")
+                    if list_start != -1:
+                        close_bracket = content2.rfind("]", list_start)
+                        if close_bracket != -1:
+                            refs = "".join(f"    {v},\n" for v in var_names)
+                            content2 = content2[:close_bracket] + refs + content2[close_bracket:]
+                            decl_path.write_text(content2, encoding="utf-8")
             else:
                 errors.append("MCP_TOOLS marker introuvable dans mcp_tools_declarations.py")
         except Exception as e:
@@ -487,7 +503,7 @@ class SelfEvolutionAgent:
 
             # 4. Écrire les fichiers
             print(f"[Evolution] WRITE: {service_name}")
-            write_result = self._write_files(analysis, blocks)
+            write_result = await asyncio.to_thread(self._write_files, analysis, blocks)
             if write_result != "OK":
                 msg = f"[ADA EVOLUTION] Erreur écriture : {write_result}"
                 await self._notify_telegram(msg)
