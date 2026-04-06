@@ -769,6 +769,99 @@ ha_call_service_tool = {
         "required": ["domain", "service"]
     }
 }
+# ── Domotique locale Tuya ─────────────────────────────────────────────────────
+list_smart_devices_tool = {
+    "name": "list_smart_devices",
+    "description": "Liste les appareils Tuya connectés sur le réseau local (ampoules, prises). Utilise cet outil pour voir quels appareils sont disponibles, leur état (allumé/éteint) et leur alias.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {}
+    }
+}
+control_light_tool = {
+    "name": "control_light",
+    "description": "Contrôle une ampoule ou un appareil Tuya local par son alias (ex: 'CHAMBRE PRINCIPAL'). Utilise TOUJOURS cet outil pour allumer, éteindre, changer la couleur ou la luminosité d'une lumière. Ne jamais utiliser ha_turn_on pour les lumières Tuya.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "target": {"type": "STRING", "description": "Alias de l'appareil (ex: 'CHAMBRE PRINCIPAL')"},
+            "action": {"type": "STRING", "description": "Action à effectuer : 'turn_on', 'turn_off', ou 'set'"},
+            "brightness": {"type": "NUMBER", "description": "Luminosité entre 0 et 100 (optionnel)"},
+            "color": {"type": "STRING", "description": "Couleur en anglais : red, green, blue, yellow, orange, purple, pink, white, warm, cool (optionnel)"}
+        },
+        "required": ["target", "action"]
+    }
+}
+
+refresh_tuya_devices_tool = {
+    "name": "refresh_tuya_devices",
+    "description": "Resynchronise les alias des appareils Tuya depuis le cloud SmartLife/Tuya. À utiliser quand les noms dans SmartLife ont changé et ne correspondent plus à ce qu'Ada connaît.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {}
+    }
+}
+
+# ── CHROMECAST ───────────────────────────────────────────────────────────────
+get_chromecast_status_tool = {
+    "name": "get_chromecast_status",
+    "description": "Récupère l'état actuel du Chromecast : ce qui joue en ce moment, l'app active, le volume. Utilise cet outil quand Monsieur demande ce qui passe sur la TV ou sur le Chromecast.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {}
+    }
+}
+control_chromecast_tool = {
+    "name": "control_chromecast",
+    "description": "Contrôle la lecture sur le Chromecast : play, pause, stop ou réglage du volume.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "action": {
+                "type": "STRING",
+                "description": "Action : 'play' (reprendre), 'pause' (mettre en pause), 'stop' (arrêter)."
+            },
+            "volume": {
+                "type": "NUMBER",
+                "description": "Volume optionnel entre 0.0 et 1.0 (ex: 0.5 pour 50%). Si fourni, règle le volume sans changer l'état de lecture."
+            }
+        },
+        "required": ["action"]
+    }
+}
+play_youtube_on_chromecast_tool = {
+    "name": "play_youtube_on_chromecast",
+    "description": "Lance une vidéo YouTube sur le Chromecast. Utilise cet outil quand Monsieur demande de mettre une vidéo YouTube sur la TV.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "video_url": {
+                "type": "STRING",
+                "description": "URL complète de la vidéo YouTube (ex: https://www.youtube.com/watch?v=dQw4w9WgXcQ)."
+            }
+        },
+        "required": ["video_url"]
+    }
+}
+play_media_on_chromecast_tool = {
+    "name": "play_media_on_chromecast",
+    "description": "Lance un média quelconque (vidéo, audio, image) sur le Chromecast via son URL directe.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "url": {
+                "type": "STRING",
+                "description": "URL directe du fichier média à lancer."
+            },
+            "media_type": {
+                "type": "STRING",
+                "description": "Type MIME du média (ex: 'video/mp4', 'audio/mp3', 'image/jpeg'). Défaut: 'video/mp4'."
+            }
+        },
+        "required": ["url"]
+    }
+}
+
 ha_turn_on_tool = {
     "name": "ha_turn_on",
     "description": "Allume une entité Home Assistant (lumière, prise, etc.).",
@@ -1223,6 +1316,89 @@ self_correct_file_tool = {
     }, "required": ["file_path", "error_description"]}
 }
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# RAPPELS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ada_sleep_tool = {
+    "name": "ada_sleep",
+    "description": (
+        "Met Ada en mode veille. À appeler quand Monsieur dit 'mets-toi en pause', "
+        "'dors', 'silence', 'mode veille' ou toute formulation équivalente. "
+        "En mode veille Ada écoute mais ne répond à rien sauf à son prénom."
+    ),
+    "parameters": {"type": "OBJECT", "properties": {}}
+}
+
+ada_wake_tool = {
+    "name": "ada_wake",
+    "description": (
+        "Sort Ada du mode veille. À appeler OBLIGATOIREMENT dès qu'Ada entend son prénom "
+        "après avoir été mise en veille, avant de répondre quoi que ce soit."
+    ),
+    "parameters": {"type": "OBJECT", "properties": {}}
+}
+
+reminder_set_tool = {
+    "name": "reminder_set",
+    "description": (
+        "Crée un rappel qui se déclenchera à une date/heure précise. "
+        "Ada parlera ou enverra un message Telegram au moment du rappel. "
+        "Utilise cet outil dès que Monsieur demande de lui rappeler quelque chose."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "message": {"type": "STRING", "description": "Le contenu du rappel, tel qu'Ada devra le lire."},
+            "datetime_iso": {"type": "STRING", "description": "Date et heure ISO 8601, ex: '2026-04-03T15:30:00'. Heure locale Paris."},
+        },
+        "required": ["message", "datetime_iso"]
+    }
+}
+
+reminder_list_tool = {
+    "name": "reminder_list",
+    "description": "Liste tous les rappels actifs (non encore déclenchés).",
+    "parameters": {"type": "OBJECT", "properties": {}}
+}
+
+reminder_delete_tool = {
+    "name": "reminder_delete",
+    "description": "Supprime un rappel par son ID (obtenu via reminder_list).",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "reminder_id": {"type": "STRING", "description": "ID du rappel à supprimer (ex: 'a3f2b1c0')."},
+        },
+        "required": ["reminder_id"]
+    }
+}
+
+# ── SELF-EVOLUTION ────────────────────────────────────────────────────────────
+self_evolve_tool = {
+    "name": "self_evolve",
+    "description": (
+        "Crée automatiquement un nouveau connecteur MCP quand Ada n'a pas l'outil "
+        "pour accomplir une mission. Appelle cet outil UNIQUEMENT après avoir constaté "
+        "qu'aucun outil existant ne peut réaliser la tâche demandée. "
+        "Ada se redémarre automatiquement après la création pour activer le nouvel outil."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "goal": {
+                "type": "STRING",
+                "description": "Ce que tu voulais accomplir (ex: 'envoyer un SMS via Twilio')"
+            },
+            "failed_context": {
+                "type": "STRING",
+                "description": "Ce qui a échoué et pourquoi (outil manquant, erreur reçue, contexte)"
+            }
+        },
+        "required": ["goal", "failed_context"]
+    }
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # LISTE CONSOLIDÉE — à importer dans ada.py
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1247,8 +1423,11 @@ MCP_TOOLS = [
     github_list_prs_tool, github_list_commits_tool, github_search_code_tool,
     docker_list_containers_tool, docker_get_logs_tool, docker_start_tool, docker_stop_tool,
     docker_restart_tool, docker_list_images_tool, docker_stats_tool,
-    # Smart Home
+    # Smart Home — Tuya local (priorité sur Home Assistant)
+    list_smart_devices_tool, control_light_tool, refresh_tuya_devices_tool,
     ha_get_states_tool, ha_get_entity_tool, ha_call_service_tool, ha_turn_on_tool, ha_turn_off_tool,
+    # Chromecast
+    get_chromecast_status_tool, control_chromecast_tool, play_youtube_on_chromecast_tool, play_media_on_chromecast_tool,
     spotify_current_tool, spotify_play_tool, spotify_pause_tool, spotify_next_tool, spotify_previous_tool,
     spotify_volume_tool, spotify_search_tool, spotify_playlists_tool,
     health_steps_tool, health_sleep_tool, health_heart_rate_tool, health_activity_tool,
@@ -1264,6 +1443,12 @@ MCP_TOOLS = [
     replicate_generate_image_tool, replicate_run_model_tool,
     # Self-correction (Jarvis repo)
     jarvis_read_file_tool, jarvis_write_file_tool, jarvis_list_files_tool, jarvis_git_commit_tool, self_correct_file_tool,
+    # Rappels
+    reminder_set_tool, reminder_list_tool, reminder_delete_tool,
+    # Mode veille
+    ada_sleep_tool, ada_wake_tool,
+    # Self-evolution
+    self_evolve_tool,
 ]
 
 MCP_TOOL_NAMES = {t["name"] for t in MCP_TOOLS}
