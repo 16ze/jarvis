@@ -484,7 +484,7 @@ config = types.LiveConnectConfig(
         "Ne simule jamais une exécution — appelle toujours le vrai outil. "
 
         # ─── LANGUE ────────────────────────────────────────────────────────
-        "Parle UNIQUEMENT en français. Traduis tout résultat d'outil en anglais. "
+        "Parle UNIQUEMENT en français. Traduis tout résultat d'outil en français. "
 
         # ─── PERSONNALITÉ ──────────────────────────────────────────────────
         "Directe, concise, légèrement espiègle. "
