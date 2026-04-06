@@ -119,7 +119,15 @@ _CORE_TOOL_DEFS = [
      }, "required": ["command"]}},
 ]
 
-_BRIDGE_TOOLS = [{"function_declarations": _CORE_TOOL_DEFS + MCP_TOOLS}]
+_EXCLUDED_FROM_BRIDGE = {
+    "generate_cad", "iterate_cad", "generate_cad_prototype",
+    "control_computer",
+    "discover_printers", "print_stl", "get_print_status",
+    "run_web_agent",
+    "ada_sleep", "ada_wake",
+}
+_BRIDGE_MCP_TOOLS = [t for t in MCP_TOOLS if t["name"] not in _EXCLUDED_FROM_BRIDGE]
+_BRIDGE_TOOLS = [{"function_declarations": _CORE_TOOL_DEFS + _BRIDGE_MCP_TOOLS}]
 
 # ─── TEXT AGENT ───────────────────────────────────────────────────────────────
 
@@ -154,6 +162,14 @@ class TextAgent:
         self._maps     = None
         self._health   = None
         self._self_correction = None
+        self._reminder = None
+        self._cast     = None
+        self._tuya        = None
+        self._research    = None
+        self._task        = None
+        self._anticipation = None
+        self._monitoring  = None
+        self._evolution   = None
         self._init_done = False
 
     def _init_agents(self):
@@ -290,6 +306,59 @@ class TextAgent:
             self._self_correction = SelfCorrectionAgent()
         except Exception as e:
             warnings.warn(f"[TextAgent] SelfCorrectionAgent: {e}")
+        try:
+            from chromecast_agent import CastAgent
+            self._cast = CastAgent()
+        except Exception as e:
+            warnings.warn(f"[TextAgent] CastAgent: {e}")
+        try:
+            from reminder_manager import ReminderManager
+            self._reminder = ReminderManager()
+            async def _on_reminder_telegram(message: str):
+                await _send_text("telegram", TELEGRAM_CHAT_ID, f"⏰ Rappel : {message}")
+            self._reminder.on_reminder = _on_reminder_telegram
+            self._reminder.start()
+        except Exception as e:
+            warnings.warn(f"[TextAgent] ReminderManager: {e}")
+        try:
+            from tuya_agent import TuyaAgent
+            self._tuya = TuyaAgent()
+        except Exception as e:
+            warnings.warn(f"[TextAgent] TuyaAgent: {e}")
+        try:
+            from research_agent import ResearchAgent
+            self._research = ResearchAgent(
+                wikipedia=self._wiki,
+                arxiv=self._arxiv,
+                youtube=self._yt,
+            )
+        except Exception as e:
+            warnings.warn(f"[TextAgent] ResearchAgent: {e}")
+        try:
+            from task_agent import TaskAgent
+            self._task = TaskAgent()
+        except Exception as e:
+            warnings.warn(f"[TextAgent] TaskAgent: {e}")
+        try:
+            from anticipation_agent import AnticipationAgent
+            self._anticipation = AnticipationAgent(memory=self._memory)
+        except Exception as e:
+            warnings.warn(f"[TextAgent] AnticipationAgent: {e}")
+        try:
+            from monitoring_agent import MonitoringAgent
+            self._monitoring = MonitoringAgent(
+                telegram=self._telegram,
+                slack=self._slack,
+                github=self._github,
+                google_agent=self._google,
+            )
+        except Exception as e:
+            warnings.warn(f"[TextAgent] MonitoringAgent: {e}")
+        try:
+            from self_evolution_agent import SelfEvolutionAgent
+            self._evolution = SelfEvolutionAgent()
+        except Exception as e:
+            warnings.warn(f"[TextAgent] SelfEvolutionAgent: {e}")
 
     def _get_client(self) -> genai.Client:
         if self._client is None:
@@ -611,6 +680,171 @@ class TextAgent:
                 from pathlib import Path as _Path
                 path = str(_Path("/Users/bryandev/jarvis") / path)
             return self._self_correction.correct_file(path, args.get("error_description", ""))
+
+        # ── SELF-EVOLUTION ─────────────────────────────────────────────────────
+        elif name == "self_evolve" and self._evolution:
+            return await self._evolution.evolve(
+                goal=args.get("goal", ""),
+                failed_context=args.get("failed_context", ""),
+            )
+
+        # ── RAPPELS ───────────────────────────────────────────────────────────
+        elif name == "reminder_set" and self._reminder:
+            return self._reminder.set(args["message"], args["datetime_iso"])
+        elif name == "reminder_list" and self._reminder:
+            return self._reminder.list_reminders()
+        elif name == "reminder_delete" and self._reminder:
+            return self._reminder.delete(args["reminder_id"])
+
+        # ── CHROMECAST ────────────────────────────────────────────────────────
+        elif name == "get_chromecast_status" and self._cast:
+            if not self._cast._initialized:
+                await self._cast.initialize()
+            return await self._cast.get_status()
+        elif name == "control_chromecast" and self._cast:
+            if not self._cast._initialized:
+                await self._cast.initialize()
+            action = args.get("action", "").lower()
+            volume = args.get("volume")
+            if volume is not None:
+                return await self._cast.set_volume(float(volume))
+            if action == "play":
+                return await self._cast.play()
+            elif action == "pause":
+                return await self._cast.pause()
+            elif action == "stop":
+                return await self._cast.stop()
+            return f"Action Chromecast inconnue: {action}"
+        elif name == "play_youtube_on_chromecast" and self._cast:
+            if not self._cast._initialized:
+                await self._cast.initialize()
+            return await self._cast.play_youtube(args.get("video_url", ""))
+        elif name == "play_media_on_chromecast" and self._cast:
+            if not self._cast._initialized:
+                await self._cast.initialize()
+            return await self._cast.play_media(
+                args.get("url", ""),
+                args.get("media_type", "video/mp4")
+            )
+
+        # ── DOMOTIQUE (Tuya) ──────────────────────────────────────────────────
+        elif name == "refresh_tuya_devices" and self._tuya:
+            return await self._tuya.refresh_devices()
+        elif name == "list_smart_devices" and self._tuya:
+            if not self._tuya.devices:
+                await self._tuya.initialize()
+            summaries = []
+            for ip, d in self._tuya.devices.items():
+                dev_type = "ampoule" if d.is_bulb else "prise" if d.is_plug else "inconnu"
+                state = "ON" if d.is_on else "OFF"
+                summaries.append(f"{d.alias} ({dev_type}) [{state}]")
+            return "\n".join(summaries) if summaries else "Aucun appareil trouvé."
+
+        elif name == "control_light" and self._tuya:
+            if not self._tuya.devices:
+                await self._tuya.initialize()
+            target = args.get("target", "")
+            action = args.get("action", "")
+            brightness = args.get("brightness")
+            color = args.get("color")
+            if action == "turn_on":
+                success = await self._tuya.turn_on(target)
+                result = f"'{target}' allumé." if success else f"Échec allumage '{target}'."
+            elif action == "turn_off":
+                success = await self._tuya.turn_off(target)
+                result = f"'{target}' éteint." if success else f"Échec extinction '{target}'."
+            elif action == "set":
+                success = True
+                result = f"'{target}' mis à jour."
+            else:
+                return f"Action inconnue: {action}"
+            if success:
+                if brightness is not None:
+                    await self._tuya.set_brightness(target, brightness)
+                    result += f" Luminosité: {brightness}%."
+                if color is not None:
+                    await self._tuya.set_color(target, color)
+                    result += f" Couleur: {color}."
+            return result
+
+        # ── SUB-AGENTS ────────────────────────────────────────────────────────
+        elif name == "run_research" and self._research:
+            return await self._research.run(args.get("query", ""))
+        elif name == "run_task" and self._task:
+            return await self._task.run(args.get("objective", ""))
+        elif name == "anticipate" and self._anticipation:
+            return await self._anticipation.run(args.get("context", ""))
+        elif name == "start_monitoring" and self._monitoring:
+            return await self._monitoring.run(args.get("watch_config", ""))
+        elif name == "stop_monitoring" and self._monitoring:
+            return "Monitoring arrêté."
+
+        # ── RECHERCHE (compléments) ───────────────────────────────────────────
+        elif name == "wikipedia_article" and self._wiki:
+            return await asyncio.to_thread(self._wiki.get_article, args.get("title", ""), args.get("lang", "fr"))
+        elif name == "arxiv_paper" and self._arxiv:
+            return await asyncio.to_thread(self._arxiv.get_paper, args.get("arxiv_id", ""))
+        elif name == "youtube_video_info" and self._yt:
+            return await asyncio.to_thread(self._yt.get_video_info, args.get("video", ""))
+        elif name == "youtube_transcript" and self._yt:
+            return await asyncio.to_thread(self._yt.get_transcript, args.get("video", ""))
+
+        # ── SPOTIFY (compléments) ─────────────────────────────────────────────
+        elif name == "spotify_playlists" and self._spotify:
+            return await asyncio.to_thread(self._spotify.get_playlists)
+
+        # ── MAPS (compléments) ────────────────────────────────────────────────
+        elif name == "maps_search_places" and self._maps:
+            return await asyncio.to_thread(self._maps.search_places, args.get("query", ""), args.get("location", ""), args.get("radius", 5000))
+        elif name == "maps_travel_time" and self._maps:
+            return await asyncio.to_thread(self._maps.get_travel_time, args.get("origin", ""), args.get("destination", ""), args.get("mode", "driving"))
+        elif name == "maps_geocode" and self._maps:
+            return await asyncio.to_thread(self._maps.geocode, args.get("address", ""))
+
+        # ── SANTÉ (compléments) ───────────────────────────────────────────────
+        elif name == "health_activity" and self._health:
+            return await asyncio.to_thread(self._health.get_activity, args.get("days", 7))
+        elif name == "health_heart_rate" and self._health:
+            return await asyncio.to_thread(self._health.get_heart_rate, args.get("days", 7))
+
+        # ── CRÉATION (compléments) ────────────────────────────────────────────
+        elif name == "canva_list_designs" and self._canva:
+            return await asyncio.to_thread(self._canva.list_designs, args.get("limit", 20))
+        elif name == "canva_get_design" and self._canva:
+            return await asyncio.to_thread(self._canva.get_design, args.get("design_id", ""))
+        elif name == "canva_export_design" and self._canva:
+            return await asyncio.to_thread(self._canva.export_design, args.get("design_id", ""), args.get("format", "png"))
+        elif name == "figma_list_files" and self._figma:
+            return await asyncio.to_thread(self._figma.list_files, args.get("team_id", ""), args.get("project_id", ""))
+        elif name == "figma_get_file" and self._figma:
+            return await asyncio.to_thread(self._figma.get_file, args.get("file_key", ""))
+        elif name == "figma_export_node" and self._figma:
+            return await asyncio.to_thread(self._figma.export_node, args.get("file_key", ""), args.get("node_id", ""), args.get("format", "png"))
+        elif name == "replicate_generate_image" and self._replicate:
+            return await asyncio.to_thread(self._replicate.generate_image, args.get("prompt", ""), args.get("model", "stability-ai/sdxl"), args.get("width", 1024), args.get("height", 1024))
+        elif name == "replicate_run_model" and self._replicate:
+            return await asyncio.to_thread(self._replicate.run_model, args.get("model_version", ""), args.get("input_json", ""))
+
+        # ── FICHIERS ──────────────────────────────────────────────────────────
+        elif name == "read_file":
+            try:
+                with open(args.get("path", ""), "r") as f:
+                    return f.read()[:5000]
+            except Exception as e:
+                return f"Erreur lecture: {e}"
+        elif name == "read_directory":
+            import os as _os
+            try:
+                return "\n".join(_os.listdir(args.get("path", ".")))
+            except Exception as e:
+                return f"Erreur listdir: {e}"
+        elif name == "write_file":
+            try:
+                with open(args.get("path", ""), "w") as f:
+                    f.write(args.get("content", ""))
+                return "Fichier écrit."
+            except Exception as e:
+                return f"Erreur écriture: {e}"
 
         return f"Outil '{name}' non disponible ou non configuré."
 
