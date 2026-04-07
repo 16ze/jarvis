@@ -1593,6 +1593,25 @@ camera_look_tool = {
 # LISTE CONSOLIDÉE — à importer dans ada.py
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── TWILIO (auto-généré) ─────────────────────────────────────────────
+# ── TWILIO ────────────────────────────────────────────────────────────────────
+twilio_send_sms_tool = {
+    "name": "twilio_send_sms",
+    "description": "Envoie un message SMS à un numéro de téléphone spécifié. Le numéro de l'expéditeur est configuré par défaut.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "to": {"type": "STRING", "description": "Le numéro de téléphone du destinataire au format international (ex: +33612345678)."},
+            "body": {"type": "STRING", "description": "Le contenu du message SMS à envoyer."}
+        },
+        "required": ["to", "body"]
+    }
+}
+
+# Assurez-vous que MCP_TOOLS est défini quelque part avant d'ajouter des outils
+# Exemple: MCP_TOOLS = []
+MCP_TOOLS.append(twilio_send_sms_tool)
+
 MCP_TOOLS = [
     # Communication
     slack_list_channels_tool, slack_read_channel_tool, slack_send_message_tool, slack_search_messages_tool,
@@ -1647,4 +1666,5 @@ MCP_TOOLS = [
     camera_tracking_tool, camera_motion_detect_tool, camera_watch_tool,
 ]
 
-MCP_TOOL_NAMES = {t["name"] for t in MCP_TOOLS}
+MCP_TOOL_NAMES = {t["name"    twilio_send_sms_tool,
+] for t in MCP_TOOLS}

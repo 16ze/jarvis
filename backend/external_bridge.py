@@ -427,6 +427,10 @@ class TextAgent:
         except Exception as e:
             warnings.warn(f"[TextAgent] MonitoringAgent: {e}")
         try:
+            self.twilio = TwilioMCP()
+        except Exception as e:
+            warnings.warn(f"[TextAgent] TwilioMCP: {e}")
+        try:
             from self_evolution_agent import SelfEvolutionAgent
             self._evolution = SelfEvolutionAgent()
         except Exception as e:
