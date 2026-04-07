@@ -609,6 +609,13 @@ class AudioLoop:
         
         self.cad_agent = CadAgent(on_thought=handle_cad_thought, on_status=handle_cad_status)
         self.web_agent = WebAgent()
+        try:
+            from advanced_browser_agent import AdvancedBrowserAgent
+            self.advanced_browser_agent = AdvancedBrowserAgent()
+        except Exception as e:
+            import warnings
+            warnings.warn(f"[ADA] AdvancedBrowserAgent init: {e}")
+            self.advanced_browser_agent = None
         self.google_agent = GoogleAgent()
         self.tuya_agent = tuya_agent if tuya_agent else TuyaAgent()
         self.printer_agent = PrinterAgent()
@@ -1156,6 +1163,38 @@ class AudioLoop:
         except Exception as e:
             print(f"[ADA DEBUG] [ERR] Failed to send web agent result to model: {e}")
 
+    async def handle_advanced_browser_request(self, mission: str):
+        print(f"[ADA DEBUG] [BROWSER+] Advanced Browser Mission: '{mission}'")
+
+        if self.on_web_data:
+            self.on_web_data({"image": None, "log": f"[BROWSER+] Mission: {mission[:80]}"})
+
+        async def update_frontend(data: dict):
+            if self.on_web_data:
+                self.on_web_data(data)
+
+        if not self.advanced_browser_agent:
+            result = "AdvancedBrowserAgent non disponible."
+        else:
+            try:
+                result = await self.advanced_browser_agent.run(
+                    mission, step_callback=update_frontend
+                )
+            except Exception as e:
+                print(f"[ADA DEBUG] [ERR] AdvancedBrowser crashed: {e}")
+                if self.on_web_data:
+                    self.on_web_data({"image": None, "log": f"[BROWSER+] Erreur : {e}"})
+                result = f"Navigation avancée échouée : {e}"
+
+        try:
+            if self.session:
+                await self.session.send(
+                    input=f"System Notification: Navigation avancée terminée.\nRésultat: {result}",
+                    end_of_turn=True,
+                )
+        except Exception as e:
+            print(f"[ADA DEBUG] [ERR] Failed to send advanced browser result: {e}")
+
     async def handle_terminal_request(self, command, working_dir=None):
         import subprocess
         print(f"[ADA DEBUG] [TERMINAL] Executing: {command}")
@@ -1350,7 +1389,16 @@ class AudioLoop:
                                     print(f"[ADA DEBUG] [RESPONSE] Sending function response: {function_response}")
                                     function_responses.append(function_response)
 
-
+                                elif fc.name == "advanced_web_navigation":
+                                    mission = fc.args.get("mission", "")
+                                    print(f"[ADA DEBUG] [TOOL] Tool Call: 'advanced_web_navigation' mission='{mission[:60]}'")
+                                    asyncio.create_task(self.handle_advanced_browser_request(mission))
+                                    function_response = types.FunctionResponse(
+                                        id=fc.id,
+                                        name=fc.name,
+                                        response={"result": "Navigation avancée démarrée. Je te tiendrai informé."},
+                                    )
+                                    function_responses.append(function_response)
 
                                 elif fc.name == "run_terminal":
                                     command = fc.args.get("command", "")
@@ -2672,6 +2720,14 @@ class AudioLoop:
                     return str(result) or "Tâche web terminée."
                 except Exception as e:
                     return f"Web Agent erreur : {e}"
+            # ── NAVIGATION AVANCÉE ────────────────────────────────────────────
+            elif name == "advanced_web_navigation":
+                if not self.advanced_browser_agent:
+                    return "AdvancedBrowserAgent non disponible (vérifier les dépendances)."
+                try:
+                    return await self.advanced_browser_agent.run(args.get("mission", ""))
+                except Exception as e:
+                    return f"Navigation avancée erreur : {e}"
             # ── MÉMOIRE ───────────────────────────────────────────────────────
             elif name == "search_memory":
                 results = memory.search_memory(args.get("query", ""))
