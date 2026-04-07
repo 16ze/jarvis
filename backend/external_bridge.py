@@ -30,7 +30,7 @@ _ENV_FOR_TOOL: dict = {
     "spotify": "SPOTIFY_CLIENT_ID", "maps": "GOOGLE_MAPS_API_KEY", "canva": "CANVA_API_KEY",
     "figma": "FIGMA_API_KEY", "elevenlabs": "ELEVENLABS_API_KEY", "replicate": "REPLICATE_API_TOKEN",
     "whatsapp": "WHATSAPP_API_URL", "drive": "GOOGLE_CLIENT_ID", "sheets": "GOOGLE_CLIENT_ID",
-    "docs": "GOOGLE_CLIENT_ID", "telegram": "TELEGRAM_BOT_TOKEN",
+    "docs": "GOOGLE_CLIENT_ID", "telegram": "TELEGRAM_BOT_TOKEN", "twilio": "TWILIO_ACCOUNT_SID",
 }
 
 def _format_tool_error(tool_name: str, exc: Exception) -> str:
@@ -126,6 +126,7 @@ ADA_SYSTEM_PROMPT = (
 # ─── TOOL DEFINITIONS (subset utile pour le bridge texte) ─────────────────────
 
 from mcp_tools_declarations import MCP_TOOLS, MCP_TOOL_NAMES
+from mcps.twilio_mcp import TwilioMCP
 
 _CORE_TOOL_DEFS = [
     # Gmail
@@ -236,6 +237,7 @@ class TextAgent:
         self._monitoring  = None
         self._evolution   = None
         self._advanced_browser = None
+        self.twilio = None # Added for TwilioMCP
         self._init_done = False
 
     def _init_agents(self):
@@ -548,6 +550,10 @@ class TextAgent:
             return await asyncio.to_thread(self._whatsapp.send_media, args["number"], args["media_url"], args.get("caption", ""))
         elif name == "whatsapp_get_messages" and self._whatsapp:
             return await asyncio.to_thread(self._whatsapp.get_recent_messages, args["number"], args.get("limit", 20))
+
+        # ── TWILIO ───────────────────────────────────────────────────────────
+        elif name == "twilio_send_sms" and self.twilio:
+            return await asyncio.to_thread(self.twilio.send_sms, args["to"], args["body"])
 
         # ── NOTION ───────────────────────────────────────────────────────────
         elif name == "notion_search" and self._notion:
@@ -880,10 +886,10 @@ class TextAgent:
             color = args.get("color")
             if action == "turn_on":
                 success = await self._tuya.turn_on(target)
-                result = f"'{target}' allumé." if success else f"Échec allumage '{target}'."
+                result = f"'{target}' allumé." if success else f"Échec allumage '{target}'.'"
             elif action == "turn_off":
                 success = await self._tuya.turn_off(target)
-                result = f"'{target}' éteint." if success else f"Échec extinction '{target}'."
+                result = f"'{target}' éteint." if success else f"Échec extinction '{target}'.'"
             elif action == "set":
                 success = True
                 result = f"'{target}' mis à jour."
