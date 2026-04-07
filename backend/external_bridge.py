@@ -181,6 +181,12 @@ _CORE_TOOL_DEFS = [
      "parameters": {"type": "OBJECT", "properties": {
          "command": {"type": "STRING"}, "working_dir": {"type": "STRING"}
      }, "required": ["command"]}},
+    # Twilio
+    {"name": "twilio_send_sms", "description": "Envoie un SMS via Twilio.",
+     "parameters": {"type": "OBJECT", "properties": {
+         "to": {"type": "STRING", "description": "Numéro de téléphone du destinataire (format E.164, ex: +33612345678)"},
+         "body": {"type": "STRING", "description": "Contenu du message SMS"}
+     }, "required": ["to", "body"]}},
 ]
 
 _EXCLUDED_FROM_BRIDGE = {
@@ -444,7 +450,7 @@ class TextAgent:
             warnings.warn(f"[TextAgent] AdvancedBrowserAgent: {e}")
             self._advanced_browser = None
 
-    def _get_client(self) -> genai.Client:
+    def _get_client() -> genai.Client:
         if self._client is None:
             if not GEMINI_API_KEY:
                 raise RuntimeError("GEMINI_API_KEY non configurée")
