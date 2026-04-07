@@ -26,3 +26,5 @@ build123d
 # Browser-use (navigation web avancée via LLM)
 browser-use>=0.1.0
 langchain-google-genai>=2.0.0
+# OS Control (keyboard & mouse automation)
+pynput>=1.7.0
