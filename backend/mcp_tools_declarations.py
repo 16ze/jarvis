@@ -1399,6 +1399,27 @@ self_evolve_tool = {
     }
 }
 
+# ── ADVANCED BROWSER ──────────────────────────────────────────────────────────
+advanced_web_navigation_tool = {
+    "name": "advanced_web_navigation",
+    "description": (
+        "Navigue sur le web de manière complexe (clics, formulaires, "
+        "navigation multi-pages, connexion aux comptes) pour accomplir "
+        "des missions métier ou personnelles. Utilise les sessions "
+        "existantes (LinkedIn, Gmail, etc.) si disponibles."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "mission": {
+                "type": "STRING",
+                "description": "Description complète de la mission web à accomplir en langage naturel."
+            }
+        },
+        "required": ["mission"]
+    }
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # LISTE CONSOLIDÉE — à importer dans ada.py
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1436,6 +1457,7 @@ MCP_TOOLS = [
     youtube_search_tool, youtube_video_info_tool, youtube_transcript_tool,
     wikipedia_search_tool, wikipedia_article_tool,
     arxiv_search_tool, arxiv_paper_tool,
+    advanced_web_navigation_tool,
     # Création
     canva_list_designs_tool, canva_get_design_tool, canva_export_design_tool,
     figma_list_files_tool, figma_get_file_tool, figma_export_node_tool,
