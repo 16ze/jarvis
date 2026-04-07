@@ -170,6 +170,7 @@ class TextAgent:
         self._anticipation = None
         self._monitoring  = None
         self._evolution   = None
+        self._advanced_browser = None
         self._init_done = False
 
     def _init_agents(self):
@@ -782,7 +783,12 @@ class TextAgent:
             if not self._advanced_browser:
                 return "AdvancedBrowserAgent non disponible (vérifier les dépendances)."
             try:
-                return await self._advanced_browser.run(args.get("mission", ""))
+                return await asyncio.wait_for(
+                    self._advanced_browser.run(args.get("mission", "")),
+                    timeout=300.0,
+                )
+            except asyncio.TimeoutError:
+                return "Navigation avancée : timeout dépassé (5 min). Mission trop longue ou bloquée."
             except Exception as e:
                 return f"Navigation avancée erreur : {e}"
         elif name == "anticipate" and self._anticipation:
