@@ -1,0 +1,1688 @@
+{
+    "result": [
+        {
+            "active_time": 1775472172,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1733854764,
+            "icon": "smart/solution/143006/37e69c2be34b7642_cover.png",
+            "id": "bfd8161b62f1f1e787e1bh",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "iBXC|i*4tOs48xA#",
+            "lon": "6.85",
+            "model": "5026000500",
+            "name": "Lanternes",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "scinrd2v8kyisrfu",
+            "product_name": "LSC SMART A60 RGB+CCT\t",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":0,\"s\":0,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAPoA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478254,
+            "uuid": "ec6b3a98ac1cc9ef"
+        },
+        {
+            "active_time": 1775472176,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1764174143,
+            "icon": "smart/solution/143006/37e69c2be34b7642_cover.png",
+            "id": "bf7c3de6e623d87941chtt",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "Q0xBIPm3~'hIKO>8",
+            "lon": "6.85",
+            "model": "5026000500",
+            "name": "Lanternes",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "scinrd2v8kyisrfu",
+            "product_name": "LSC SMART A60 RGB+CCT\t",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":300,\"s\":500,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAPoA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478243,
+            "uuid": "5ef9b553bb0a8d80"
+        },
+        {
+            "active_time": 1775473951,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1733939954,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bfdf4c229d3981591f2ibl",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "NvpThccv#^}+~p=3",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Cuisine",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":0,\"s\":0,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAAAA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478224,
+            "uuid": "764e2b247228bcd5"
+        },
+        {
+            "active_time": 1775473926,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1764174267,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bf6562f1418dd48865kw0s",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "WZIAL&NKI!Y_@}c{",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Cuisine",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":0,\"s\":0,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAHgPoA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478207,
+            "uuid": "cead5ac32015808f"
+        },
+        {
+            "active_time": 1775473938,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1764174249,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bfb339ff2d03e33300412w",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "wIqxY4w_?J{q|xy(",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Cuisine",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":0,\"s\":0,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAHgPoA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478194,
+            "uuid": "1f9fd5995cc7163f"
+        },
+        {
+            "active_time": 1775473934,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1733939911,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bf0d639026b487b343ibeg",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": ")`:]l^[6jNlWTH8m",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Cuisine",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":0,\"s\":0,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAAAA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478183,
+            "uuid": "dcd681f2acebf99a"
+        },
+        {
+            "active_time": 1775473939,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1764174220,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bf38c240f8d3196af4iecn",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "{L~D''-Sh~GCE8}$",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Cuisine",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":0,\"s\":0,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAAAA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478171,
+            "uuid": "9bdce07b1fa0dc7e"
+        },
+        {
+            "active_time": 1775472176,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1764059082,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bf07020671bff79aa3xrol",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "|2Tfd8Gom!T8tutV",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Couloir",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":0,\"s\":0,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAPoA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478154,
+            "uuid": "be74f093778863d6"
+        },
+        {
+            "active_time": 1775472154,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1764173940,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bfe8ae84b8a25bcffdgxl7",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "+~8hj2pI[3AZ6L_]",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Couloir",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":0,\"s\":0,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAPoA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478109,
+            "uuid": "45e95f74f6a425e1"
+        },
+        {
+            "active_time": 1775472152,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1764059114,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bfc8ca346d2db577efsaha",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "&![EmL&wbNNrw4)/",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Couloir",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":0,\"s\":0,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAPoA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478099,
+            "uuid": "bc00f881f468e12d"
+        },
+        {
+            "active_time": 1775472150,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1764059317,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bf80b7222e9faa2083ocdc",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "akk!tc~^hFKI'0-Q",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Couloir",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":0,\"s\":0,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAPoA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478089,
+            "uuid": "9af18ce52ea7faec"
+        },
+        {
+            "active_time": 1775473552,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1733853357,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bff9c92022a55f4f82jpsr",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "hb1F.0Okj59*+FiY",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Salon",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":300,\"s\":500,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAAAA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478037,
+            "uuid": "5b908b01c5ff6366"
+        },
+        {
+            "active_time": 1775473557,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1733853347,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bf7d2b939418571a04f7zd",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "AzpF8:$6<.mTHt^e",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Salon",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":240,\"s\":1000,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAHgPoA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478024,
+            "uuid": "bc884892a43d6cf5"
+        },
+        {
+            "active_time": 1775473559,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1764173913,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bf5f56786c7acf6f15rmc4",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "B+W]K(14t(as]0+i",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Salon",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":240,\"s\":1000,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAPoA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478014,
+            "uuid": "b6e20774dca0282f"
+        },
+        {
+            "active_time": 1775473567,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1733853334,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bf0d6e45ca8b51340enn3l",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": ">`ST+h5M.uCTCt?=",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Salon",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":300,\"s\":500,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAAAA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775478003,
+            "uuid": "058df334c47c8eb7"
+        },
+        {
+            "active_time": 1775473568,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1733853368,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bf89ae443e30175f11ektx",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "$]gJ2/n}D]1(B==m",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Salon",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":300,\"s\":500,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAAAA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775477993,
+            "uuid": "d2a34162e89ac260"
+        },
+        {
+            "active_time": 1775473568,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1764173896,
+            "icon": "smart/icon/ay1541056239985fDGjj/4ca3506b1674f990a2b326d5028aed82.png",
+            "id": "bfd6dcdb664a1355c7tm0a",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "P|f::ds4k}N&2;pt",
+            "lon": "6.85",
+            "model": "5026000400",
+            "name": "Salon",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "ekwolitfjhxn55js",
+            "product_name": "LSC Smart Connect GU10 RGB+CCT",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 0
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":240,\"s\":1000,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAAAAAA+gD6AAA"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775477981,
+            "uuid": "76c709535783a62f"
+        },
+        {
+            "active_time": 1775349900,
+            "biz_type": 18,
+            "category": "dj",
+            "create_time": 1733854703,
+            "icon": "smart/solution/143006/37e69c2be34b7642_cover.png",
+            "id": "bfc29b1c7a4d67414b2nxy",
+            "ip": "176.170.169.159",
+            "lat": "47.66",
+            "local_key": "spd=}}K)97;4/;v>",
+            "lon": "6.85",
+            "model": "5026000500",
+            "name": "CHAMBRE PRINCIPAL",
+            "online": true,
+            "owner_id": "283969930",
+            "product_id": "scinrd2v8kyisrfu",
+            "product_name": "LSC SMART A60 RGB+CCT\t",
+            "status": [
+                {
+                    "code": "switch_led",
+                    "value": true
+                },
+                {
+                    "code": "work_mode",
+                    "value": "colour"
+                },
+                {
+                    "code": "bright_value_v2",
+                    "value": 1000
+                },
+                {
+                    "code": "temp_value_v2",
+                    "value": 690
+                },
+                {
+                    "code": "colour_data_v2",
+                    "value": "{\"h\":0,\"s\":0,\"v\":1000}"
+                },
+                {
+                    "code": "scene_data_v2",
+                    "value": "{\"scene_num\":1,\"scene_units\":[{\"bright\":200,\"h\":0,\"s\":0,\"temperature\":0,\"unit_change_mode\":\"static\",\"unit_gradient_duration\":13,\"unit_switch_duration\":14,\"v\":0}]}"
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "music_data",
+                    "value": ""
+                },
+                {
+                    "code": "control_data",
+                    "value": ""
+                },
+                {
+                    "code": "rhythm_mode",
+                    "value": "AAAAAAA="
+                },
+                {
+                    "code": "sleep_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "wakeup_mode",
+                    "value": "AAA="
+                },
+                {
+                    "code": "power_memory",
+                    "value": "AAEAQwAAA+gD6AKy"
+                },
+                {
+                    "code": "do_not_disturb",
+                    "value": false
+                },
+                {
+                    "code": "remote_switch",
+                    "value": true
+                },
+                {
+                    "code": "cycle_timing",
+                    "value": "AAAA"
+                },
+                {
+                    "code": "random_timing",
+                    "value": "AAAA"
+                }
+            ],
+            "sub": false,
+            "time_zone": "+02:00",
+            "uid": "eu1775348923611loFBf",
+            "update_time": 1775474475,
+            "uuid": "fa0d1d7c65d04094"
+        }
+    ],
+    "success": true,
+    "t": 1775479799535,
+    "tid": "1f038aee31b711f1b270d6c5c1a9e32b",
+    "file": {
+        "name": "tuya-raw.json",
+        "description": "Full raw list of Tuya devices.",
+        "account": "3nsttrp3susycpusk4ep",
+        "date": "2026-04-06T14:49:59.577153",
+        "tinytuya": "1.17.6"
+    }
+}

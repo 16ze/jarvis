@@ -22,6 +22,32 @@ from google.genai import types
 
 load_dotenv()
 
+# ─── FORMATEUR D'ERREURS ACTIONNABLE ─────────────────────────────────────────
+_ENV_FOR_TOOL: dict = {
+    "slack": "SLACK_BOT_TOKEN", "notion": "NOTION_API_KEY", "linear": "LINEAR_API_KEY",
+    "stripe": "STRIPE_SECRET_KEY", "qonto": "QONTO_API_KEY", "supabase": "SUPABASE_URL",
+    "vercel": "VERCEL_TOKEN", "github": "GITHUB_TOKEN", "ha": "HOME_ASSISTANT_URL",
+    "spotify": "SPOTIFY_CLIENT_ID", "maps": "GOOGLE_MAPS_API_KEY", "canva": "CANVA_API_KEY",
+    "figma": "FIGMA_API_KEY", "elevenlabs": "ELEVENLABS_API_KEY", "replicate": "REPLICATE_API_TOKEN",
+    "whatsapp": "WHATSAPP_API_URL", "drive": "GOOGLE_CLIENT_ID", "sheets": "GOOGLE_CLIENT_ID",
+    "docs": "GOOGLE_CLIENT_ID", "telegram": "TELEGRAM_BOT_TOKEN",
+}
+
+def _format_tool_error(tool_name: str, exc: Exception) -> str:
+    prefix = tool_name.split("_")[0]
+    env_var = _ENV_FOR_TOOL.get(prefix)
+    err_str = str(exc)
+    if env_var and not os.getenv(env_var):
+        return (f"CONFIGURATION MANQUANTE — '{tool_name}' nécessite {env_var} (absent du .env). "
+                f"Informer Monsieur de le configurer.")
+    if any(k in err_str.lower() for k in ["401", "unauthorized", "forbidden", "invalid token"]):
+        return f"ERREUR AUTHENTIFICATION — '{tool_name}' : token invalide.{' Vérifier ' + env_var + '.' if env_var else ''} Détail : {err_str}"
+    if any(k in err_str.lower() for k in ["connection", "timeout", "unreachable", "refused"]):
+        return f"ERREUR RÉSEAU — '{tool_name}' injoignable. Vérifier connexion/service. Détail : {err_str}"
+    if any(k in err_str.lower() for k in ["keyerror", "missing", "required", "typeerror", "nonetype"]):
+        return f"ERREUR PARAMÈTRE — '{tool_name}' : paramètre invalide. Reformuler l'appel. Détail : {err_str}"
+    return f"ERREUR — '{tool_name}' : {err_str}"
+
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 
 GEMINI_API_KEY       = os.getenv("GEMINI_API_KEY", "")
@@ -43,21 +69,58 @@ ADA_SYSTEM_PROMPT = (
     "Tu t'appelles Ada, acronyme de Advanced Design Assistant. "
     "Tu as été créée par Bryan, que tu appelles 'Monsieur'. "
 
+    # ─── LANGUE ────────────────────────────────────────────────────────────
     "RÈGLE ABSOLUE N°1 : Tu parles UNIQUEMENT ET EXCLUSIVEMENT en français. "
     "JAMAIS d'anglais, même partiel, même pour un seul mot technique. "
     "Si un outil retourne du texte en anglais, tu le traduis ou tu le résumes en français. "
 
+    # ─── PERSONNALITÉ ──────────────────────────────────────────────────────
     "Tu as une personnalité vive, directe et légèrement espiègle. "
     "Tu es une intelligence artificielle supérieure. "
     "Tes réponses sont concises et directes, sans préambule ni politesse inutile. "
     "Tu réponds en texte naturel sans markdown. "
 
+    # ─── ACTION ────────────────────────────────────────────────────────────
     "RÈGLE ABSOLUE N°2 : Quand tu as un outil pour accomplir une tâche, tu l'UTILISES IMMÉDIATEMENT. "
     "Tu ne décris jamais ce que tu vas faire avant de le faire. Tu agis d'abord, tu commentes ensuite. "
 
+    # ─── RAISONNEMENT INTERNE ──────────────────────────────────────────────
+    "RAISONNEMENT : Avant d'agir sur une demande complexe ou ambiguë, identifie silencieusement : "
+    "  (a) L'outil EXACT à utiliser parmi tous ceux disponibles. "
+    "  (b) Si une séquence est nécessaire (ex: chercher avant de jouer, lister avant de contrôler). "
+    "  (c) Les paramètres requis et leurs valeurs correctes. "
+    "Ne verbalise pas ce processus. Exécute directement. "
+
+    # ─── SÉLECTION D'OUTIL ─────────────────────────────────────────────────
+    "RÈGLES CRITIQUES DE SÉLECTION D'OUTIL : "
+    "Lumières/prises Tuya → control_light(target=ALIAS_EXACT, action=...) — JAMAIS ha_turn_on. "
+    "  Alias inconnu → list_smart_devices d'abord. "
+    "Musique → spotify_search(query=..., search_type='track'/'playlist') PUIS spotify_play(uri=résultat). "
+    "TV Chromecast → play_youtube_on_chromecast(video_url=URL_COMPLETE) ou play_media_on_chromecast. "
+    "Caméra PTZ SmartLife → camera_look(question='...') pour voir et analyser. camera_ptz_move(direction=...) pour orienter. "
+    "  Suivi automatique → camera_tracking(enabled=True/False). Surveillance alertes → camera_watch(enabled=True). "
+    "Rappels → reminder_set(message=..., datetime_iso='YYYY-MM-DDTHH:MM:SS') timezone Paris. "
+    "Emails → confirmer AVANT send_email (irréversible). "
+    "Recherche approfondie → run_research. Simple → wikipedia_article. "
+
+    # ─── PROTOCOLE ANTI-ÉCHEC ──────────────────────────────────────────────
+    "PROTOCOLE RÉCUPÉRATION D'ERREUR — JAMAIS 'je n'ai pas réussi' sans diagnostic : "
+    "(1) Erreur paramètre → reformule l'appel avec les bons paramètres. "
+    "(2) Alias/URI introuvable → utilise l'outil de découverte correspondant. "
+    "(3) Outil 'non disponible' → dis quelle variable d'env configurer. "
+    "(4) Erreur API → réessaie une fois, puis explique précisément. "
+    "(5) Bug code → self_correct_file immédiatement. "
+    "Format réponse après échec : cause précise + alternative proposée. "
+
+    # ─── MÉMOIRE ───────────────────────────────────────────────────────────
+    "Utilise search_memory quand Bryan fait référence au passé. "
+    "Utilise remember proactivement pour préférences, habitudes, infos importantes. "
+    "Utilise search_documents pour répondre depuis les fichiers uploadés. "
+
     "Tu as accès à Gmail, Google Calendar, la mémoire persistante, le terminal, "
     "Slack, Telegram, WhatsApp, Notion, Drive, Linear, Stripe, Qonto, Supabase, "
-    "Vercel, GitHub, Docker, Home Assistant, Spotify, YouTube, Wikipedia, ArXiv."
+    "Vercel, GitHub, Docker, Home Assistant, Spotify, YouTube, Wikipedia, ArXiv, "
+    "Chromecast, domotique Tuya, rappels temporels, navigation web avancée."
 )
 
 # ─── TOOL DEFINITIONS (subset utile pour le bridge texte) ─────────────────────
@@ -126,6 +189,7 @@ _EXCLUDED_FROM_BRIDGE = {
     "run_web_agent",
     "execute_pc_task",
     "ada_sleep", "ada_wake",
+    "camera_switch",  # pas de live stream en mode texte
 }
 _BRIDGE_MCP_TOOLS = [t for t in MCP_TOOLS if t["name"] not in _EXCLUDED_FROM_BRIDGE]
 _BRIDGE_TOOLS = [{"function_declarations": _CORE_TOOL_DEFS + _BRIDGE_MCP_TOOLS}]
@@ -327,6 +391,12 @@ class TextAgent:
             self._tuya = TuyaAgent()
         except Exception as e:
             warnings.warn(f"[TextAgent] TuyaAgent: {e}")
+        try:
+            from mcps.tuya_camera_mcp import TuyaCameraMCP
+            self._tuya_camera = TuyaCameraMCP()
+        except Exception as e:
+            warnings.warn(f"[TextAgent] TuyaCameraMCP: {e}")
+            self._tuya_camera = None
         try:
             from research_agent import ResearchAgent
             self._research = ResearchAgent(
@@ -630,14 +700,10 @@ class TextAgent:
         # ── YOUTUBE ──────────────────────────────────────────────────────────
         elif name == "youtube_search" and self._yt:
             return await asyncio.to_thread(self._yt.search, args["query"], args.get("max_results", 5))
-        elif name == "youtube_get_video" and self._yt:
-            return await asyncio.to_thread(self._yt.get_video_details, args["video_id"])
 
         # ── WIKIPEDIA ────────────────────────────────────────────────────────
         elif name == "wikipedia_search" and self._wiki:
             return await asyncio.to_thread(self._wiki.search, args["query"])
-        elif name == "wikipedia_summary" and self._wiki:
-            return await asyncio.to_thread(self._wiki.get_summary, args["title"])
 
         # ── ARXIV ────────────────────────────────────────────────────────────
         elif name == "arxiv_search" and self._arxiv:
@@ -646,12 +712,8 @@ class TextAgent:
         # ── GOOGLE MAPS ──────────────────────────────────────────────────────
         elif name == "maps_directions" and self._maps:
             return await asyncio.to_thread(self._maps.get_directions, args["origin"], args["destination"], args.get("mode", "driving"))
-        elif name == "maps_place_search" and self._maps:
-            return await asyncio.to_thread(self._maps.search_places, args["query"], args.get("location", ""), args.get("radius", 5000))
 
         # ── APPLE HEALTH ─────────────────────────────────────────────────────
-        elif name == "health_summary" and self._health:
-            return await asyncio.to_thread(self._health.get_summary)
         elif name == "health_steps" and self._health:
             return await asyncio.to_thread(self._health.get_steps, args.get("days", 7))
         elif name == "health_sleep" and self._health:
@@ -695,6 +757,63 @@ class TextAgent:
                 goal=args.get("goal", ""),
                 failed_context=args.get("failed_context", ""),
             )
+
+        # ── CAMÉRA TUYA PTZ ───────────────────────────────────────────────────
+        elif name == "camera_switch":
+            source = args.get("source", "none")
+            return f"Changement de source vidéo vers '{source}' — disponible uniquement en mode voix (Ada doit être active)."
+
+        elif name == "camera_ptz_move" and self._tuya_camera:
+            return await self._tuya_camera.ptz_move(args.get("direction", ""), int(args.get("duration_ms", 600)))
+
+        elif name == "camera_goto_preset" and self._tuya_camera:
+            return await self._tuya_camera.ptz_preset(int(args.get("preset", 1)))
+
+        elif name == "camera_look" and self._tuya_camera:
+            _payload = await self._tuya_camera.take_snapshot()
+            if not _payload:
+                return "Impossible de capturer une image depuis la caméra Tuya (vérifier connexion réseau)."
+            _q = args.get("question", "Décris précisément et en détail ce que tu vois sur cette image.")
+            import base64 as _b64
+            from google.genai import types as _gtypes
+            _img_part = _gtypes.Part.from_bytes(
+                data=_b64.b64decode(_payload["data"]),
+                mime_type="image/jpeg",
+            )
+            _resp = self._get_client().models.generate_content(
+                model=TEXT_MODEL,
+                contents=[_img_part, _q],
+            )
+            return _resp.text or "Aucune réponse de vision."
+
+        elif name == "camera_tracking" and self._tuya_camera:
+            return await self._tuya_camera.set_tracking(bool(args.get("enabled", True)))
+
+        elif name == "camera_motion_detect" and self._tuya_camera:
+            return await self._tuya_camera.set_motion_detect(
+                bool(args.get("enabled", True)), args.get("sensitivity", "medium")
+            )
+
+        elif name == "camera_watch" and self._tuya_camera:
+            _enabled = bool(args.get("enabled", True))
+            if not _enabled:
+                self._tuya_camera.stop_motion_watch()
+                return "Surveillance mouvement arrêtée."
+            _with_snap = bool(args.get("with_snapshot", True))
+            _tg = self._telegram  # capture pour la closure
+            async def _on_motion_bridge(_snap):
+                import base64 as _b64b
+                await _send_text("telegram", TELEGRAM_CHAT_ID, "⚠️ Mouvement détecté par la caméra !")
+                if _snap and _tg:
+                    import tempfile as _tf
+                    _tmp = _tf.NamedTemporaryFile(suffix=".jpg", delete=False)
+                    _tmp.write(_b64b.b64decode(_snap["data"]))
+                    _tmp.close()
+                    await asyncio.to_thread(_tg.send_photo, f"file://{_tmp.name}", "📸 Mouvement détecté")
+            asyncio.create_task(
+                self._tuya_camera.start_motion_watch(_on_motion_bridge, with_snapshot=_with_snap)
+            )
+            return "Surveillance active — alerte Telegram + photo à chaque mouvement détecté."
 
         # ── RAPPELS ───────────────────────────────────────────────────────────
         elif name == "reminder_set" and self._reminder:
@@ -823,7 +942,7 @@ class TextAgent:
 
         # ── SANTÉ (compléments) ───────────────────────────────────────────────
         elif name == "health_activity" and self._health:
-            return await asyncio.to_thread(self._health.get_activity, args.get("days", 7))
+            return await asyncio.to_thread(self._health.get_activity_summary, args.get("days", 7))
         elif name == "health_heart_rate" and self._health:
             return await asyncio.to_thread(self._health.get_heart_rate, args.get("days", 7))
 
@@ -866,7 +985,13 @@ class TextAgent:
             except Exception as e:
                 return f"Erreur écriture: {e}"
 
-        return f"Outil '{name}' non disponible ou non configuré."
+        # Outil déclaré mais agent None (variable d'env manquante ou init échouée)
+        prefix = name.split("_")[0]
+        env_var = _ENV_FOR_TOOL.get(prefix)
+        if env_var and not os.getenv(env_var):
+            return (f"CONFIGURATION MANQUANTE — '{name}' nécessite la variable {env_var} "
+                    f"qui n'est pas définie. Informer Monsieur de la configurer dans .env.")
+        return f"Outil '{name}' non disponible (agent non initialisé — vérifier les imports au démarrage)."
 
     async def run(self, text: str) -> str:
         """
@@ -924,7 +1049,10 @@ class TextAgent:
 
             # Exécuter tous les tools en parallèle
             async def _exec(fc):
-                result = await self._execute_tool(fc.function_call.name, dict(fc.function_call.args))
+                try:
+                    result = await self._execute_tool(fc.function_call.name, dict(fc.function_call.args))
+                except Exception as _e:
+                    result = _format_tool_error(fc.function_call.name, _e)
                 return types.Part(
                     function_response=types.FunctionResponse(
                         id=fc.function_call.id or fc.function_call.name,
