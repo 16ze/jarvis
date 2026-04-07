@@ -359,6 +359,12 @@ class TextAgent:
             self._evolution = SelfEvolutionAgent()
         except Exception as e:
             warnings.warn(f"[TextAgent] SelfEvolutionAgent: {e}")
+        try:
+            from advanced_browser_agent import AdvancedBrowserAgent
+            self._advanced_browser = AdvancedBrowserAgent()
+        except Exception as e:
+            warnings.warn(f"[TextAgent] AdvancedBrowserAgent: {e}")
+            self._advanced_browser = None
 
     def _get_client(self) -> genai.Client:
         if self._client is None:
@@ -772,6 +778,13 @@ class TextAgent:
             return await self._research.run(args.get("query", ""))
         elif name == "run_task" and self._task:
             return await self._task.run(args.get("objective", ""))
+        elif name == "advanced_web_navigation":
+            if not self._advanced_browser:
+                return "AdvancedBrowserAgent non disponible (vérifier les dépendances)."
+            try:
+                return await self._advanced_browser.run(args.get("mission", ""))
+            except Exception as e:
+                return f"Navigation avancée erreur : {e}"
         elif name == "anticipate" and self._anticipation:
             return await self._anticipation.run(args.get("context", ""))
         elif name == "start_monitoring" and self._monitoring:
