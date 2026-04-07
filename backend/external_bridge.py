@@ -124,6 +124,7 @@ _EXCLUDED_FROM_BRIDGE = {
     "control_computer",
     "discover_printers", "print_stl", "get_print_status",
     "run_web_agent",
+    "execute_pc_task",
     "ada_sleep", "ada_wake",
 }
 _BRIDGE_MCP_TOOLS = [t for t in MCP_TOOLS if t["name"] not in _EXCLUDED_FROM_BRIDGE]
