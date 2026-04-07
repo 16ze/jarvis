@@ -1,5 +1,5 @@
 """
-self_correction_agent.py — Agent Claude Opus 4.6 pour auto-correction du code Ada
+self_correction_agent.py — Agent Gemini 2.5 Flash pour auto-correction du code Ada
 
 Sécurité :
 - Toutes les opérations fichier sont scopées à JARVIS_ROOT
@@ -12,14 +12,15 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import anthropic
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
 
 JARVIS_ROOT = Path("/Users/bryandev/jarvis").resolve()
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-MODEL = "claude-opus-4-6"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+MODEL = "gemini-2.5-flash"
 
 SYSTEM_PROMPT = (
     "Tu es un expert Python spécialisé dans la correction de bugs. "
@@ -32,9 +33,9 @@ SYSTEM_PROMPT = (
 
 class SelfCorrectionAgent:
     def __init__(self):
-        if not ANTHROPIC_API_KEY:
-            raise RuntimeError("ANTHROPIC_API_KEY non configurée.")
-        self._client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        if not GEMINI_API_KEY:
+            raise RuntimeError("GEMINI_API_KEY non configurée.")
+        self._client = genai.Client(api_key=GEMINI_API_KEY)
 
     def _validate_path(self, path: str) -> bool:
         """Vérifie que le chemin est dans JARVIS_ROOT (pas d'escape)."""
@@ -145,7 +146,7 @@ class SelfCorrectionAgent:
 
     def correct_file(self, file_path: str, error_description: str) -> str:
         """
-        Lit le fichier, envoie à Claude Opus 4.6, applique la correction.
+        Lit le fichier, envoie à Gemini 2.5 Flash, applique la correction.
         Retourne un rapport de ce qui a été fait.
         """
         if not self._validate_path(file_path):
@@ -163,18 +164,20 @@ class SelfCorrectionAgent:
         )
 
         try:
-            response = self._client.messages.create(
+            response = self._client.models.generate_content(
                 model=MODEL,
-                max_tokens=8192,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}],
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0.1,
+                ),
             )
-            corrected = response.content[0].text.strip()
+            corrected = response.text.strip()
         except Exception as e:
-            return f"Erreur API Claude : {e}"
+            return f"Erreur API Gemini : {e}"
 
         if corrected == "UNSAFE":
-            return "Claude a refusé de corriger ce fichier (risque trop élevé)."
+            return "Gemini a refusé de corriger ce fichier (risque trop élevé)."
 
         result = self.write_file(file_path, corrected)
         if result.startswith("ERREUR"):

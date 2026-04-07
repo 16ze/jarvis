@@ -30,8 +30,9 @@ import external_bridge
 from dotenv import load_dotenv
 load_dotenv()
 from authenticator import FaceAuthenticator
-from kasa_agent import KasaAgent
+from tuya_agent import TuyaAgent
 from web_agent import WebAgent
+from chromecast_agent import CastAgent
 
 # ─── API AUTH ─────────────────────────────────────────────────────────────────
 _bearer = HTTPBearer(auto_error=False)
@@ -75,8 +76,9 @@ signal.signal(signal.SIGTERM, signal_handler)
 audio_loop = None
 loop_task = None
 authenticator = None
-kasa_agent = KasaAgent()
+tuya_agent = TuyaAgent()
 standalone_web_agent = WebAgent()
+cast_agent = CastAgent()
 SETTINGS_FILE = "settings.json"
 
 DEFAULT_SETTINGS = {
@@ -92,7 +94,7 @@ DEFAULT_SETTINGS = {
         "list_projects": True
     },
     "printers": [], # List of {host, port, name, type}
-    "kasa_devices": [], # List of {ip, alias, model}
+    "tuya_devices": [], # List of {name, id, key, ip, type}
     "camera_flipped": False, # Invert cursor horizontal direction
     "timezone": "Europe/Paris" # IANA timezone for Google Calendar events
 }
@@ -128,8 +130,106 @@ def save_settings():
 load_settings()
 
 authenticator = None
-kasa_agent = KasaAgent(known_devices=SETTINGS.get("kasa_devices"))
+tuya_agent = TuyaAgent(known_devices=SETTINGS.get("tuya_devices"))
 # tool_permissions is now SETTINGS["tool_permissions"]
+
+# ─── HEALTH REPORT ───────────────────────────────────────────────────────────
+_health_report: dict = {}
+
+async def build_health_report() -> dict:
+    """
+    Vérifie l'état de chaque composant Ada.
+    Retourne un rapport structuré {env_vars, files, agents, summary}.
+    """
+    from pathlib import Path as _Path
+    _root = _Path(__file__).parent
+    _ok, _warn, _ko = "✅", "⚠️", "❌"
+
+    # ── Variables d'environnement ─────────────────────────────────────────────
+    env_map = {
+        "Gemini (voix/texte)":     "GEMINI_API_KEY",
+        "Telegram bot token":      "TELEGRAM_BOT_TOKEN",
+        "Telegram chat ID":        "TELEGRAM_CHAT_ID",
+        "GitHub":                  "GITHUB_TOKEN",
+        "Spotify":                 "SPOTIFY_CLIENT_ID",
+        "Slack":                   "SLACK_BOT_TOKEN",
+        "Notion":                  "NOTION_API_KEY",
+        "Linear":                  "LINEAR_API_KEY",
+        "Stripe":                  "STRIPE_SECRET_KEY",
+        "Qonto":                   "QONTO_API_KEY",
+        "Supabase":                "SUPABASE_URL",
+        "Vercel":                  "VERCEL_TOKEN",
+        "Google Maps":             "GOOGLE_MAPS_API_KEY",
+        "ElevenLabs":              "ELEVENLABS_API_KEY",
+        "Replicate":               "REPLICATE_API_TOKEN",
+        "Home Assistant":          "HOME_ASSISTANT_URL",
+        "WhatsApp":                "WHATSAPP_API_URL",
+        "Tuya API key":            "TUYA_API_KEY",
+        "Tuya Camera device ID":   "TUYA_CAMERA_DEVICE_ID",
+        "Ada API token (sécurité)":"ADA_API_TOKEN",
+    }
+    env_results = {}
+    for label, var in env_map.items():
+        env_results[label] = _ok if os.getenv(var) else f"{_ko} {var} manquant"
+
+    # ── Fichiers critiques ────────────────────────────────────────────────────
+    files_map = {
+        "google_token.json (OAuth2)": _root / "google_token.json",
+        ".spotify_token":             _root / ".spotify_token",
+        "tinytuya.json":              _root / "tinytuya.json",
+        "devices.json":               _root / "devices.json",
+        "memory/procedural.json":     _root / "memory" / "procedural.json",
+    }
+    file_results = {}
+    for label, path in files_map.items():
+        file_results[label] = _ok if path.exists() else f"{_warn} absent (optionnel)"
+
+    # ── Agents runtime ────────────────────────────────────────────────────────
+    agent_results = {}
+    try:
+        n_devices = len(tuya_agent.devices) if tuya_agent else 0
+        agent_results["Tuya smart home"] = f"{_ok} {n_devices} device(s)" if n_devices > 0 else f"{_warn} 0 device (réseau Tuya inaccessible ?)"
+    except Exception as e:
+        agent_results["Tuya smart home"] = f"{_ko} {e}"
+    try:
+        agent_results["Chromecast"] = f"{_ok} connecté" if (cast_agent and getattr(cast_agent, '_initialized', False)) else f"{_warn} non connecté (TV éteinte ?)"
+    except Exception as e:
+        agent_results["Chromecast"] = f"{_ko} {e}"
+
+    # AudioLoop
+    agent_results["AudioLoop (voix)"] = f"{_ok} actif" if audio_loop else f"{_warn} non démarré"
+
+    # Bridge Telegram
+    agent_results["Bridge Telegram"] = _ok if os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID") else f"{_ko} token/chat_id manquant"
+
+    # Résumé
+    all_vals = list(env_results.values()) + list(agent_results.values())
+    n_ok   = sum(1 for v in all_vals if v.startswith(_ok))
+    n_warn = sum(1 for v in all_vals if v.startswith(_warn))
+    n_ko   = sum(1 for v in all_vals if v.startswith(_ko))
+
+    report = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "summary": f"{_ok} {n_ok} OK  {_warn} {n_warn} avertissements  {_ko} {n_ko} erreurs",
+        "env_vars": env_results,
+        "files": file_results,
+        "agents": agent_results,
+    }
+
+    # Log console lisible
+    sep = "─" * 60
+    print(f"\n[HEALTH] {sep}")
+    print(f"[HEALTH] Rapport Ada — {report['timestamp']}")
+    print(f"[HEALTH] {report['summary']}")
+    print(f"[HEALTH] {sep}")
+    for section, items in [("Env vars", env_results), ("Fichiers", file_results), ("Agents", agent_results)]:
+        print(f"[HEALTH] ── {section} ──")
+        for k, v in items.items():
+            print(f"[HEALTH]   {v}  {k}")
+    print(f"[HEALTH] {sep}\n")
+
+    return report
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -144,15 +244,65 @@ async def startup_event():
     except Exception as e:
         print(f"[SERVER DEBUG] Error checking loop: {e}")
 
-    print("[SERVER] Startup: Initializing Kasa Agent...")
-    await kasa_agent.initialize()
+    print("[SERVER] Startup: Initializing Tuya Agent...")
+    try:
+        await asyncio.wait_for(tuya_agent.initialize(), timeout=15.0)
+    except asyncio.TimeoutError:
+        print("[SERVER] Tuya init timeout — devices chargés sans statut initial")
+
+    print("[SERVER] Startup: Initializing Chromecast Agent...")
+    result = await cast_agent.initialize()
+    print(f"[SERVER] Chromecast: {result}")
 
     print("[SERVER] Startup: Démarrage du bridge Telegram/WhatsApp...")
     external_bridge.start_bridge()
 
+    # ── Health report initial ─────────────────────────────────────────────────
+    global _health_report
+    _health_report = await build_health_report()
+    await sio.emit("health_report", _health_report)
+
+
+@app.get("/health")
+async def health_endpoint():
+    """Rapport de santé Ada — état de tous les agents et variables d'environnement."""
+    global _health_report
+    if not _health_report:
+        _health_report = await build_health_report()
+    return _health_report
+
+
 @app.get("/status")
 async def status():
     return {"status": "running", "service": "A.D.A Backend"}
+
+
+# ─── SPOTIFY OAuth ────────────────────────────────────────────────────────────
+
+@app.get("/spotify/auth")
+async def spotify_auth():
+    """Génère l'URL d'autorisation Spotify. Ouvre-la dans ton navigateur pour autoriser Ada."""
+    from mcps.spotify_mcp import SpotifyMCP
+    sp = SpotifyMCP()
+    url = sp.get_auth_url()
+    if url.startswith("SPOTIFY"):
+        raise HTTPException(status_code=503, detail=url)
+    return {"auth_url": url, "message": "Ouvre cette URL dans ton navigateur pour autoriser Spotify."}
+
+
+@app.get("/spotify/callback")
+async def spotify_callback(code: str = "", error: str = ""):
+    """Callback OAuth Spotify — échange le code contre un token et le met en cache."""
+    if error:
+        raise HTTPException(status_code=400, detail=f"Spotify a refusé l'autorisation : {error}")
+    if not code:
+        raise HTTPException(status_code=400, detail="Paramètre 'code' manquant.")
+    from mcps.spotify_mcp import SpotifyMCP
+    sp = SpotifyMCP()
+    ok = sp.handle_callback(code)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Échange du token Spotify échoué.")
+    return {"status": "ok", "message": "Spotify autorisé. Ada peut maintenant contrôler la lecture."}
 
 
 SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md", ".docx", ".py", ".js", ".ts", ".jsx", ".tsx", ".json", ".csv", ".html", ".css"}
@@ -230,10 +380,21 @@ async def delete_document(filename: str, _: None = Security(require_token)):
         original_path.unlink()
     return {"status": "ok"}
 
+@sio.on("get_chromecast_status")
+async def on_get_chromecast_status(sid, data=None):
+    """Retourne l'état du Chromecast au frontend."""
+    if not cast_agent._initialized:
+        await cast_agent.initialize()
+    status = await cast_agent.get_status()
+    await sio.emit("chromecast_status", {"status": status}, room=sid)
+
 @sio.event
 async def connect(sid, environ):
     print(f"Client connected: {sid}")
     await sio.emit('status', {'msg': 'Connected to A.D.A Backend'}, room=sid)
+    # Ré-émettre le health report au nouveau client
+    if _health_report:
+        await sio.emit('health_report', _health_report, room=sid)
 
     global authenticator
     
@@ -409,7 +570,7 @@ async def start_audio(sid, data=None):
 
             input_device_index=device_index,
             input_device_name=device_name,
-            kasa_agent=kasa_agent
+            tuya_agent=tuya_agent
         )
         print("AudioLoop initialized successfully.")
 
@@ -420,6 +581,7 @@ async def start_audio(sid, data=None):
         audio_loop.frontend_audio_mode = True
         audio_loop.browser_audio_mode = True
         audio_loop.on_clear_audio = lambda: asyncio.create_task(sio.emit('clear_audio'))
+        audio_loop.on_sleep_mode_changed = lambda sleeping: asyncio.create_task(sio.emit('sleep_mode', {'sleeping': sleeping}))
         print("[SERVER] Browser audio mode enabled (mic + playback via Web Audio API, AEC active).")
 
         # Apply current permissions
@@ -704,12 +866,11 @@ async def upload_memory(sid, data):
 async def discover_kasa(sid):
     print(f"Received discover_kasa request")
     try:
-        devices = await kasa_agent.discover_devices()
+        devices = await tuya_agent.discover_devices()
         await sio.emit('kasa_devices', devices)
-        await sio.emit('status', {'msg': f"Found {len(devices)} Kasa devices"})
-        
+        await sio.emit('status', {'msg': f"Found {len(devices)} Tuya devices"})
+
         # Save to settings
-        # devices is a list of full device info dicts. minimizing for storage.
         saved_devices = []
         for d in devices:
             saved_devices.append({
@@ -717,18 +878,14 @@ async def discover_kasa(sid):
                 "alias": d["alias"],
                 "model": d["model"]
             })
-        
-        # Merge with existing to preserve any manual overrides? 
-        # For now, just overwrite with latest scan result + previously known if we want to be fancy,
-        # but user asked for "Any new devices that are scanned are added there".
-        # A simple full persistence of current state is safest.
-        SETTINGS["kasa_devices"] = saved_devices
+
+        SETTINGS["tuya_devices"] = saved_devices
         save_settings()
-        print(f"[SERVER] Saved {len(saved_devices)} Kasa devices to settings.")
-        
+        print(f"[SERVER] Saved {len(saved_devices)} Tuya devices to settings.")
+
     except Exception as e:
-        print(f"Error discovering kasa: {e}")
-        await sio.emit('error', {'msg': f"Kasa Discovery Failed: {str(e)}"})
+        print(f"Error discovering Tuya devices: {e}")
+        await sio.emit('error', {'msg': f"Tuya Discovery Failed: {str(e)}"})
 
 @sio.event
 async def iterate_cad(sid, data):
@@ -1038,32 +1195,32 @@ async def control_kasa(sid, data):
     try:
         success = False
         if action == "on":
-            success = await kasa_agent.turn_on(ip)
+            success = await tuya_agent.turn_on(ip)
         elif action == "off":
-            success = await kasa_agent.turn_off(ip)
+            success = await tuya_agent.turn_off(ip)
         elif action == "brightness":
             val = data.get('value')
-            success = await kasa_agent.set_brightness(ip, val)
+            success = await tuya_agent.set_brightness(ip, val)
         elif action == "color":
             # value is {h, s, v} - convert to tuple for set_color
             h = data.get('value', {}).get('h', 0)
             s = data.get('value', {}).get('s', 100)
             v = data.get('value', {}).get('v', 100)
-            success = await kasa_agent.set_color(ip, (h, s, v))
-        
+            success = await tuya_agent.set_color(ip, (h, s, v))
+
         if success:
             await sio.emit('kasa_update', {
                 'ip': ip,
                 'is_on': True if action == "on" else (False if action == "off" else None),
                 'brightness': data.get('value') if action == "brightness" else None,
             })
- 
+
         else:
-             await sio.emit('error', {'msg': f"Failed to control device {ip}"})
+            await sio.emit('error', {'msg': f"Failed to control device {ip}"})
 
     except Exception as e:
-         print(f"Error controlling kasa: {e}")
-         await sio.emit('error', {'msg': f"Kasa Control Error: {str(e)}"})
+        print(f"Error controlling Tuya device: {e}")
+        await sio.emit('error', {'msg': f"Tuya Control Error: {str(e)}"})
 
 @sio.event
 async def get_settings(sid):

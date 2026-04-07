@@ -32,7 +32,98 @@
             "camera_url": null
         }
     ],
-    "kasa_devices": [],
+    "tuya_devices": [
+        {
+            "ip": "192.168.1.78",
+            "alias": "Lanternes",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.21",
+            "alias": "Lanternes",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.3",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.93",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.66",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.162",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.44",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.52",
+            "alias": "Couloir",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.17",
+            "alias": "Couloir",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.46",
+            "alias": "Couloir",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.7",
+            "alias": "Couloir",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.91",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.157",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.193",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.110",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.144",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.61",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.159",
+            "alias": "CHAMBRE PRINCIPAL",
+            "model": "Tuya"
+        }
+    ],
     "camera_flipped": false,
     "timezone": "Europe/Paris"
 }

@@ -1443,6 +1443,152 @@ execute_pc_task_tool = {
     "behavior": "NON_BLOCKING"
 }
 
+# ── CAMÉRA TUYA PTZ ──────────────────────────────────────────────────────────
+camera_switch_tool = {
+    "name": "camera_switch",
+    "description": (
+        "Bascule la source vidéo d'Ada. Utilise 'tuya_camera' pour activer la caméra SmartLife PTZ connectée au salon/entrée, "
+        "'webcam' pour la caméra de l'ordinateur, 'screen' pour le partage d'écran, 'none' pour désactiver. "
+        "Appelle cet outil quand on te demande de regarder par la caméra, voir ce qui se passe dans la pièce, ou surveiller."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "source": {
+                "type": "STRING",
+                "description": "Source vidéo : 'tuya_camera' | 'webcam' | 'screen' | 'none'",
+            }
+        },
+        "required": ["source"],
+    },
+}
+
+camera_ptz_move_tool = {
+    "name": "camera_ptz_move",
+    "description": (
+        "Fait pivoter la caméra PTZ SmartLife dans une direction. "
+        "Directions acceptées : up/haut, down/bas, left/gauche, right/droite, "
+        "upper_right/haut-droite, lower_right/bas-droite, lower_left/bas-gauche, upper_left/haut-gauche. "
+        "duration_ms : durée du mouvement en millisecondes (100–5000, défaut 600)."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "direction": {
+                "type": "STRING",
+                "description": "Direction : up, down, left, right, upper_right, lower_right, lower_left, upper_left (ou équivalent français)",
+            },
+            "duration_ms": {
+                "type": "NUMBER",
+                "description": "Durée du mouvement en ms (défaut 600, max 5000)",
+            },
+        },
+        "required": ["direction"],
+    },
+}
+
+camera_goto_preset_tool = {
+    "name": "camera_goto_preset",
+    "description": (
+        "Positionne la caméra PTZ sur une position préenregistrée (preset). "
+        "Les presets sont des positions mémorisées dans la caméra via l'app SmartLife (preset 1, 2, 3…)."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "preset": {
+                "type": "NUMBER",
+                "description": "Numéro du preset (1, 2, 3…)",
+            }
+        },
+        "required": ["preset"],
+    },
+}
+
+camera_tracking_tool = {
+    "name": "camera_tracking",
+    "description": (
+        "Active ou désactive le suivi automatique de mouvement (auto-tracking PTZ) de la caméra SmartLife. "
+        "Quand activé, la caméra pivote automatiquement pour suivre toute personne ou objet en mouvement dans le champ de vision. "
+        "Utilise cet outil quand Bryan dit 'suis les mouvements', 'active le tracking', 'arrête de suivre'."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "enabled": {
+                "type": "BOOLEAN",
+                "description": "True pour activer le suivi, False pour désactiver",
+            }
+        },
+        "required": ["enabled"],
+    },
+}
+
+camera_motion_detect_tool = {
+    "name": "camera_motion_detect",
+    "description": (
+        "Active ou désactive la détection de mouvement de la caméra SmartLife, et règle la sensibilité. "
+        "Quand activée avec surveillance (camera_watch), Ada prévient Bryan via Telegram dès qu'un mouvement est détecté."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "enabled": {
+                "type": "BOOLEAN",
+                "description": "True pour activer la détection, False pour désactiver",
+            },
+            "sensitivity": {
+                "type": "STRING",
+                "description": "Sensibilité : 'low'/'faible', 'medium'/'moyenne' (défaut), 'high'/'élevée'",
+            },
+        },
+        "required": ["enabled"],
+    },
+}
+
+camera_watch_tool = {
+    "name": "camera_watch",
+    "description": (
+        "Démarre ou arrête la surveillance active de mouvement via la caméra SmartLife. "
+        "Quand active, Ada poll les événements et envoie une alerte Telegram avec photo dès qu'un mouvement est détecté. "
+        "Utilise cet outil quand Bryan dit 'surveille', 'préviens-moi si quelqu'un bouge', 'arrête de surveiller'."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "enabled": {
+                "type": "BOOLEAN",
+                "description": "True pour démarrer la surveillance, False pour l'arrêter",
+            },
+            "with_snapshot": {
+                "type": "BOOLEAN",
+                "description": "True pour envoyer une photo avec chaque alerte (défaut True)",
+            },
+        },
+        "required": ["enabled"],
+    },
+}
+
+camera_look_tool = {
+    "name": "camera_look",
+    "description": (
+        "Capture une photo depuis la caméra SmartLife PTZ et décrit ce qu'Ada voit. "
+        "Utilise cet outil en mode texte/Telegram pour répondre à 'qu'est-ce que tu vois ?', "
+        "'y a-t-il quelqu'un ?', 'regarde si…', etc. "
+        "En mode voix, la caméra est déjà active en continu — cet outil force une capture instantanée avec analyse."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "question": {
+                "type": "STRING",
+                "description": "Question spécifique à analyser sur l'image (ex: 'y a-t-il quelqu'un ?', 'que fait la personne ?')",
+            }
+        },
+        "required": [],
+    },
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # LISTE CONSOLIDÉE — à importer dans ada.py
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1496,6 +1642,9 @@ MCP_TOOLS = [
     ada_sleep_tool, ada_wake_tool,
     # Self-evolution
     self_evolve_tool,
+    # Caméra Tuya PTZ
+    camera_switch_tool, camera_ptz_move_tool, camera_goto_preset_tool, camera_look_tool,
+    camera_tracking_tool, camera_motion_detect_tool, camera_watch_tool,
 ]
 
 MCP_TOOL_NAMES = {t["name"] for t in MCP_TOOLS}
