@@ -616,6 +616,13 @@ class AudioLoop:
             import warnings
             warnings.warn(f"[ADA] AdvancedBrowserAgent init: {e}")
             self.advanced_browser_agent = None
+        try:
+            from os_control_agent import OsControlAgent
+            self.os_control_agent = OsControlAgent()
+        except Exception as e:
+            import warnings
+            warnings.warn(f"[ADA] OsControlAgent init: {e}")
+            self.os_control_agent = None
         self.google_agent = GoogleAgent()
         self.tuya_agent = tuya_agent if tuya_agent else TuyaAgent()
         self.printer_agent = PrinterAgent()
@@ -1195,6 +1202,40 @@ class AudioLoop:
         except Exception as e:
             print(f"[ADA DEBUG] [ERR] Failed to send advanced browser result: {e}")
 
+    async def handle_pc_task_request(self, task: str):
+        print(f"[ADA DEBUG] [PC] PC Task: '{task}'")
+
+        # Annonce vocale avant de prendre le contrôle
+        try:
+            if self.session:
+                await self.session.send(
+                    input=f"System Notification: Je prends le contrôle de votre Mac pour : {task[:80]}. Appuyez sur Cmd+Shift+Esc pour arrêter.",
+                    end_of_turn=True,
+                )
+        except Exception as e:
+            print(f"[ADA DEBUG] [PC] Annonce vocale échouée : {e}")
+
+        if self.on_web_data:
+            self.on_web_data({"image": None, "log": f"[PC] Mission : {task[:80]}"})
+
+        async def update_frontend(data: dict):
+            if self.on_web_data:
+                self.on_web_data(data)
+
+        if not self.os_control_agent:
+            result = "OsControlAgent non disponible."
+        else:
+            result = await self.os_control_agent.run(task, step_callback=update_frontend)
+
+        try:
+            if self.session:
+                await self.session.send(
+                    input=f"System Notification: Contrôle PC terminé.\nRésultat: {result}",
+                    end_of_turn=True,
+                )
+        except Exception as e:
+            print(f"[ADA DEBUG] [ERR] Failed to send PC task result: {e}")
+
     async def handle_terminal_request(self, command, working_dir=None):
         import subprocess
         print(f"[ADA DEBUG] [TERMINAL] Executing: {command}")
@@ -1397,6 +1438,17 @@ class AudioLoop:
                                         id=fc.id,
                                         name=fc.name,
                                         response={"result": "Navigation avancée démarrée. Je te tiendrai informé."},
+                                    )
+                                    function_responses.append(function_response)
+
+                                elif fc.name == "execute_pc_task":
+                                    task = fc.args.get("task_description", "")
+                                    print(f"[ADA DEBUG] [TOOL] Tool Call: 'execute_pc_task' task='{task[:60]}'")
+                                    asyncio.create_task(self.handle_pc_task_request(task))
+                                    function_response = types.FunctionResponse(
+                                        id=fc.id,
+                                        name=fc.name,
+                                        response={"result": "Prise de contrôle du Mac démarrée. Cmd+Shift+Esc pour stopper."},
                                     )
                                     function_responses.append(function_response)
 
@@ -2728,6 +2780,14 @@ class AudioLoop:
                     return await self.advanced_browser_agent.run(args.get("mission", ""))
                 except Exception as e:
                     return f"Navigation avancée erreur : {e}"
+            # ── CONTRÔLE PC AUTONOME ──────────────────────────────────────────
+            elif name == "execute_pc_task":
+                if not self.os_control_agent:
+                    return "OsControlAgent non disponible (vérifier les dépendances)."
+                try:
+                    return await self.os_control_agent.run(args.get("task_description", ""))
+                except Exception as e:
+                    return f"PC task erreur : {e}"
             # ── MÉMOIRE ───────────────────────────────────────────────────────
             elif name == "search_memory":
                 results = memory.search_memory(args.get("query", ""))
