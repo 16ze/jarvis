@@ -6,10 +6,14 @@ Capacités vs web_agent.py :
 - Cookies persistants (sessions LinkedIn, Gmail, etc.)
 - Headless auto : visible en local si BROWSER_HEADLESS=false + DISPLAY présent
 - Feedback frontend via callback step (log intercepteur browser-use)
+
+NOTE ARCHITECTURE : Ce fichier utilise langchain-google-genai comme adaptateur LLM.
+browser-use v0.12.6 requiert obligatoirement un LLM LangChain (BaseChatModel) — il n'existe
+pas d'interface Gemini native dans cette version. C'est la seule exception acceptée au
+principe "pas de LangChain" du projet.
 """
 
 import asyncio
-import json
 import logging
 import os
 from pathlib import Path
@@ -58,7 +62,7 @@ class AdvancedBrowserAgent:
         Intercepte les logs browser-use pour envoyer les actions en cours au frontend.
         browser-use log ses actions avec des emojis → on filtre sur ces patterns.
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         class _BrowserUseHandler(logging.Handler):
             _KEYWORDS = ("Action:", "Executing", "Navigate", "Click", "Type",
@@ -116,13 +120,13 @@ class AdvancedBrowserAgent:
         try:
             llm = self._get_llm()
 
-            # browser-use v0.12.6 : Browser accepte headless et storage_state directement
+            # browser-use v0.12.6 : Browser == BrowserSession (Pydantic model).
+            # headless et storage_state sont des champs de BrowserProfile.
+            from browser_use import BrowserProfile
             storage_state = str(COOKIES_FILE) if COOKIES_FILE.exists() else None
+            profile = BrowserProfile(headless=headless, storage_state=storage_state)
 
-            browser = Browser(
-                headless=headless,
-                storage_state=storage_state,
-            )
+            browser = Browser(browser_profile=profile)
 
             agent = Agent(task=mission, llm=llm, browser=browser)
 
@@ -131,29 +135,12 @@ class AdvancedBrowserAgent:
             final = result.final_result() if hasattr(result, "final_result") else str(result)
             final = final or "Mission terminée."
 
-            # Sauvegarder les cookies après la session
-            # browser-use v0.12.6 : accès au contexte Playwright interne
+            # Sauvegarder les cookies après la session.
+            # browser-use v0.12.6 : BrowserSession expose export_storage_state(output_path)
+            # qui extrait les cookies via CDP et les écrit directement au format Playwright.
             try:
-                pw_ctx = None
-                # Essayer plusieurs chemins d'accès selon la version
-                if hasattr(browser, "session") and hasattr(browser.session, "context"):
-                    pw_ctx = browser.session.context
-                elif hasattr(browser, "_context"):
-                    pw_ctx = browser._context
-                elif hasattr(browser, "context"):
-                    pw_ctx = browser.context
-                elif hasattr(browser, "playwright_context"):
-                    pw_ctx = browser.playwright_context
-
-                if pw_ctx is not None:
-                    state = await pw_ctx.storage_state()
-                    COOKIES_FILE.write_text(
-                        json.dumps(state, ensure_ascii=False, indent=2),
-                        encoding="utf-8"
-                    )
-                    print(f"[AdvancedBrowser] Cookies sauvegardés → {COOKIES_FILE}")
-                else:
-                    print("[AdvancedBrowser] Contexte Playwright inaccessible — cookies non sauvegardés.")
+                await browser.export_storage_state(output_path=COOKIES_FILE)
+                print(f"[AdvancedBrowser] Cookies sauvegardés → {COOKIES_FILE}")
             except Exception as e:
                 print(f"[AdvancedBrowser] Cookie save warning : {e}")
 
