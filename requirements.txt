@@ -12,7 +12,8 @@ mss
 # Browser Automation
 playwright
 # Smart Home
-python-kasa
+tinytuya
+pychromecast
 # 3D Printing
 zeroconf>=0.131.0
 aiohttp>=3.9.0
@@ -22,3 +23,6 @@ python-dotenv
 mediapipe
 # CAD Generation
 build123d
+# Browser-use (navigation web avancée via LLM)
+browser-use>=0.1.0
+langchain-google-genai>=2.0.0
