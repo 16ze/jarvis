@@ -90,7 +90,7 @@ def _get_logical_screen_size() -> tuple[int, int]:
         parts = [p.strip() for p in output.split(",")]
         return int(parts[2]), int(parts[3])
     except Exception:
-        # Fallback conservateur
+        print("[OsControl] ⚠️  Impossible de détecter la résolution logique — fallback 1440x900")
         return 1440, 900
 
 
@@ -205,7 +205,7 @@ class OsControlAgent:
                     "alt": "option down", "option": "option down",
                 }
                 parts = [p.strip().lower() for p in text.split("+")]
-                key = parts[-1]
+                key = parts[-1].replace('"', '\\"')
                 mods = [_modifier_map[p] for p in parts[:-1] if p in _modifier_map]
                 using_clause = ", ".join(mods)
                 if using_clause:
@@ -330,7 +330,8 @@ class OsControlAgent:
                 return final_result
 
             result_str = await self._execute_action(action_json, screen_w, screen_h)
-            history.append(f"{action}: {reason}")
+            print(f"[OsControl] Résultat : {result_str}")
+            history.append(f"{action}: {reason} → {result_str}")
 
             # Petite pause pour laisser le Mac réagir
             await asyncio.sleep(0.5)
