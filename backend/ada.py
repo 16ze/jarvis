@@ -3502,6 +3502,8 @@ class AudioLoop:
                 elif n == "health_heart_rate": return await asyncio.to_thread(self.health.get_heart_rate, args.get("days", 3))
                 elif n == "health_activity": return await asyncio.to_thread(self.health.get_activity_summary, args.get("days", 7))
                 elif n == "spotify_playlists": return await asyncio.to_thread(self.spotify.get_playlists)
+                elif n == "twilio_send_sms":
+                                                        result = await asyncio.to_thread(self.twilio.send_sms, args["to"], args["body"])
                 return f"MCP '{name}' non mappé."
             else:
                 return f"Outil '{name}' non disponible."
