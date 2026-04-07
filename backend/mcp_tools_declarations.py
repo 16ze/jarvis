@@ -1421,6 +1421,28 @@ advanced_web_navigation_tool = {
     "behavior": "NON_BLOCKING"
 }
 
+# ── OS CONTROL (Full Computer Use) ───────────────────────────────────────────
+execute_pc_task_tool = {
+    "name": "execute_pc_task",
+    "description": (
+        "Prend le contrôle total du Mac (souris, clavier, applications) "
+        "pour accomplir n'importe quelle tâche complexe de manière autonome. "
+        "Prend des screenshots en continu, analyse l'écran et agit jusqu'à completion. "
+        "Peut ouvrir le Finder, déplacer des fichiers, coder dans VS Code, changer les réglages système, etc."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "task_description": {
+                "type": "STRING",
+                "description": "Description complète de la tâche à accomplir sur le Mac."
+            }
+        },
+        "required": ["task_description"]
+    },
+    "behavior": "NON_BLOCKING"
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # LISTE CONSOLIDÉE — à importer dans ada.py
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1459,6 +1481,8 @@ MCP_TOOLS = [
     wikipedia_search_tool, wikipedia_article_tool,
     arxiv_search_tool, arxiv_paper_tool,
     advanced_web_navigation_tool,
+    # OS Control
+    execute_pc_task_tool,
     # Création
     canva_list_designs_tool, canva_get_design_tool, canva_export_design_tool,
     figma_list_files_tool, figma_get_file_tool, figma_export_node_tool,
