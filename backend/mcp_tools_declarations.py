@@ -1417,7 +1417,8 @@ advanced_web_navigation_tool = {
             }
         },
         "required": ["mission"]
-    }
+    },
+    "behavior": "NON_BLOCKING"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
