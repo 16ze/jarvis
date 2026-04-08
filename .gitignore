@@ -61,3 +61,6 @@ public/vision_wasm_nosimd_internal.wasm
 # Scripts & notes locaux
 Jarvis.command
 IDEAS/
+
+# Git worktrees
+.worktrees/

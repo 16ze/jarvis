@@ -9,10 +9,12 @@ opencv-python
 pyaudio
 pillow
 mss
+numpy
 # Browser Automation
 playwright
 # Smart Home
-python-kasa
+tinytuya
+pychromecast
 # 3D Printing
 zeroconf>=0.131.0
 aiohttp>=3.9.0
@@ -20,5 +22,12 @@ aiohttp>=3.9.0
 python-dotenv
 # Face & Hand tracking
 mediapipe
+# Voice Recognition
+resemblyzer
 # CAD Generation
 build123d
+# Browser-use (navigation web avancée via LLM)
+browser-use>=0.1.0
+langchain-google-genai>=2.0.0
+# OS Control (keyboard & mouse automation)
+pynput>=1.7.0

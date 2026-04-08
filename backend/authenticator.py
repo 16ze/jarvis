@@ -219,3 +219,116 @@ class FaceAuthenticator:
                 asyncio.run_coroutine_threadsafe(self.on_frame(b64_str), loop)
 
         video_capture.release()
+
+
+# ─── MULTI-USER FACE DETECTOR ───────────────────────────────────────────────
+
+class MultiUserFaceDetector:
+    """
+    Détecte et identifie plusieurs utilisateurs dans un frame BGR.
+    Charge les photos de référence depuis memory/face_refs/.
+    Retourne une liste de {"user": str, "confidence": float, "location": Optional[str]}.
+    """
+
+    CONFIDENCE_THRESHOLD = 0.85
+
+    def __init__(self, camera_label: str = None):
+        self.camera_label = camera_label
+        self._reference_landmarks: dict[str, np.ndarray] = {}
+        self.landmarker = None
+        self._faces_dir = os.path.join(
+            os.getenv("JARVIS_ROOT", "/Users/bryandev/jarvis"),
+            "backend", "memory", "face_refs"
+        )
+        self._ensure_model()
+        self._init_landmarker()
+        self._load_all_references()
+
+    def _ensure_model(self):
+        if not os.path.exists(FaceAuthenticator.MODEL_PATH):
+            print("[MFACE] Downloading Face Landmarker model...")
+            try:
+                urllib.request.urlretrieve(FaceAuthenticator.MODEL_URL, FaceAuthenticator.MODEL_PATH)
+            except Exception as e:
+                print(f"[MFACE] Download failed: {e}")
+
+    def _init_landmarker(self):
+        if not os.path.exists(FaceAuthenticator.MODEL_PATH):
+            return
+        try:
+            base_options = mp_python.BaseOptions(model_asset_path=FaceAuthenticator.MODEL_PATH)
+            options = vision.FaceLandmarkerOptions(
+                base_options=base_options,
+                output_face_blendshapes=False,
+                output_facial_transformation_matrixes=False,
+                num_faces=4,
+            )
+            self.landmarker = vision.FaceLandmarker.create_from_options(options)
+        except Exception as e:
+            print(f"[MFACE] Init failed: {e}")
+
+    def _extract_landmarks(self, image_rgb: np.ndarray) -> list[np.ndarray]:
+        if self.landmarker is None:
+            return []
+        try:
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
+            result = self.landmarker.detect(mp_image)
+            return [
+                np.array([[lm.x, lm.y, lm.z] for lm in face], dtype=np.float32).flatten()
+                for face in result.face_landmarks
+            ]
+        except Exception:
+            return []
+
+    def _cosine_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
+        na, nb = np.linalg.norm(a), np.linalg.norm(b)
+        if na == 0 or nb == 0:
+            return 0.0
+        return float(np.dot(a, b) / (na * nb))
+
+    def _load_all_references(self):
+        if not os.path.exists(self._faces_dir):
+            return
+        for fname in os.listdir(self._faces_dir):
+            if not fname.endswith(".jpg"):
+                continue
+            user_id = fname[:-4]
+            img_bgr = cv2.imread(os.path.join(self._faces_dir, fname))
+            if img_bgr is None:
+                continue
+            img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+            landmarks = self._extract_landmarks(img_rgb)
+            if landmarks:
+                self._reference_landmarks[user_id] = landmarks[0]
+                print(f"[MFACE] Référence chargée : {user_id}")
+
+    def reload_references(self):
+        self._reference_landmarks.clear()
+        self._load_all_references()
+
+    def detect(self, frame_bgr: np.ndarray) -> list[dict]:
+        """
+        Analyse un frame BGR. Retourne une liste de détections :
+        [{"user": str, "confidence": float, "location": Optional[str]}]
+        Retourne [] si aucun visage reconnu ou si aucune référence chargée.
+        """
+        if not self._reference_landmarks:
+            return []
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        detected_landmarks = self._extract_landmarks(frame_rgb)
+        results = []
+        for face_lm in detected_landmarks:
+            best_user = None
+            best_score = -1.0
+            for user_id, ref_lm in self._reference_landmarks.items():
+                score = self._cosine_similarity(face_lm, ref_lm)
+                if score > best_score:
+                    best_score = score
+                    best_user = user_id
+            if best_score >= self.CONFIDENCE_THRESHOLD and best_user:
+                results.append({
+                    "user": best_user,
+                    "confidence": best_score,
+                    "location": self.camera_label,
+                })
+        return results

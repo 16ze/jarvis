@@ -62,7 +62,7 @@ class GoogleAgent:
 
     # ─── GMAIL ───────────────────────────────────────────────────────────────
 
-    def read_emails(self, max_results=5, query="is:unread"):
+    def read_emails(self, max_results=5, query="in:inbox"):
         self._ensure_connected()
         results = self._gmail.users().messages().list(
             userId="me", q=query, maxResults=max_results
