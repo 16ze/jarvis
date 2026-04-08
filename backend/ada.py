@@ -3590,7 +3590,7 @@ class AudioLoop:
                     name = args.get("name", "Inconnu")
                     profile = user_profile_manager.create_guest(name)
                     presence_manager.voice_recognizer.reload_embeddings()
-                    presence_manager._guest_detection_pending = False
+                    self._guest_detection_pending = False
                     return f"Profil créé pour {profile['name']}. Bienvenue !"
                 return f"MCP '{name}' non mappé."
             else:
