@@ -125,5 +125,8 @@
         }
     ],
     "camera_flipped": false,
-    "timezone": "Europe/Paris"
+    "timezone": "Europe/Paris",
+    "cameras": [
+        {"id": 0, "type": "webcam", "label": "bureau"}
+    ]
 }
