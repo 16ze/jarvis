@@ -9,6 +9,7 @@ opencv-python
 pyaudio
 pillow
 mss
+numpy
 # Browser Automation
 playwright
 # Smart Home
@@ -21,7 +22,7 @@ aiohttp>=3.9.0
 python-dotenv
 # Face & Hand tracking
 mediapipe
-numpy
+# Voice Recognition
 resemblyzer
 # CAD Generation
 build123d
