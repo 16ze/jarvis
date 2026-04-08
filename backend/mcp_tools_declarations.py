@@ -1425,10 +1425,15 @@ advanced_web_navigation_tool = {
 execute_pc_task_tool = {
     "name": "execute_pc_task",
     "description": (
-        "Prend le contrôle total du Mac (souris, clavier, applications) "
-        "pour accomplir n'importe quelle tâche complexe de manière autonome. "
-        "Prend des screenshots en continu, analyse l'écran et agit jusqu'à completion. "
-        "Peut ouvrir le Finder, déplacer des fichiers, coder dans VS Code, changer les réglages système, etc."
+        "Prend le contrôle total du Mac via screenshots + souris + clavier. "
+        "C'est l'outil PAR DÉFAUT pour TOUT ce qui se passe sur l'ordinateur de Bryan. "
+        "Utilise-le pour : ouvrir n'importe quelle app (Chrome, Safari, Spotify, VS Code, Finder, Terminal, Xcode, Photos, Mail, etc.), "
+        "aller sur un site web dans le vrai navigateur (Google, YouTube, n'importe quelle URL), "
+        "faire une recherche Google visible à l'écran, "
+        "cliquer dans l'interface macOS, taper du texte, déplacer des fichiers, changer les réglages système. "
+        "Exemples : 'ouvre Google', 'va sur YouTube', 'lance Spotify', 'ouvre le Finder', "
+        "'ouvre Chrome et va sur gmail.com', 'règle le volume', 'ferme cette fenêtre', 'prend un screenshot'. "
+        "run_web_agent est RÉSERVÉ aux recherches d'info silencieuses en arrière-plan — ne jamais l'utiliser si Bryan veut voir son écran."
     ),
     "parameters": {
         "type": "OBJECT",
@@ -1608,11 +1613,8 @@ twilio_send_sms_tool = {
     }
 }
 
-# Assurez-vous que MCP_TOOLS est défini quelque part avant d'ajouter des outils
-# Exemple: MCP_TOOLS = []
-MCP_TOOLS.append(twilio_send_sms_tool)
-
 MCP_TOOLS = [
+    twilio_send_sms_tool,
     # Communication
     slack_list_channels_tool, slack_read_channel_tool, slack_send_message_tool, slack_search_messages_tool,
     telegram_send_message_tool, telegram_send_photo_tool, telegram_get_updates_tool,
@@ -1666,5 +1668,4 @@ MCP_TOOLS = [
     camera_tracking_tool, camera_motion_detect_tool, camera_watch_tool,
 ]
 
-MCP_TOOL_NAMES = {t["name"    twilio_send_sms_tool,
-] for t in MCP_TOOLS}
+MCP_TOOL_NAMES = {t["name"] for t in MCP_TOOLS}

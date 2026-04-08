@@ -22,6 +22,22 @@ from google.genai import types
 
 load_dotenv()
 
+JARVIS_ROOT = os.getenv("JARVIS_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# ─── BACKGROUND TASK TRACKER ──────────────────────────────────────────────────
+_bg_tasks: set[asyncio.Task] = set()
+
+def _bg_task(coro, name: str | None = None) -> asyncio.Task:
+    """Create a tracked background task that logs exceptions instead of crashing silently."""
+    task = asyncio.create_task(coro, name=name)
+    _bg_tasks.add(task)
+    def _done(t: asyncio.Task) -> None:
+        _bg_tasks.discard(t)
+        if not t.cancelled() and (exc := t.exception()):
+            print(f"[BG TASK ERROR] {t.get_name()}: {type(exc).__name__}: {exc}")
+    task.add_done_callback(_done)
+    return task
+
 # ─── FORMATEUR D'ERREURS ACTIONNABLE ─────────────────────────────────────────
 _ENV_FOR_TOOL: dict = {
     "slack": "SLACK_BOT_TOKEN", "notion": "NOTION_API_KEY", "linear": "LINEAR_API_KEY",
@@ -450,7 +466,7 @@ class TextAgent:
             warnings.warn(f"[TextAgent] AdvancedBrowserAgent: {e}")
             self._advanced_browser = None
 
-    def _get_client() -> genai.Client:
+    def _get_client(self) -> genai.Client:
         if self._client is None:
             if not GEMINI_API_KEY:
                 raise RuntimeError("GEMINI_API_KEY non configurée")
@@ -711,19 +727,19 @@ class TextAgent:
         elif name == "spotify_volume" and self._spotify:
             return await asyncio.to_thread(self._spotify.set_volume, args["volume_percent"])
         elif name == "spotify_search" and self._spotify:
-            return await asyncio.to_thread(self._spotify.search, args["query"], args.get("type", "track"), args.get("limit", 5))
+            return await asyncio.to_thread(self._spotify.search, args["query"], args.get("search_type", "track"), args.get("limit", 5))
 
         # ── YOUTUBE ──────────────────────────────────────────────────────────
         elif name == "youtube_search" and self._yt:
-            return await asyncio.to_thread(self._yt.search, args["query"], args.get("max_results", 5))
+            return await asyncio.to_thread(self._yt.search_videos, args["query"], args.get("limit", 5))
 
         # ── WIKIPEDIA ────────────────────────────────────────────────────────
         elif name == "wikipedia_search" and self._wiki:
-            return await asyncio.to_thread(self._wiki.search, args["query"])
+            return await asyncio.to_thread(self._wiki.search, args["query"], args.get("limit", 5))
 
         # ── ARXIV ────────────────────────────────────────────────────────────
         elif name == "arxiv_search" and self._arxiv:
-            return await asyncio.to_thread(self._arxiv.search, args["query"], args.get("max_results", 5))
+            return await asyncio.to_thread(self._arxiv.search, args["query"], args.get("limit", 5), args.get("sort_by", "relevance"))
 
         # ── GOOGLE MAPS ──────────────────────────────────────────────────────
         elif name == "maps_directions" and self._maps:
@@ -740,21 +756,21 @@ class TextAgent:
             path = args.get("path", "")
             if not path.startswith("/"):
                 from pathlib import Path as _Path
-                path = str(_Path("/Users/bryandev/jarvis") / path)
+                path = str(_Path(JARVIS_ROOT) / path)
             return self._self_correction.read_file(path)
 
         elif name == "jarvis_write_file" and self._self_correction:
             path = args.get("path", "")
             if not path.startswith("/"):
                 from pathlib import Path as _Path
-                path = str(_Path("/Users/bryandev/jarvis") / path)
+                path = str(_Path(JARVIS_ROOT) / path)
             return self._self_correction.write_file(path, args.get("content", ""))
 
         elif name == "jarvis_list_files" and self._self_correction:
             path = args.get("path", "")
             if path and not path.startswith("/"):
                 from pathlib import Path as _Path
-                path = str(_Path("/Users/bryandev/jarvis") / path)
+                path = str(_Path(JARVIS_ROOT) / path)
             return self._self_correction.list_files(path)
 
         elif name == "jarvis_git_commit" and self._self_correction:
@@ -764,7 +780,7 @@ class TextAgent:
             path = args.get("file_path", "")
             if not path.startswith("/"):
                 from pathlib import Path as _Path
-                path = str(_Path("/Users/bryandev/jarvis") / path)
+                path = str(_Path(JARVIS_ROOT) / path)
             return self._self_correction.correct_file(path, args.get("error_description", ""))
 
         # ── SELF-EVOLUTION ─────────────────────────────────────────────────────
@@ -826,8 +842,9 @@ class TextAgent:
                     _tmp.write(_b64b.b64decode(_snap["data"]))
                     _tmp.close()
                     await asyncio.to_thread(_tg.send_photo, f"file://{_tmp.name}", "📸 Mouvement détecté")
-            asyncio.create_task(
-                self._tuya_camera.start_motion_watch(_on_motion_bridge, with_snapshot=_with_snap)
+            _bg_task(
+                self._tuya_camera.start_motion_watch(_on_motion_bridge, with_snapshot=_with_snap),
+                "tuya_motion_watch_bridge"
             )
             return "Surveillance active — alerte Telegram + photo à chaque mouvement détecté."
 
@@ -946,7 +963,7 @@ class TextAgent:
 
         # ── SPOTIFY (compléments) ─────────────────────────────────────────────
         elif name == "spotify_playlists" and self._spotify:
-            return await asyncio.to_thread(self._spotify.get_playlists)
+            return await asyncio.to_thread(self._spotify.get_playlists, args.get("limit", 20))
 
         # ── MAPS (compléments) ────────────────────────────────────────────────
         elif name == "maps_search_places" and self._maps:
@@ -1317,7 +1334,7 @@ async def _telegram_polling_loop() -> None:
                             continue
 
                     print(f"[ExternalBridge] Telegram message traité: {text[:80]}")
-                    asyncio.create_task(handle_external_message("telegram", chat_id, text))
+                    _bg_task(handle_external_message("telegram", chat_id, text), f"tg_msg_{chat_id}")
 
             except asyncio.CancelledError:
                 return
@@ -1361,7 +1378,7 @@ async def _whatsapp_polling_loop() -> None:
                         sender = key.get("remoteJid", "")
                         if text and sender:
                             print(f"[ExternalBridge] WhatsApp message reçu: {text[:80]}")
-                            asyncio.create_task(handle_external_message("whatsapp", sender, text))
+                            _bg_task(handle_external_message("whatsapp", sender, text), f"wa_msg_{sender[:12]}")
             except asyncio.CancelledError:
                 return
             except Exception as e:

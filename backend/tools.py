@@ -66,7 +66,6 @@ read_file_tool = {
 }
 
 tools_list = [{"function_declarations": [
-    generate_cad_prototype_tool,
     write_file_tool,
     read_directory_tool,
     read_file_tool

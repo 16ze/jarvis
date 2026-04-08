@@ -373,9 +373,10 @@ function App() {
 
         // Interrupt: stop all scheduled audio sources immediately
         socket.on('clear_audio', () => {
-            playbackSourcesRef.current.forEach(s => { try { s.stop(); } catch (_) {} });
+            const toStop = [...playbackSourcesRef.current];
             playbackSourcesRef.current = [];
             playbackNextTimeRef.current = 0;
+            toStop.forEach(s => { try { s.stop(); } catch (_) {} });
         });
 
         // Raw PCM16 from Ada — play via Web Audio API so browser AEC can cancel echo from mic
@@ -403,17 +404,21 @@ function App() {
                 const source = ctx.createBufferSource();
                 source.buffer = buffer;
                 source.connect(ctx.destination);
+                // Unique ID to safely target this source on interrupt
+                const sourceId = crypto.randomUUID();
+                source._id = sourceId;
 
                 // Schedule gaplessly: start at next available slot
+                // 10ms buffer (was 50ms) — reduced to minimize barge-in latency
                 const now = ctx.currentTime;
-                const startAt = Math.max(now + 0.05, playbackNextTimeRef.current);
+                const startAt = Math.max(now + 0.01, playbackNextTimeRef.current);
                 source.start(startAt);
                 playbackNextTimeRef.current = startAt + buffer.duration;
 
                 // Track source so we can stop it on interrupt
                 playbackSourcesRef.current.push(source);
                 source.onended = () => {
-                    playbackSourcesRef.current = playbackSourcesRef.current.filter(s => s !== source);
+                    playbackSourcesRef.current = playbackSourcesRef.current.filter(s => s._id !== sourceId);
                 };
             } catch (err) {
                 console.error('[Audio] Playback error:', err);

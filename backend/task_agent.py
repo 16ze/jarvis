@@ -24,7 +24,10 @@ from google import genai
 
 SUB_MODEL = "gemini-2.0-flash-lite"
 _MAX_ITERATIONS = 10
-_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+_gemini_key = os.getenv("GEMINI_API_KEY")
+if not _gemini_key:
+    raise RuntimeError("GEMINI_API_KEY manquante — TaskAgent ne peut pas démarrer.")
+_client = genai.Client(api_key=_gemini_key)
 
 
 class TaskAgent:
@@ -60,6 +63,8 @@ class TaskAgent:
         )
         try:
             m = re.search(r"\{.*\}", response.text, re.DOTALL)
+            if not m:
+                return []
             plan = json.loads(m.group())
             return plan.get("subtasks", [])
         except Exception:
@@ -74,7 +79,11 @@ class TaskAgent:
             task_type = task.get("type", "gemini_only")
 
             if task_type == "terminal":
-                output = await self._run_terminal(task.get("command", ""))
+                cmd = task.get("command", "").strip()
+                if not cmd:
+                    results.append(f"[terminal] {desc}\n→ ERREUR : champ 'command' absent ou vide.")
+                    continue
+                output = await self._run_terminal(cmd)
                 results.append(f"[terminal] {desc}\n→ {output[:500]}")
 
             else:

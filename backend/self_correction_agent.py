@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-JARVIS_ROOT = Path("/Users/bryandev/jarvis").resolve()
+JARVIS_ROOT = Path(os.getenv("JARVIS_ROOT", str(Path(__file__).parent.parent))).resolve()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 MODEL = "gemini-2.5-flash"
 

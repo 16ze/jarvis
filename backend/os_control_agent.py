@@ -36,32 +36,59 @@ MAX_STEPS = 30
 TIMEOUT_SEC = 120.0
 HISTORY_SIZE = 5
 
-SYSTEM_PROMPT = """Tu contrôles un Mac. À chaque étape tu reçois :
-1. Un screenshot de l'écran actuel
-2. La tâche à accomplir
-3. L'historique des dernières actions
+SYSTEM_PROMPT = """Tu contrôles un Mac pour Bryan. À chaque étape tu reçois un screenshot + la tâche + l'historique.
 
 Réponds UNIQUEMENT avec un JSON valide (sans markdown, sans explication) :
 {
   "action": "click|double_click|right_click|type|hotkey|scroll|wait|finish",
-  "x": <0-1000, coordonnée normalisée, pour click/right_click/double_click/scroll>,
-  "y": <0-1000, coordonnée normalisée, pour click/right_click/double_click/scroll>,
-  "text": "<texte à taper OU combinaison de touches ex: cmd+space>",
-  "delta": <entier, pixels scroll positif=bas négatif=haut, défaut 3>,
-  "reason": "<description française lisible de l'action — affichée à l'utilisateur>",
-  "result": "<résumé final de ce qui a été accompli, uniquement pour action=finish>"
+  "x": <0-1000, coordonnée normalisée, pour click/double_click/right_click/scroll SEULEMENT>,
+  "y": <0-1000, coordonnée normalisée, pour click/double_click/right_click/scroll SEULEMENT>,
+  "text": "<texte pour type|hotkey>",
+  "delta": <entier scroll, positif=bas négatif=haut, défaut 3>,
+  "reason": "<action en français, obligatoire>",
+  "result": "<résumé uniquement pour action=finish>"
 }
 
-Règles :
-- Utilise "wait" si l'écran charge ou si une animation est en cours (attend 1s)
-- Utilise "finish" quand la tâche est terminée ou clairement impossible
-- "reason" est obligatoire sur chaque action — sois concis et en français
-- Les coordonnées (x, y) sont normalisées de 0 à 1000 (0,0 = haut-gauche, 1000,1000 = bas-droite)
-- Pour "hotkey" : utilise le format "cmd+space", "ctrl+c", "cmd+shift+esc", etc.
-- N'inclus "x","y" que pour les actions de pointeur (click, scroll)
-- Pour "type" : inclus uniquement "text", pas de coordonnées
-- Analyse attentivement le screenshot avant d'agir
-- Si tu te retrouves en boucle (même action répétée), utilise "finish" avec un rapport d'échec"""
+══════════════════════════════════════════════════════
+STRATÉGIES PRIORITAIRES macOS (dans cet ordre strict)
+══════════════════════════════════════════════════════
+
+▸ OUVRIR UNE APPLICATION :
+  1. PRÉFÉRER le terminal si déjà lancé : type "open -a \"NomApp\"\n"
+  2. SINON Spotlight : hotkey "cmd+space" → wait → type "NomApp" → wait → type "return"
+  3. JAMAIS cliquer au hasard sur le bureau pour chercher une app
+  4. JAMAIS faire cmd+space si Spotlight est déjà ouvert
+
+▸ FERMER UNE FENÊTRE : hotkey "cmd+w" ou cliquer ✕ rouge (haut gauche)
+▸ QUITTER UNE APP : hotkey "cmd+q"
+▸ COPIER/COLLER : hotkey "cmd+c" / hotkey "cmd+v"
+▸ CHANGER D'APP : hotkey "cmd+tab" (puis tab pour naviguer)
+▸ PRENDRE UNE ZONE DE L'ÉCRAN : hotkey "cmd+shift+4"
+▸ NOUVELLE FENÊTRE NAVIGATEUR : hotkey "cmd+n"
+▸ NOUVEL ONGLET : hotkey "cmd+t"
+▸ BARRE D'ADRESSE NAVIGATEUR : hotkey "cmd+l" → type URL → type "return"
+
+══════════════════════════════════════════════════════
+RÈGLES DE PRÉCISION — NE JAMAIS ENFREINDRE
+══════════════════════════════════════════════════════
+
+1. ANALYSE D'ABORD : lis tout le screenshot avant d'agir. Identifie l'élément exact.
+2. UN SEUL OBJECTIF PAR STEP : ne combine jamais 2 intentions en 1 action.
+3. RACCOURCIS AVANT CLICS : si un raccourci clavier accomplit la tâche → l'utiliser.
+4. COORDONNÉES : centre exact de l'élément, pas approximatif. Zoom mentalement.
+5. WAIT obligatoire : après hotkey, après click sur menu, après ouverture app → wait 1 fois.
+6. BOUCLE DÉTECTÉE (même action ×2) → finish avec échec explicite, ne pas continuer.
+7. JAMAIS cliquer sans avoir identifié l'élément visuellement sur le screenshot.
+8. DOCK (bas de l'écran) : les icônes sont à y≈970, réparties horizontalement. Identifier par icône.
+
+══════════════════════════════════════════════════════
+FORMAT STRICT
+══════════════════════════════════════════════════════
+- "x" et "y" : UNIQUEMENT pour click/double_click/right_click/scroll. JAMAIS pour type/hotkey/wait/finish.
+- "text" : UNIQUEMENT pour type et hotkey.
+- Les coordonnées sont 0-1000 (0,0 = haut-gauche, 1000,1000 = bas-droite).
+- Hotkey format : "cmd+space", "cmd+q", "cmd+shift+4", "return", "escape".
+"""
 
 
 def _run_osascript(script: str) -> str:
@@ -338,6 +365,81 @@ class OsControlAgent:
 
         return f"Tâche interrompue : limite de {MAX_STEPS} steps atteinte."
 
+    # ── Fast-path : actions simples sans vision loop ──────────────────────────
+    _OPEN_PATTERNS = [
+        r"(?:ouvre?|lance?|démarre?|open|start|launch)\s+(?:l'?app(?:lication)?\s+)?[«\"']?([a-zA-Z0-9À-ÿ\s\.\-]+?)[«\"']?\s*$",
+    ]
+
+    async def _try_fast_path(self, task: str, step_callback: Optional[Callable]) -> Optional[str]:
+        """
+        Tente d'exécuter les tâches simples directement via osascript/subprocess.
+        Retourne le résultat si géré, None sinon (→ vision loop).
+        """
+        import re
+        task_lower = task.lower().strip()
+
+        # ── Ouvrir une application ──────────────────────────────────────────
+        for pattern in self._OPEN_PATTERNS:
+            m = re.search(pattern, task.strip(), re.IGNORECASE)
+            if m:
+                app_name = m.group(1).strip().strip("'\"«»")
+                if step_callback:
+                    await step_callback({"image": None, "log": f"[PC] Ouverture de {app_name} via open -a"})
+                try:
+                    result = await asyncio.to_thread(
+                        subprocess.run,
+                        ["open", "-a", app_name],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    if result.returncode == 0:
+                        return f"{app_name} ouvert."
+                    # Fallback : essayer avec osascript activate
+                    try:
+                        await asyncio.to_thread(
+                            _run_osascript,
+                            f'tell application "{app_name}" to activate'
+                        )
+                        return f"{app_name} activé."
+                    except Exception:
+                        pass
+                    # Fallback Spotlight si open -a échoue
+                    if step_callback:
+                        await step_callback({"image": None, "log": f"[PC] open -a échoué → Spotlight"})
+                    return None  # Laisser la vision loop gérer via Spotlight
+                except Exception as e:
+                    if step_callback:
+                        await step_callback({"image": None, "log": f"[PC] Erreur fast-path : {e}"})
+                    return None
+
+        # ── Raccourcis système directs ──────────────────────────────────────
+        DIRECT_HOTKEYS = {
+            r"(prends?|capture|screenshot)\s+(?:un |l')?écran": "cmd+shift+3",
+            r"(verrouille|lock)\s+(?:l'|le )?écran": "cmd+ctrl+q",
+            r"(volume|son)\s+(mute|muet|silence)": "F10",
+        }
+        for pattern, hotkey in DIRECT_HOTKEYS.items():
+            if re.search(pattern, task_lower):
+                parts = hotkey.split("+")
+                key = parts[-1]
+                mods_map = {
+                    "cmd": "command down", "ctrl": "control down",
+                    "shift": "shift down", "opt": "option down",
+                }
+                mods = [mods_map[p] for p in parts[:-1] if p in mods_map]
+                using = ", ".join(mods)
+                script = (
+                    f'tell application "System Events" to keystroke "{key}" using {{{using}}}'
+                    if using else
+                    f'tell application "System Events" to key code {key}'
+                )
+                try:
+                    await asyncio.to_thread(_run_osascript, script)
+                    return f"Raccourci {hotkey} exécuté."
+                except Exception:
+                    return None
+
+        return None  # Pas de fast-path → vision loop
+
     async def run(self, task: str, step_callback: Optional[Callable] = None) -> str:
         """
         Point d'entrée principal. Lance la boucle avec failsafe double.
@@ -354,11 +456,25 @@ class OsControlAgent:
         if step_callback:
             await step_callback({"image": None, "log": f"[PC] Prise de contrôle — {task[:80]}"})
 
+        # Tenter le fast-path avant la vision loop
+        try:
+            fast_result = await self._try_fast_path(task, step_callback)
+            if fast_result is not None:
+                print(f"[OsControl] Fast-path → {fast_result}")
+                return fast_result
+        except Exception as e:
+            print(f"[OsControl] Fast-path erreur : {e}")
+
         loop = asyncio.get_running_loop()
         stop_event = asyncio.Event()
-        listener = self._start_hotkey_listener(stop_event, loop)
+        listener = None
 
         try:
+            try:
+                listener = self._start_hotkey_listener(stop_event, loop)
+            except Exception as e:
+                print(f"[OsControl] ⚠️  Failsafe hotkey désactivé (pynput indisponible : {e})")
+
             result = await asyncio.wait_for(
                 self._loop(task, step_callback, stop_event),
                 timeout=TIMEOUT_SEC,
@@ -380,8 +496,9 @@ class OsControlAgent:
             return msg
 
         finally:
-            stop_event.set()  # Signale au listener de s'arrêter
+            stop_event.set()
             try:
-                listener.stop()
+                if listener:
+                    listener.stop()
             except Exception:
                 pass
