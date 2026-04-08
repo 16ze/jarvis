@@ -63,7 +63,7 @@ class PresenceManager:
 
         if profile is None:
             if self._on_unknown_voice:
-                await self._on_unknown_voice()
+                asyncio.create_task(self._on_unknown_voice())
             return
 
         existing = next((s for s in self._active_speakers if s["user"] == user_id), None)
