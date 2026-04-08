@@ -1608,10 +1608,6 @@ twilio_send_sms_tool = {
     }
 }
 
-# Assurez-vous que MCP_TOOLS est défini quelque part avant d'ajouter des outils
-# Exemple: MCP_TOOLS = []
-MCP_TOOLS.append(twilio_send_sms_tool)
-
 MCP_TOOLS = [
     # Communication
     slack_list_channels_tool, slack_read_channel_tool, slack_send_message_tool, slack_search_messages_tool,
@@ -1664,7 +1660,67 @@ MCP_TOOLS = [
     # Caméra Tuya PTZ
     camera_switch_tool, camera_ptz_move_tool, camera_goto_preset_tool, camera_look_tool,
     camera_tracking_tool, camera_motion_detect_tool, camera_watch_tool,
+    # Twilio
+    twilio_send_sms_tool,
+    # Multi-user recognition
+    {
+        "name": "remember_for_user",
+        "description": (
+            "Enregistre une préférence, une habitude ou un fait pour l'utilisateur actuellement identifié. "
+            "Utilise ce tool dès qu'un utilisateur mentionne une préférence, une habitude ou une information "
+            "personnelle (ex: 'j'aime le café', 'je travaille le matin', 'j'ai deux enfants'). "
+            "Ne l'utilise pas pour Bryan si ce n'est pas Bryan qui parle."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "user_id": {
+                    "type": "STRING",
+                    "description": "ID de l'utilisateur : 'bryan', 'rose', ou le prénom en minuscules d'un invité."
+                },
+                "memory_type": {
+                    "type": "STRING",
+                    "description": "Type de mémoire : 'preference', 'habit', ou 'fact'."
+                },
+                "content": {
+                    "type": "STRING",
+                    "description": "La préférence, habitude ou fait à enregistrer."
+                }
+            },
+            "required": ["user_id", "memory_type", "content"]
+        }
+    },
+    {
+        "name": "enroll_voice",
+        "description": (
+            "Lance l'enrollment vocal pour un utilisateur. À utiliser quand Bryan demande à Ada "
+            "d'enregistrer la voix de quelqu'un (ex: 'Ada, enregistre la voix de Rose'). "
+            "L'enrollment dure 25 secondes — prévenir l'utilisateur de parler normalement."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "user_id": {
+                    "type": "STRING",
+                    "description": "ID de l'utilisateur à enregistrer : 'bryan', 'rose', ou prénom invité."
+                }
+            },
+            "required": ["user_id"]
+        }
+    },
+    {
+        "name": "who_is_speaking",
+        "description": (
+            "Retourne la liste des utilisateurs actuellement identifiés (voix + visage). "
+            "Utilise ce tool quand Ada n'est pas sûre de qui lui parle ou quand Bryan demande "
+            "'qui est là ?' / 'tu reconnais qui ?'."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+            "required": []
+        }
+    },
 ]
 
-MCP_TOOL_NAMES = {t["name"    twilio_send_sms_tool,
-] for t in MCP_TOOLS}
+MCP_TOOL_NAMES = {t["name"] for t in MCP_TOOLS}
