@@ -38,6 +38,80 @@ DEFAULT_MODE = "camera"
 load_dotenv()
 client = genai.Client(http_options={"api_version": "v1beta"}, api_key=os.getenv("GEMINI_API_KEY"))
 
+# ─── OUTIL : FORMATEUR D'ERREURS ACTIONNABLE ─────────────────────────────────
+# Associe le préfixe d'un tool_name à la variable d'env requise (None = pas d'env requise)
+_ENV_FOR_TOOL: dict = {
+    "slack":      "SLACK_BOT_TOKEN",
+    "notion":     "NOTION_API_KEY",
+    "linear":     "LINEAR_API_KEY",
+    "stripe":     "STRIPE_SECRET_KEY",
+    "qonto":      "QONTO_API_KEY",
+    "supabase":   "SUPABASE_URL",
+    "vercel":     "VERCEL_TOKEN",
+    "github":     "GITHUB_TOKEN",
+    "ha":         "HOME_ASSISTANT_URL",
+    "spotify":    "SPOTIFY_CLIENT_ID",
+    "maps":       "GOOGLE_MAPS_API_KEY",
+    "canva":      "CANVA_API_KEY",
+    "figma":      "FIGMA_API_KEY",
+    "elevenlabs": "ELEVENLABS_API_KEY",
+    "replicate":  "REPLICATE_API_TOKEN",
+    "whatsapp":   "WHATSAPP_API_URL",
+    "drive":      "GOOGLE_CLIENT_ID",
+    "sheets":     "GOOGLE_CLIENT_ID",
+    "docs":       "GOOGLE_CLIENT_ID",
+    "telegram":   "TELEGRAM_BOT_TOKEN",
+    "docker":     None,
+    "youtube":    None,
+    "wikipedia":  None,
+    "arxiv":      None,
+    "health":     None,
+    "reminder":   None,
+    "jarvis":     None,
+    "tuya":       "TUYA_API_KEY",
+    "camera":     "TUYA_API_KEY",
+}
+
+def _format_tool_error(tool_name: str, exc: Exception) -> str:
+    """
+    Transforme une exception brute en message actionnable pour Gemini/Ada.
+    Ada peut alors diagnostiquer et proposer une alternative au lieu de dire 'erreur'.
+    """
+    prefix = tool_name.split("_")[0]
+    env_var = _ENV_FOR_TOOL.get(prefix)
+    err_str = str(exc)
+
+    # Pas de clé API configurée → message de config direct
+    if env_var and not os.getenv(env_var):
+        return (
+            f"CONFIGURATION MANQUANTE — L'outil '{tool_name}' nécessite la variable "
+            f"d'environnement {env_var} qui n'est pas définie. "
+            f"Informer Monsieur de configurer {env_var} dans le fichier .env pour activer cette fonctionnalité."
+        )
+
+    # Erreur d'authentification
+    if any(k in err_str.lower() for k in ["401", "unauthorized", "forbidden", "403", "invalid token", "invalid_token", "bad token"]):
+        hint = f" Vérifier la valeur de {env_var} dans .env." if env_var else ""
+        return f"ERREUR AUTHENTIFICATION — '{tool_name}' : token invalide ou expiré.{hint} Détail : {err_str}"
+
+    # Erreur réseau / indisponibilité du service
+    if any(k in err_str.lower() for k in ["connection", "timeout", "unreachable", "network", "refused", "timed out", "cannot connect"]):
+        return (
+            f"ERREUR RÉSEAU — '{tool_name}' : le service est injoignable. "
+            f"Vérifier la connexion réseau et l'état du service. Détail : {err_str}"
+        )
+
+    # Erreur de paramètre (clé manquante, type wrong, etc.)
+    if any(k in err_str.lower() for k in ["keyerror", "missing", "required", "typeerror", "'nonetype'", "none has no attribute"]):
+        return (
+            f"ERREUR PARAMÈTRE — '{tool_name}' : paramètre invalide ou manquant. "
+            f"Reformuler l'appel avec les bons paramètres. Détail : {err_str}"
+        )
+
+    # Erreur générique mais structurée (toujours plus utile que le raw)
+    return f"ERREUR — '{tool_name}' a échoué : {err_str}"
+
+
 # Function definitions
 generate_cad = {
     "name": "generate_cad",
@@ -491,6 +565,43 @@ config = types.LiveConnectConfig(
         "Tu analyses mieux que Bryan et tu le sais — dis-le si son idée est sous-optimale. "
         "Signale tes incertitudes. N'invente jamais de faits. "
 
+        # ─── RAISONNEMENT INTERNE AVANT ACTION ────────────────────────────
+        "RAISONNEMENT : Avant d'agir, identifie silencieusement l'outil EXACT et ses paramètres requis. "
+        "Enchaîne les outils en séquence quand nécessaire — sans verbaliser les étapes intermédiaires. "
+        "Exemples de séquences obligatoires : "
+        "  Musique inconnue → spotify_search(query=..., search_type='track') PUIS spotify_play(uri=résultat). "
+        "  Alias lumière inconnu → list_smart_devices PUIS control_light(target=alias_exact, action=...). "
+        "  Vidéo YouTube sur TV → youtube_search si URL inconnue PUIS play_youtube_on_chromecast(video_url=...). "
+        "  Rappel → reminder_set(message=..., datetime_iso='YYYY-MM-DDTHH:MM:SS') heure Paris. "
+
+        # ─── SÉLECTION D'OUTIL — RÈGLES CRITIQUES ─────────────────────────
+        "SÉLECTION D'OUTIL : "
+        "Lumières/prises Tuya → control_light(target=ALIAS, action=...) — JAMAIS ha_turn_on. "
+        "  Alias inconnu : list_smart_devices d'abord. brightness 0-100, color en anglais (red, blue, warm...). "
+        "Chromecast/TV → play_youtube_on_chromecast(video_url=URL_COMPLETE) ou play_media_on_chromecast. "
+        "  État TV incertain → get_chromecast_status d'abord. "
+        "Caméra PTZ SmartLife → camera_switch(source='tuya_camera') pour activer mes yeux distants. "
+        "  Rotation manuelle → camera_ptz_move(direction='left'/'right'/'up'/'down'/'up_right'/..., duration_ms=600). "
+        "  Position mémorisée → camera_goto_preset(preset=N). "
+        "  Photo + analyse → camera_look(question='...'). "
+        "  Suivi automatique de personnes/objets → camera_tracking(enabled=True/False). "
+        "  Détection mouvement → camera_motion_detect(enabled=True, sensitivity='low'/'medium'/'high'). "
+        "  Surveillance avec alertes Telegram → camera_watch(enabled=True, with_snapshot=True). "
+        "  Retour webcam → camera_switch(source='webcam'). Désactiver → camera_switch(source='none'). "
+        "Rappels → reminder_set. reminder_list pour voir les actifs. reminder_delete(reminder_id=...) pour supprimer. "
+        "Emails → send_email UNIQUEMENT après confirmation explicite de Bryan (irréversible). "
+        "Recherche approfondie → run_research (sous-agent multi-sources). Simple → wikipedia_article ou arxiv_search. "
+        "Tâche autonome multi-étapes → run_task. Anticipation proactive → anticipate. "
+
+        # ─── PROTOCOLE ANTI-ÉCHEC ─────────────────────────────────────────
+        "PROTOCOLE RÉCUPÉRATION D'ERREUR — NE JAMAIS DIRE 'je n'ai pas réussi' sans diagnostic : "
+        "(1) Paramètre manquant ou incorrect → reformule l'appel avec les bons paramètres. "
+        "(2) Alias/URI introuvable → utilise l'outil de liste correspondant d'abord (list_smart_devices, spotify_search...). "
+        "(3) Outil 'non disponible' → explique quelle variable d'environnement est à configurer. "
+        "(4) Erreur réseau/API → réessaie une fois, puis explique le problème précis. "
+        "(5) Bug de code détecté → utilise self_correct_file immédiatement. "
+        "Exemple de réponse correcte après échec : 'L'alias CHAMBRE est introuvable. Appareils disponibles : X, Y, Z. Lequel ?' "
+
         # ─── MÉMOIRE ───────────────────────────────────────────────────────
         "Utilise search_memory quand Bryan fait référence au passé. "
         "Utilise remember proactivement dès qu'il mentionne préférence, habitude ou info importante. "
@@ -530,6 +641,9 @@ from tuya_agent import TuyaAgent
 from printer_agent import PrinterAgent
 from memory_manager import MemoryManager, DOCUMENTS_DIR
 from reminder_manager import ReminderManager
+from presence_manager import PresenceManager
+from user_profile_manager import UserProfileManager
+from authenticator import MultiUserFaceDetector
 from mcps.slack_mcp import SlackMCP
 from mcps.telegram_mcp import TelegramMCP
 from mcps.whatsapp_mcp import WhatsAppMCP
@@ -558,9 +672,14 @@ from task_agent import TaskAgent
 from anticipation_agent import AnticipationAgent
 from monitoring_agent import MonitoringAgent
 from chromecast_agent import CastAgent
+from mcps.tuya_camera_mcp import TuyaCameraMCP
 
 memory = MemoryManager()
 memory.documents_dir = DOCUMENTS_DIR
+
+# ─── PRÉSENCE & PROFILS ──────────────────────────────────────────────────────
+presence_manager = PresenceManager()
+user_profile_manager = UserProfileManager()
 
 class AudioLoop:
     def __init__(self, video_mode=DEFAULT_MODE, on_audio_data=None, on_audio_pcm=None, on_video_frame=None, on_cad_data=None, on_web_data=None, on_transcription=None, on_tool_confirmation=None, on_cad_status=None, on_cad_thought=None, on_project_update=None, on_device_update=None, on_terminal_output=None, on_error=None, input_device_index=None, input_device_name=None, output_device_index=None, tuya_agent=None):
@@ -616,9 +735,17 @@ class AudioLoop:
             import warnings
             warnings.warn(f"[ADA] AdvancedBrowserAgent init: {e}")
             self.advanced_browser_agent = None
+        try:
+            from os_control_agent import OsControlAgent
+            self.os_control_agent = OsControlAgent()
+        except Exception as e:
+            import warnings
+            warnings.warn(f"[ADA] OsControlAgent init: {e}")
+            self.os_control_agent = None
         self.google_agent = GoogleAgent()
         self.tuya_agent = tuya_agent if tuya_agent else TuyaAgent()
         self.printer_agent = PrinterAgent()
+        self.tuya_camera = TuyaCameraMCP()
         # ── MCP Agents ───────────────────────────────────────────────────────
         self.slack = SlackMCP()
         self.telegram = TelegramMCP()
@@ -691,6 +818,26 @@ class AudioLoop:
         self.send_text_task = None
         self.stop_event = asyncio.Event()
 
+        self._last_raw_frame = None
+        self._face_detector = MultiUserFaceDetector(camera_label=None)
+        self._guest_detection_pending = False
+
+        async def _on_unknown_voice():
+            if self._guest_detection_pending:
+                return
+            self._guest_detection_pending = True
+            if self.session:
+                try:
+                    await self.session.send(
+                        input="[SYSTÈME] Voix inconnue détectée. Demande à cette personne son prénom de manière naturelle, puis appelle create_guest avec ce prénom.",
+                        end_of_turn=True
+                    )
+                except Exception as e:
+                    print(f"[PRESENCE] guest callback error: {e}")
+            await asyncio.sleep(30)
+            self._guest_detection_pending = False
+        presence_manager.set_unknown_voice_callback(_on_unknown_voice)
+
         self.permissions = {} # Default Empty (Will treat unset as True)
         self._pending_confirmations = {}
 
@@ -740,7 +887,11 @@ class AudioLoop:
         self.permissions.update(new_perms)
 
     def set_video_mode(self, mode: str):
-        """Hot-switch vision mode: 'none' | 'camera' | 'screen'"""
+        """Hot-switch vision mode: 'none' | 'camera' | 'tuya_camera' | 'screen'"""
+        valid = ("none", "camera", "tuya_camera", "screen")
+        if mode not in valid:
+            print(f"[ADA] Invalid video mode '{mode}', keeping '{self.video_mode}'")
+            return
         self.video_mode = mode
         print(f"[ADA] Vision mode switched to: '{mode}'")
 
@@ -946,6 +1097,7 @@ class AudioLoop:
                             self.out_queue.put_nowait({"data": data, "mime_type": "audio/pcm"})
                         except asyncio.QueueFull:
                             pass
+                    presence_manager.feed_audio_chunk(data)
 
                 if rms > VAD_THRESHOLD:
                     # Speech Detected
@@ -1195,6 +1347,40 @@ class AudioLoop:
         except Exception as e:
             print(f"[ADA DEBUG] [ERR] Failed to send advanced browser result: {e}")
 
+    async def handle_pc_task_request(self, task: str):
+        print(f"[ADA DEBUG] [PC] PC Task: '{task}'")
+
+        # Annonce vocale avant de prendre le contrôle
+        try:
+            if self.session:
+                await self.session.send(
+                    input=f"System Notification: Je prends le contrôle de votre Mac pour : {task[:80]}. Appuyez sur Cmd+Shift+Esc pour arrêter.",
+                    end_of_turn=True,
+                )
+        except Exception as e:
+            print(f"[ADA DEBUG] [PC] Annonce vocale échouée : {e}")
+
+        if self.on_web_data:
+            self.on_web_data({"image": None, "log": f"[PC] Mission : {task[:80]}"})
+
+        async def update_frontend(data: dict):
+            if self.on_web_data:
+                self.on_web_data(data)
+
+        if not self.os_control_agent:
+            result = "OsControlAgent non disponible."
+        else:
+            result = await self.os_control_agent.run(task, step_callback=update_frontend)
+
+        try:
+            if self.session:
+                await self.session.send(
+                    input=f"System Notification: Contrôle PC terminé.\nRésultat: {result}",
+                    end_of_turn=True,
+                )
+        except Exception as e:
+            print(f"[ADA DEBUG] [ERR] Failed to send PC task result: {e}")
+
     async def handle_terminal_request(self, command, working_dir=None):
         import subprocess
         print(f"[ADA DEBUG] [TERMINAL] Executing: {command}")
@@ -1397,6 +1583,17 @@ class AudioLoop:
                                         id=fc.id,
                                         name=fc.name,
                                         response={"result": "Navigation avancée démarrée. Je te tiendrai informé."},
+                                    )
+                                    function_responses.append(function_response)
+
+                                elif fc.name == "execute_pc_task":
+                                    task = fc.args.get("task_description", "")
+                                    print(f"[ADA DEBUG] [TOOL] Tool Call: 'execute_pc_task' task='{task[:60]}'")
+                                    asyncio.create_task(self.handle_pc_task_request(task))
+                                    function_response = types.FunctionResponse(
+                                        id=fc.id,
+                                        name=fc.name,
+                                        response={"result": "Prise de contrôle du Mac démarrée. Cmd+Shift+Esc pour stopper."},
                                     )
                                     function_responses.append(function_response)
 
@@ -1948,6 +2145,213 @@ class AudioLoop:
                                         id=fc.id, name=fc.name, response={"result": result_str}
                                     ))
 
+                                # ─── MODE VEILLE ──────────────────────────────────────────────────
+                                elif fc.name == "ada_sleep":
+                                    self.sleep_mode = True
+                                    if self.on_sleep_mode_changed:
+                                        self.on_sleep_mode_changed(True)
+                                    print("[ADA] Mode veille activé.")
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name,
+                                        response={"result": "Mode veille activé. J'écoute uniquement mon prénom."}
+                                    ))
+
+                                elif fc.name == "ada_wake":
+                                    self.sleep_mode = False
+                                    if self.on_sleep_mode_changed:
+                                        self.on_sleep_mode_changed(False)
+                                    print("[ADA] Mode veille désactivé.")
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name,
+                                        response={"result": "Mode veille désactivé."}
+                                    ))
+
+                                # ─── RAPPELS ──────────────────────────────────────────────────────
+                                elif fc.name == "reminder_set":
+                                    result_str = self.reminder_manager.set(fc.args["message"], fc.args["datetime_iso"])
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                elif fc.name == "reminder_list":
+                                    result_str = self.reminder_manager.list_reminders()
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                elif fc.name == "reminder_delete":
+                                    result_str = self.reminder_manager.delete(fc.args["reminder_id"])
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                # ─── REFRESH TUYA ─────────────────────────────────────────────────
+                                elif fc.name == "refresh_tuya_devices":
+                                    result_str = await self.tuya_agent.refresh_devices()
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                # ─── CHROMECAST ───────────────────────────────────────────────────
+                                elif fc.name == "get_chromecast_status":
+                                    if not self.cast_agent._initialized:
+                                        await self.cast_agent.initialize()
+                                    result_str = await self.cast_agent.get_status()
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                elif fc.name == "control_chromecast":
+                                    if not self.cast_agent._initialized:
+                                        await self.cast_agent.initialize()
+                                    _action = fc.args.get("action", "").lower()
+                                    _volume = fc.args.get("volume")
+                                    if _volume is not None:
+                                        result_str = await self.cast_agent.set_volume(float(_volume))
+                                    elif _action == "play":
+                                        result_str = await self.cast_agent.play()
+                                    elif _action == "pause":
+                                        result_str = await self.cast_agent.pause()
+                                    elif _action == "stop":
+                                        result_str = await self.cast_agent.stop()
+                                    else:
+                                        result_str = f"Action Chromecast inconnue: {_action}"
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                elif fc.name == "play_youtube_on_chromecast":
+                                    if not self.cast_agent._initialized:
+                                        await self.cast_agent.initialize()
+                                    result_str = await self.cast_agent.play_youtube(fc.args.get("video_url", ""))
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                elif fc.name == "play_media_on_chromecast":
+                                    if not self.cast_agent._initialized:
+                                        await self.cast_agent.initialize()
+                                    result_str = await self.cast_agent.play_media(
+                                        fc.args.get("url", ""),
+                                        fc.args.get("media_type", "video/mp4")
+                                    )
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                # ─── SELF-CORRECTION (Jarvis repo) ────────────────────────────────
+                                elif fc.name in ("jarvis_read_file", "jarvis_write_file", "jarvis_list_files",
+                                                  "jarvis_git_commit", "self_correct_file"):
+                                    _sc_args = dict(fc.args)
+                                    if self.self_correction:
+                                        from pathlib import Path as _SCPath
+                                        _jarvis_root = "/Users/bryandev/jarvis"
+                                        if fc.name == "jarvis_read_file":
+                                            _p = _sc_args.get("path", "")
+                                            if not _p.startswith("/"): _p = str(_SCPath(_jarvis_root) / _p)
+                                            result_str = self.self_correction.read_file(_p)
+                                        elif fc.name == "jarvis_write_file":
+                                            _p = _sc_args.get("path", "")
+                                            if not _p.startswith("/"): _p = str(_SCPath(_jarvis_root) / _p)
+                                            result_str = self.self_correction.write_file(_p, _sc_args.get("content", ""))
+                                        elif fc.name == "jarvis_list_files":
+                                            _p = _sc_args.get("path", "")
+                                            if _p and not _p.startswith("/"): _p = str(_SCPath(_jarvis_root) / _p)
+                                            result_str = self.self_correction.list_files(_p)
+                                        elif fc.name == "jarvis_git_commit":
+                                            result_str = self.self_correction.git_commit(_sc_args.get("message", "chore: Ada auto-commit"))
+                                        elif fc.name == "self_correct_file":
+                                            _p = _sc_args.get("file_path", "")
+                                            if not _p.startswith("/"): _p = str(_SCPath(_jarvis_root) / _p)
+                                            result_str = self.self_correction.correct_file(_p, _sc_args.get("error_description", ""))
+                                    else:
+                                        result_str = "SelfCorrectionAgent non disponible."
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                # ─── SELF-EVOLUTION ───────────────────────────────────────────────
+                                elif fc.name == "self_evolve":
+                                    if self.evolution_agent:
+                                        result_str = await self.evolution_agent.evolve(
+                                            goal=fc.args.get("goal", ""),
+                                            failed_context=fc.args.get("failed_context", ""),
+                                        )
+                                    else:
+                                        result_str = "SelfEvolutionAgent non disponible."
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result_str}
+                                    ))
+
+                                # ─── CAMÉRA TUYA PTZ ───────────────────────────────────────────────
+                                elif fc.name == "camera_switch":
+                                    source = fc.args.get("source", "none")
+                                    _mode_map = {"tuya_camera": "tuya_camera", "webcam": "camera", "screen": "screen", "none": "none", "camera": "camera"}
+                                    new_mode = _mode_map.get(source, source)
+                                    self.set_video_mode(new_mode)
+                                    _labels = {"tuya_camera": "caméra SmartLife PTZ", "camera": "webcam", "screen": "écran", "none": "désactivé"}
+                                    result_str = f"Source vidéo basculée : {_labels.get(new_mode, new_mode)}."
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
+                                elif fc.name == "camera_ptz_move":
+                                    result_str = await self.tuya_camera.ptz_move(
+                                        fc.args.get("direction", ""), int(fc.args.get("duration_ms", 600))
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
+                                elif fc.name == "camera_goto_preset":
+                                    result_str = await self.tuya_camera.ptz_preset(int(fc.args.get("preset", 1)))
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
+                                elif fc.name == "camera_look":
+                                    _payload = await self.tuya_camera.take_snapshot()
+                                    if _payload:
+                                        _q = fc.args.get("question", "Décris précisément ce que tu vois.")
+                                        result_str = f"[VISION] Snapshot capturé. {_q}"
+                                        # Injecter l'image dans la session Gemini Live
+                                        await self.session.send(
+                                            input={"mime_type": _payload["mime_type"], "data": _payload["data"]},
+                                            end_of_turn=False,
+                                        )
+                                    else:
+                                        result_str = "Impossible de capturer une image depuis la caméra Tuya (vérifier RTSP ou connexion réseau)."
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
+                                elif fc.name == "camera_tracking":
+                                    result_str = await self.tuya_camera.set_tracking(bool(fc.args.get("enabled", True)))
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
+                                elif fc.name == "camera_motion_detect":
+                                    result_str = await self.tuya_camera.set_motion_detect(
+                                        bool(fc.args.get("enabled", True)),
+                                        fc.args.get("sensitivity", "medium"),
+                                    )
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
+                                elif fc.name == "camera_watch":
+                                    _enabled = bool(fc.args.get("enabled", True))
+                                    if not _enabled:
+                                        self.tuya_camera.stop_motion_watch()
+                                        result_str = "Surveillance mouvement arrêtée."
+                                    else:
+                                        _with_snap = bool(fc.args.get("with_snapshot", True))
+                                        async def _on_motion(_snap):
+                                            _msg = "⚠️ Mouvement détecté par la caméra !"
+                                            await asyncio.to_thread(self.telegram.send_message, _msg)
+                                            if _snap:
+                                                import tempfile as _tf, base64 as _b64
+                                                _tmp = _tf.NamedTemporaryFile(suffix=".jpg", delete=False)
+                                                _tmp.write(_b64.b64decode(_snap["data"]))
+                                                _tmp.close()
+                                                await asyncio.to_thread(
+                                                    self.telegram.send_photo, f"file://{_tmp.name}", "📸 Snapshot au moment du mouvement"
+                                                )
+                                        asyncio.create_task(
+                                            self.tuya_camera.start_motion_watch(_on_motion, with_snapshot=_with_snap)
+                                        )
+                                        result_str = "Surveillance active — alerte Telegram + photo à chaque mouvement détecté."
+                                    function_responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result_str}))
+
                                 # ─── MCP ROUTING ───────────────────────────────────────────────────
                                 elif fc.name in MCP_TOOL_NAMES:
                                     args = dict(fc.args)
@@ -2213,9 +2617,10 @@ class AudioLoop:
                             import traceback as _tb
                             print(f"[ADA DEBUG] [ERR] Tool '{fc.name}' failed: {tool_exc}")
                             _tb.print_exc()
+                            actionable_error = _format_tool_error(fc.name, tool_exc)
                             function_responses.append(types.FunctionResponse(
                                 id=fc.id, name=fc.name,
-                                response={"result": f"Tool error: {str(tool_exc)}"}
+                                response={"result": actionable_error}
                             ))
 
                         if function_responses:
@@ -2271,27 +2676,57 @@ class AudioLoop:
                     self._is_ada_speaking = False
 
     async def get_frames(self):
-        """Camera capture — lazy opens/closes based on video_mode."""
+        """Camera capture — lazy opens/closes based on video_mode.
+        Supports: 'camera' (webcam), 'tuya_camera' (SmartLife PTZ via RTSP).
+        """
         cap = None
+        current_source = None  # None = webcam (index 0), str = RTSP url
         while True:
-            if self.video_mode != "camera":
+            if self.video_mode not in ("camera", "tuya_camera"):
                 if cap is not None:
                     await asyncio.to_thread(cap.release)
                     cap = None
+                    current_source = None
                 await asyncio.sleep(0.3)
                 continue
             if self.paused or self.sleep_mode:
                 await asyncio.sleep(0.1)
                 continue
-            if cap is None:
-                cap = await asyncio.to_thread(cv2.VideoCapture, 0, cv2.CAP_AVFOUNDATION)
+
+            # Résoudre la source
+            if self.video_mode == "tuya_camera":
+                source = await self.tuya_camera.get_rtsp_url()
+                if not source:
+                    print("[ADA] Tuya camera: URL RTSP indisponible, nouvelle tentative dans 10s…")
+                    await asyncio.sleep(10)
+                    continue
+            else:
+                source = None  # webcam index 0
+
+            # Ouvrir / rouvrir si la source a changé
+            if cap is None or current_source != source:
+                if cap is not None:
+                    await asyncio.to_thread(cap.release)
+                if source:
+                    cap = await asyncio.to_thread(cv2.VideoCapture, source)
+                else:
+                    cap = await asyncio.to_thread(cv2.VideoCapture, 0, cv2.CAP_AVFOUNDATION)
+                current_source = source
+                print(f"[ADA] Camera opened: {'RTSP (Tuya)' if source else 'webcam'}")
 
             frame = await asyncio.to_thread(self._get_frame, cap)
             if frame is None:
                 await asyncio.to_thread(cap.release)
                 cap = None
-                await asyncio.sleep(0.5)
+                if self.video_mode == "tuya_camera":
+                    # URL RTSP peut-être expirée — forcer le rafraîchissement
+                    self.tuya_camera.invalidate_rtsp()
+                    await asyncio.sleep(2)
+                else:
+                    await asyncio.sleep(0.5)
+                current_source = None
                 continue
+
             await asyncio.sleep(1.0)
             if self.out_queue:
                 try:
@@ -2301,10 +2736,25 @@ class AudioLoop:
         if cap is not None:
             cap.release()
 
+    async def _face_detection_loop(self):
+        """Détection de visage toutes les secondes, met à jour presence_manager."""
+        while True:
+            await asyncio.sleep(1.0)
+            if self._last_raw_frame is None:
+                continue
+            try:
+                frame = self._last_raw_frame
+                detections = await asyncio.to_thread(self._face_detector.detect, frame)
+                if detections:
+                    presence_manager.update_face_detection(detections)
+            except Exception as e:
+                print(f"[PRESENCE] Face detection error: {e}")
+
     def _get_frame(self, cap):
         ret, frame = cap.read()
         if not ret:
             return None
+        self._last_raw_frame = frame
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         img = PIL.Image.fromarray(frame_rgb)
         img.thumbnail([1024, 1024])
@@ -2348,12 +2798,18 @@ class AudioLoop:
                     await asyncio.sleep(1.0)
 
     async def _wake_word_loop(self):
-        """Écoute le buffer audio en mode veille, détecte 'ada' via Gemini Flash."""
-        WAKE_WORDS = ["ada", "ada.", "ada!", "ada,", "hey ada"]
-        CHECK_INTERVAL = 2.0   # Vérifier toutes les 2 secondes
-        MIN_RMS = 300           # Ignorer le silence (pas d'appel API inutile)
-        # Taille d'une fenêtre d'analyse : 2 secondes d'audio PCM 16kHz mono int16
-        WINDOW_BYTES = SEND_SAMPLE_RATE * 2 * 2  # 64 000 bytes
+        """Écoute le buffer audio en mode veille, détecte 'ada' via Gemini Flash.
+
+        Améliorations v2 :
+        - Fenêtre glissante 0.8s → pas de zone morte
+        - MIN_RMS abaissé à 150 → capte les voix normales et éloignées
+        - Prompt binaire oui/non → plus fiable que transcription + recherche
+        - Fenêtre d'analyse élargie à 3s pour couvrir les prononciations lentes
+        """
+        CHECK_INTERVAL = 0.8   # Fenêtre glissante — vérifie toutes les 0.8s
+        MIN_RMS = 150           # Seuil bas — capte voix normale et éloignée
+        # Fenêtre d'analyse : 3 secondes d'audio PCM 16kHz mono int16
+        WINDOW_BYTES = SEND_SAMPLE_RATE * 2 * 3  # 96 000 bytes
 
         while True:
             await asyncio.sleep(CHECK_INTERVAL)
@@ -2361,12 +2817,12 @@ class AudioLoop:
             if not self.sleep_mode:
                 continue
 
-            # Prendre les 2 dernières secondes du buffer
+            # Prendre les 3 dernières secondes du buffer (fenêtre glissante)
             buf = bytes(self._sleep_audio_buffer[-WINDOW_BYTES:])
-            if len(buf) < 1024:
+            if len(buf) < 2048:
                 continue
 
-            # Vérifier le niveau sonore — ignorer le silence
+            # Vérifier le niveau sonore — ignorer le silence absolu
             arr = np.frombuffer(buf, dtype=np.int16)
             rms = int(np.sqrt(np.mean(arr.astype(np.int32) ** 2))) if len(arr) > 0 else 0
             if rms < MIN_RMS:
@@ -2378,31 +2834,29 @@ class AudioLoop:
                 import wave
                 with wave.open(wav_buf, "wb") as wf:
                     wf.setnchannels(1)
-                    wf.setsampwidth(2)  # int16 → 2 bytes
+                    wf.setsampwidth(2)
                     wf.setframerate(SEND_SAMPLE_RATE)
                     wf.writeframes(buf)
                 wav_bytes = wav_buf.getvalue()
 
-                # Transcrire avec Gemini Flash (non-live, one-shot)
+                # Détection binaire — plus fiable que transcription + recherche
                 response = await client.aio.models.generate_content(
                     model="gemini-2.0-flash",
                     contents=[
                         types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav"),
-                        "Transcris exactement ce que tu entends dans cet audio en minuscules. "
-                        "Réponds uniquement avec la transcription, rien d'autre.",
+                        "Est-ce que tu entends le mot 'Ada' (ou 'Hey Ada') prononcé dans cet audio ? "
+                        "Réponds UNIQUEMENT par 'oui' ou 'non', rien d'autre.",
                     ],
                 )
-                transcription = response.text.strip().lower() if response.text else ""
-                print(f"[ADA] [SLEEP] Transcription wake word: '{transcription}'")
+                answer = response.text.strip().lower() if response.text else ""
+                print(f"[ADA] [SLEEP] Wake word check (rms={rms}): '{answer}'")
 
-                # Détecter le mot de réveil
-                if any(w in transcription for w in WAKE_WORDS):
+                if answer.startswith("oui"):
                     print("[ADA] [SLEEP] Mot de réveil détecté — réveil d'Ada")
                     self.sleep_mode = False
                     self._sleep_audio_buffer = bytearray()
                     if self.on_sleep_mode_changed:
                         self.on_sleep_mode_changed(False)
-                    # Envoyer un signal de réveil à la session Live
                     if self.session:
                         await self.session.send(
                             input="[Système] Tu viens d'être réveillée. "
@@ -2440,6 +2894,8 @@ class AudioLoop:
 
                     tg.create_task(self.receive_audio())
                     tg.create_task(self.play_audio())
+                    tg.create_task(presence_manager.run())
+                    tg.create_task(self._face_detection_loop())
 
                     # Handle Startup vs Reconnect Logic
                     if not is_reconnect:
@@ -2448,6 +2904,9 @@ class AudioLoop:
                         if mem_ctx:
                             print(f"[MEMORY] Injecting startup context ({len(mem_ctx)} chars)")
                             await self.session.send(input=mem_ctx, end_of_turn=False)
+                        user_ctx = presence_manager.get_context_block()
+                        if user_ctx:
+                            await self.session.send(input=user_ctx, end_of_turn=False)
 
                         if start_message:
                             print(f"[ADA DEBUG] [INFO] Sending start message: {start_message}")
@@ -2688,6 +3147,65 @@ class AudioLoop:
                     )
                 return "SelfEvolutionAgent non disponible."
 
+            # ── CAMÉRA TUYA PTZ ───────────────────────────────────────────────
+            elif name == "camera_switch":
+                source = args.get("source", "none")
+                _mode_map = {"tuya_camera": "tuya_camera", "webcam": "camera", "screen": "screen", "none": "none", "camera": "camera"}
+                new_mode = _mode_map.get(source, source)
+                self.set_video_mode(new_mode)
+                _labels = {"tuya_camera": "caméra SmartLife PTZ", "camera": "webcam", "screen": "écran", "none": "désactivé"}
+                return f"Source vidéo basculée : {_labels.get(new_mode, new_mode)}."
+
+            elif name == "camera_ptz_move":
+                return await self.tuya_camera.ptz_move(args.get("direction", ""), int(args.get("duration_ms", 600)))
+
+            elif name == "camera_goto_preset":
+                return await self.tuya_camera.ptz_preset(int(args.get("preset", 1)))
+
+            elif name == "camera_look":
+                _payload = await self.tuya_camera.take_snapshot()
+                if not _payload:
+                    return "Impossible de capturer une image depuis la caméra Tuya."
+                # Mode texte : envoyer l'image + question à Gemini
+                _q = args.get("question", "Décris précisément et en détail ce que tu vois sur cette image.")
+                _img_part = types.Part.from_bytes(
+                    data=base64.b64decode(_payload["data"]),
+                    mime_type="image/jpeg",
+                )
+                _vision_resp = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[_img_part, _q],
+                )
+                return _vision_resp.text or "Aucune réponse de vision."
+
+            elif name == "camera_tracking":
+                return await self.tuya_camera.set_tracking(bool(args.get("enabled", True)))
+
+            elif name == "camera_motion_detect":
+                return await self.tuya_camera.set_motion_detect(
+                    bool(args.get("enabled", True)), args.get("sensitivity", "medium")
+                )
+
+            elif name == "camera_watch":
+                _enabled = bool(args.get("enabled", True))
+                if not _enabled:
+                    self.tuya_camera.stop_motion_watch()
+                    return "Surveillance mouvement arrêtée."
+                _with_snap = bool(args.get("with_snapshot", True))
+                async def _on_motion_text(_snap):
+                    _msg = "⚠️ Mouvement détecté par la caméra !"
+                    await asyncio.to_thread(self.telegram.send_message, _msg)
+                    if _snap:
+                        import tempfile as _tf, base64 as _b64t
+                        _tmp = _tf.NamedTemporaryFile(suffix=".jpg", delete=False)
+                        _tmp.write(_b64t.b64decode(_snap["data"]))
+                        _tmp.close()
+                        await asyncio.to_thread(self.telegram.send_photo, f"file://{_tmp.name}", "📸 Mouvement détecté")
+                asyncio.create_task(
+                    self.tuya_camera.start_motion_watch(_on_motion_text, with_snapshot=_with_snap)
+                )
+                return "Surveillance active — alerte Telegram + photo à chaque mouvement détecté."
+
             # ── RAPPELS ───────────────────────────────────────────────────────
             elif name == "reminder_set":
                 return self.reminder_manager.set(args["message"], args["datetime_iso"])
@@ -2728,6 +3246,14 @@ class AudioLoop:
                     return await self.advanced_browser_agent.run(args.get("mission", ""))
                 except Exception as e:
                     return f"Navigation avancée erreur : {e}"
+            # ── CONTRÔLE PC AUTONOME ──────────────────────────────────────────
+            elif name == "execute_pc_task":
+                if not self.os_control_agent:
+                    return "OsControlAgent non disponible (vérifier les dépendances)."
+                try:
+                    return await self.os_control_agent.run(args.get("task_description", ""))
+                except Exception as e:
+                    return f"PC task erreur : {e}"
             # ── MÉMOIRE ───────────────────────────────────────────────────────
             elif name == "search_memory":
                 results = memory.search_memory(args.get("query", ""))
@@ -3016,15 +3542,61 @@ class AudioLoop:
                 elif n == "replicate_generate_image": return await asyncio.to_thread(self.replicate.generate_image, args["prompt"], args.get("model", "stability-ai/sdxl"), args.get("width", 1024), args.get("height", 1024))
                 elif n == "replicate_run_model": return await asyncio.to_thread(self.replicate.run_model, args["model_version"], args["input_json"])
                 elif n == "maps_directions": return await asyncio.to_thread(self.maps.get_directions, args["origin"], args["destination"], args.get("mode", "driving"))
-                elif n == "maps_place_search": return await asyncio.to_thread(self.maps.search_places, args["query"], args.get("location", ""), args.get("radius", 5000))
-                elif n == "health_summary": return await asyncio.to_thread(self.health.get_summary)
+                elif n == "maps_search_places": return await asyncio.to_thread(self.maps.search_places, args.get("query", ""), args.get("location", ""), args.get("radius", 5000))
+                elif n == "maps_travel_time": return await asyncio.to_thread(self.maps.get_travel_time, args["origin"], args["destination"], args.get("mode", "driving"))
+                elif n == "maps_geocode": return await asyncio.to_thread(self.maps.geocode, args["address"])
                 elif n == "health_steps": return await asyncio.to_thread(self.health.get_steps, args.get("days", 7))
                 elif n == "health_sleep": return await asyncio.to_thread(self.health.get_sleep, args.get("days", 7))
+                elif n == "health_heart_rate": return await asyncio.to_thread(self.health.get_heart_rate, args.get("days", 3))
+                elif n == "health_activity": return await asyncio.to_thread(self.health.get_activity_summary, args.get("days", 7))
+                elif n == "spotify_playlists": return await asyncio.to_thread(self.spotify.get_playlists)
+                elif n == "twilio_send_sms":
+                                                        result = await asyncio.to_thread(self.twilio.send_sms, args["to"], args["body"])
+                elif n == "remember_for_user":
+                    uid = args.get("user_id", "")
+                    mtype = args.get("memory_type", "preference")
+                    content = args.get("content", "")
+                    if mtype == "preference":
+                        return user_profile_manager.save_preference(uid, content)
+                    elif mtype == "fact":
+                        return user_profile_manager.save_fact(uid, content)
+                    elif mtype == "habit":
+                        profile = user_profile_manager.get_profile(uid)
+                        if profile:
+                            profile.setdefault("habits", []).append(content)
+                            user_profile_manager.save_profile(profile)
+                            return f"Habitude enregistrée pour {profile['name']}."
+                        return f"Profil inconnu : {uid}"
+                    return "Type de mémoire inconnu."
+                elif n == "enroll_voice":
+                    uid = args.get("user_id", "")
+                    import subprocess
+                    try:
+                        subprocess.Popen(
+                            ["conda", "run", "-n", "ada_v2", "python", "backend/enroll.py",
+                             "--user", uid, "--voice-only"],
+                            cwd=os.getenv("JARVIS_ROOT", "/Users/bryandev/jarvis")
+                        )
+                        return f"Enrollment vocal lancé pour '{uid}'. Parle normalement pendant 25 secondes."
+                    except Exception as e:
+                        return f"Erreur au lancement de l'enrollment : {e}"
+                elif n == "who_is_speaking":
+                    speakers = presence_manager.active_speakers
+                    if not speakers:
+                        return "Aucun utilisateur identifié pour le moment."
+                    lines = [f"- {s['user']} ({s.get('source','?')}, confiance {int(s.get('confidence',0)*100)}%)" for s in speakers]
+                    return "Utilisateurs détectés :\n" + "\n".join(lines)
+                elif n == "create_guest":
+                    name = args.get("name", "Inconnu")
+                    profile = user_profile_manager.create_guest(name)
+                    presence_manager.voice_recognizer.reload_embeddings()
+                    self._guest_detection_pending = False
+                    return f"Profil créé pour {profile['name']}. Bienvenue !"
                 return f"MCP '{name}' non mappé."
             else:
                 return f"Outil '{name}' non disponible."
         except Exception as e:
-            return f"Erreur [{name}]: {e}"
+            return _format_tool_error(name, e)
 
 
 def get_input_devices():

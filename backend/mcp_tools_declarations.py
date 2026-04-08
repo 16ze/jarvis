@@ -1417,12 +1417,196 @@ advanced_web_navigation_tool = {
             }
         },
         "required": ["mission"]
-    }
+    },
+    "behavior": "NON_BLOCKING"
+}
+
+# ── OS CONTROL (Full Computer Use) ───────────────────────────────────────────
+execute_pc_task_tool = {
+    "name": "execute_pc_task",
+    "description": (
+        "Prend le contrôle total du Mac (souris, clavier, applications) "
+        "pour accomplir n'importe quelle tâche complexe de manière autonome. "
+        "Prend des screenshots en continu, analyse l'écran et agit jusqu'à completion. "
+        "Peut ouvrir le Finder, déplacer des fichiers, coder dans VS Code, changer les réglages système, etc."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "task_description": {
+                "type": "STRING",
+                "description": "Description complète de la tâche à accomplir sur le Mac."
+            }
+        },
+        "required": ["task_description"]
+    },
+    "behavior": "NON_BLOCKING"
+}
+
+# ── CAMÉRA TUYA PTZ ──────────────────────────────────────────────────────────
+camera_switch_tool = {
+    "name": "camera_switch",
+    "description": (
+        "Bascule la source vidéo d'Ada. Utilise 'tuya_camera' pour activer la caméra SmartLife PTZ connectée au salon/entrée, "
+        "'webcam' pour la caméra de l'ordinateur, 'screen' pour le partage d'écran, 'none' pour désactiver. "
+        "Appelle cet outil quand on te demande de regarder par la caméra, voir ce qui se passe dans la pièce, ou surveiller."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "source": {
+                "type": "STRING",
+                "description": "Source vidéo : 'tuya_camera' | 'webcam' | 'screen' | 'none'",
+            }
+        },
+        "required": ["source"],
+    },
+}
+
+camera_ptz_move_tool = {
+    "name": "camera_ptz_move",
+    "description": (
+        "Fait pivoter la caméra PTZ SmartLife dans une direction. "
+        "Directions acceptées : up/haut, down/bas, left/gauche, right/droite, "
+        "upper_right/haut-droite, lower_right/bas-droite, lower_left/bas-gauche, upper_left/haut-gauche. "
+        "duration_ms : durée du mouvement en millisecondes (100–5000, défaut 600)."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "direction": {
+                "type": "STRING",
+                "description": "Direction : up, down, left, right, upper_right, lower_right, lower_left, upper_left (ou équivalent français)",
+            },
+            "duration_ms": {
+                "type": "NUMBER",
+                "description": "Durée du mouvement en ms (défaut 600, max 5000)",
+            },
+        },
+        "required": ["direction"],
+    },
+}
+
+camera_goto_preset_tool = {
+    "name": "camera_goto_preset",
+    "description": (
+        "Positionne la caméra PTZ sur une position préenregistrée (preset). "
+        "Les presets sont des positions mémorisées dans la caméra via l'app SmartLife (preset 1, 2, 3…)."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "preset": {
+                "type": "NUMBER",
+                "description": "Numéro du preset (1, 2, 3…)",
+            }
+        },
+        "required": ["preset"],
+    },
+}
+
+camera_tracking_tool = {
+    "name": "camera_tracking",
+    "description": (
+        "Active ou désactive le suivi automatique de mouvement (auto-tracking PTZ) de la caméra SmartLife. "
+        "Quand activé, la caméra pivote automatiquement pour suivre toute personne ou objet en mouvement dans le champ de vision. "
+        "Utilise cet outil quand Bryan dit 'suis les mouvements', 'active le tracking', 'arrête de suivre'."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "enabled": {
+                "type": "BOOLEAN",
+                "description": "True pour activer le suivi, False pour désactiver",
+            }
+        },
+        "required": ["enabled"],
+    },
+}
+
+camera_motion_detect_tool = {
+    "name": "camera_motion_detect",
+    "description": (
+        "Active ou désactive la détection de mouvement de la caméra SmartLife, et règle la sensibilité. "
+        "Quand activée avec surveillance (camera_watch), Ada prévient Bryan via Telegram dès qu'un mouvement est détecté."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "enabled": {
+                "type": "BOOLEAN",
+                "description": "True pour activer la détection, False pour désactiver",
+            },
+            "sensitivity": {
+                "type": "STRING",
+                "description": "Sensibilité : 'low'/'faible', 'medium'/'moyenne' (défaut), 'high'/'élevée'",
+            },
+        },
+        "required": ["enabled"],
+    },
+}
+
+camera_watch_tool = {
+    "name": "camera_watch",
+    "description": (
+        "Démarre ou arrête la surveillance active de mouvement via la caméra SmartLife. "
+        "Quand active, Ada poll les événements et envoie une alerte Telegram avec photo dès qu'un mouvement est détecté. "
+        "Utilise cet outil quand Bryan dit 'surveille', 'préviens-moi si quelqu'un bouge', 'arrête de surveiller'."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "enabled": {
+                "type": "BOOLEAN",
+                "description": "True pour démarrer la surveillance, False pour l'arrêter",
+            },
+            "with_snapshot": {
+                "type": "BOOLEAN",
+                "description": "True pour envoyer une photo avec chaque alerte (défaut True)",
+            },
+        },
+        "required": ["enabled"],
+    },
+}
+
+camera_look_tool = {
+    "name": "camera_look",
+    "description": (
+        "Capture une photo depuis la caméra SmartLife PTZ et décrit ce qu'Ada voit. "
+        "Utilise cet outil en mode texte/Telegram pour répondre à 'qu'est-ce que tu vois ?', "
+        "'y a-t-il quelqu'un ?', 'regarde si…', etc. "
+        "En mode voix, la caméra est déjà active en continu — cet outil force une capture instantanée avec analyse."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "question": {
+                "type": "STRING",
+                "description": "Question spécifique à analyser sur l'image (ex: 'y a-t-il quelqu'un ?', 'que fait la personne ?')",
+            }
+        },
+        "required": [],
+    },
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LISTE CONSOLIDÉE — à importer dans ada.py
 # ─────────────────────────────────────────────────────────────────────────────
+
+# ── TWILIO (auto-généré) ─────────────────────────────────────────────
+# ── TWILIO ────────────────────────────────────────────────────────────────────
+twilio_send_sms_tool = {
+    "name": "twilio_send_sms",
+    "description": "Envoie un message SMS à un numéro de téléphone spécifié. Le numéro de l'expéditeur est configuré par défaut.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "to": {"type": "STRING", "description": "Le numéro de téléphone du destinataire au format international (ex: +33612345678)."},
+            "body": {"type": "STRING", "description": "Le contenu du message SMS à envoyer."}
+        },
+        "required": ["to", "body"]
+    }
+}
 
 MCP_TOOLS = [
     # Communication
@@ -1458,6 +1642,8 @@ MCP_TOOLS = [
     wikipedia_search_tool, wikipedia_article_tool,
     arxiv_search_tool, arxiv_paper_tool,
     advanced_web_navigation_tool,
+    # OS Control
+    execute_pc_task_tool,
     # Création
     canva_list_designs_tool, canva_get_design_tool, canva_export_design_tool,
     figma_list_files_tool, figma_get_file_tool, figma_export_node_tool,
@@ -1471,6 +1657,70 @@ MCP_TOOLS = [
     ada_sleep_tool, ada_wake_tool,
     # Self-evolution
     self_evolve_tool,
+    # Caméra Tuya PTZ
+    camera_switch_tool, camera_ptz_move_tool, camera_goto_preset_tool, camera_look_tool,
+    camera_tracking_tool, camera_motion_detect_tool, camera_watch_tool,
+    # Twilio
+    twilio_send_sms_tool,
+    # Multi-user recognition
+    {
+        "name": "remember_for_user",
+        "description": (
+            "Enregistre une préférence, une habitude ou un fait pour l'utilisateur actuellement identifié. "
+            "Utilise ce tool dès qu'un utilisateur mentionne une préférence, une habitude ou une information "
+            "personnelle (ex: 'j'aime le café', 'je travaille le matin', 'j'ai deux enfants'). "
+            "Ne l'utilise pas pour Bryan si ce n'est pas Bryan qui parle."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "user_id": {
+                    "type": "STRING",
+                    "description": "ID de l'utilisateur : 'bryan', 'rose', ou le prénom en minuscules d'un invité."
+                },
+                "memory_type": {
+                    "type": "STRING",
+                    "description": "Type de mémoire : 'preference', 'habit', ou 'fact'."
+                },
+                "content": {
+                    "type": "STRING",
+                    "description": "La préférence, habitude ou fait à enregistrer."
+                }
+            },
+            "required": ["user_id", "memory_type", "content"]
+        }
+    },
+    {
+        "name": "enroll_voice",
+        "description": (
+            "Lance l'enrollment vocal pour un utilisateur. À utiliser quand Bryan demande à Ada "
+            "d'enregistrer la voix de quelqu'un (ex: 'Ada, enregistre la voix de Rose'). "
+            "L'enrollment dure 25 secondes — prévenir l'utilisateur de parler normalement."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "user_id": {
+                    "type": "STRING",
+                    "description": "ID de l'utilisateur à enregistrer : 'bryan', 'rose', ou prénom invité."
+                }
+            },
+            "required": ["user_id"]
+        }
+    },
+    {
+        "name": "who_is_speaking",
+        "description": (
+            "Retourne la liste des utilisateurs actuellement identifiés (voix + visage). "
+            "Utilise ce tool quand Ada n'est pas sûre de qui lui parle ou quand Bryan demande "
+            "'qui est là ?' / 'tu reconnais qui ?'."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+            "required": []
+        }
+    },
 ]
 
 MCP_TOOL_NAMES = {t["name"] for t in MCP_TOOLS}
