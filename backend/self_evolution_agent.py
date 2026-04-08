@@ -161,40 +161,124 @@ class SelfEvolutionAgent:
             raw = raw.rstrip("`").strip()
         return json.loads(raw)
 
+    # ── Étape 1b : Install package ───────────────────────────────────────────
+
+    async def _install_package(self, analysis: dict) -> str:
+        """
+        Installe le package pip nécessaire si absent.
+        Retourne un message de statut.
+        """
+        python_lib = analysis.get("python_lib", "")
+        pip_package = analysis.get("pip_package", "")
+
+        if not python_lib:
+            return "Aucun package à installer."
+
+        # Extraire le nom d'import (avant [extras] et >=version)
+        import_name = python_lib.split("[")[0].split(">=")[0].split("==")[0].strip()
+
+        # Vérifier si déjà importable
+        check = await asyncio.to_thread(
+            subprocess.run,
+            [sys.executable, "-c", f"import {import_name}"],
+            capture_output=True, text=True, timeout=10
+        )
+        if check.returncode == 0:
+            return f"Package '{import_name}' déjà installé."
+
+        # Construire la commande pip install
+        if pip_package and pip_package.startswith("pip install "):
+            packages = pip_package[len("pip install "):].strip().split()
+        else:
+            packages = [python_lib]
+
+        print(f"[Evolution] pip install {' '.join(packages)}...")
+        try:
+            result = await asyncio.to_thread(
+                subprocess.run,
+                [sys.executable, "-m", "pip", "install"] + packages,
+                capture_output=True, text=True, timeout=120
+            )
+            if result.returncode == 0:
+                return f"Package(s) installé(s) : {' '.join(packages)}"
+            return f"ERREUR pip install : {result.stderr[:500]}"
+        except subprocess.TimeoutExpired:
+            return "Timeout pip install (>120s)"
+        except Exception as e:
+            return f"Erreur installation : {e}"
+
     # ── Étape 2 : Research ───────────────────────────────────────────────────
 
     async def _research(self, analysis: dict) -> str:
         """
-        Fetche les URLs de documentation et retourne un extrait texte concaténé.
-        Max 8000 chars pour rester dans le contexte Gemini.
+        Fetche PyPI + README GitHub + URLs de documentation.
+        Retourne un extrait texte concaténé. Max 10000 chars.
         """
-        MAX_CHARS = 8000
+        import re as _re
+        MAX_CHARS = 10000
         parts = []
 
-        lib = analysis.get("python_lib", "")
-        urls = [f"https://pypi.org/pypi/{lib}/json"] + analysis.get("doc_urls", [])
+        lib = analysis.get("python_lib", "").split("[")[0].strip()
+        doc_urls = analysis.get("doc_urls", [])
 
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            for url in urls[:3]:  # max 3 URLs
+        # URLs à fetcher : PyPI JSON + GitHub README (si dispo dans doc_urls) + doc_urls
+        fetch_urls: list[str] = [f"https://pypi.org/pypi/{lib}/json"]
+
+        # Ajouter les doc_urls — convertir GitHub HTML → raw README si possible
+        for url in doc_urls[:3]:
+            if "github.com" in url and "/blob/" not in url and not url.endswith(".md"):
+                # Essayer de récupérer le README raw
+                readme_url = url.rstrip("/") + "/raw/HEAD/README.md"
+                fetch_urls.append(readme_url)
+            elif "github.com" in url and "/blob/" in url:
+                raw_url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+                fetch_urls.append(raw_url)
+            else:
+                fetch_urls.append(url)
+
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            for url in fetch_urls[:5]:  # max 5 URLs
                 try:
                     resp = await client.get(url)
                     if resp.status_code != 200:
                         continue
                     text = resp.text
-                    # Si PyPI JSON, extraire description + summary
-                    if "pypi.org/pypi" in url and resp.headers.get("content-type", "").startswith("application/json"):
+                    ct = resp.headers.get("content-type", "")
+
+                    if "pypi.org/pypi" in url and "application/json" in ct:
                         data = resp.json()
                         info = data.get("info", {})
+                        # Extraire aussi le lien vers le project_url GitHub pour README
+                        project_urls = info.get("project_urls") or {}
+                        github_url = next(
+                            (v for k, v in project_urls.items() if "github" in v.lower()),
+                            None
+                        )
                         text = (
                             f"Package: {info.get('name')}\n"
                             f"Summary: {info.get('summary')}\n"
-                            f"Description:\n{info.get('description', '')[:3000]}"
+                            f"Home: {info.get('home_page', '')}\n"
+                            f"GitHub: {github_url or 'N/A'}\n"
+                            f"Description:\n{info.get('description', '')[:4000]}"
                         )
+                        # Ajouter le README GitHub si disponible et pas déjà dans la liste
+                        if github_url and github_url not in fetch_urls:
+                            readme_url = github_url.rstrip("/") + "/raw/HEAD/README.md"
+                            try:
+                                r2 = await client.get(readme_url)
+                                if r2.status_code == 200:
+                                    parts.append(f"=== README GitHub ({lib}) ===\n{r2.text[:3000]}")
+                            except Exception:
+                                pass
                     elif "<html" in text.lower():
-                        import re
-                        text = re.sub(r"<[^>]+>", " ", text)
-                        text = re.sub(r"\s+", " ", text)
-                    parts.append(f"=== {url} ===\n{text[:MAX_CHARS // len(urls)]}")
+                        # Extraction texte basique
+                        text = _re.sub(r"<script[^>]*>.*?</script>", " ", text, flags=_re.DOTALL)
+                        text = _re.sub(r"<style[^>]*>.*?</style>", " ", text, flags=_re.DOTALL)
+                        text = _re.sub(r"<[^>]+>", " ", text)
+                        text = _re.sub(r"\s+", " ", text).strip()
+
+                    chunk_size = MAX_CHARS // max(len(fetch_urls), 1)
+                    parts.append(f"=== {url} ===\n{text[:chunk_size]}")
                 except Exception as e:
                     parts.append(f"=== {url} — ERREUR: {e} ===")
 
@@ -215,10 +299,11 @@ class SelfEvolutionAgent:
 
         prompt = (
             f"Tu es un expert Python. Génère un connecteur MCP pour le service '{service}'.\n"
-            f"Librairie Python : {lib}\n"
+            f"Librairie Python : {lib} (déjà installée via pip)\n"
             f"Outils à créer : {', '.join(tools)}\n"
             f"{error_block}\n"
-            f"Documentation :\n{doc}\n\n"
+            "=== DOCUMENTATION OFFICIELLE (utilise-la pour les imports et l'API exacte) ===\n"
+            f"{doc}\n\n"
             "=== TEMPLATE MCP (spotify_mcp.py) ===\n"
             f"{self._template_mcp}\n\n"
             "=== TEMPLATE DÉCLARATIONS ===\n"
@@ -229,9 +314,10 @@ class SelfEvolutionAgent:
             f"1. La classe s'appelle {service.capitalize()}MCP\n"
             f"2. Le fichier s'appelle {analysis.get('file_name', service + '_mcp.py')}\n"
             "3. Toutes les méthodes retournent str, jamais d'exception non catchée\n"
-            "4. Imports en haut du fichier (pas lazy sauf dépendances lourdes)\n"
+            "4. Imports en haut du fichier — utilise les imports EXACTS de la doc officielle\n"
             "5. Variables d'env via os.getenv() en haut du fichier\n"
-            f"6. Noms d'outils préfixés par '{service}_'\n\n"
+            f"6. Noms d'outils préfixés par '{service}_'\n"
+            "7. N'invente pas les classes/méthodes — utilise ce que montre la documentation\n\n"
             "Réponds avec EXACTEMENT ces 4 blocs délimités, sans autre texte :\n"
             "===MCP_FILE===\n"
             "<code complet du fichier MCP>\n"
@@ -503,17 +589,25 @@ class SelfEvolutionAgent:
             service_name = analysis.get("service_name", "inconnu")
             print(f"[Evolution] Service identifié : {service_name}")
 
-            # 2. Rechercher la documentation
+            # 2. Installer le package pip si nécessaire
+            print(f"[Evolution] INSTALL: {service_name}")
+            install_result = await self._install_package(analysis)
+            print(f"[Evolution] Install: {install_result}")
+            if "ERREUR" in install_result and "Timeout" not in install_result:
+                # On continue quand même — le package existe peut-être déjà sous un autre nom
+                await self._notify_telegram(f"[ADA EVOLUTION] Avertissement install : {install_result}")
+
+            # 3. Rechercher la documentation officielle
             print(f"[Evolution] RESEARCH: {service_name}")
             doc = await self._research(analysis)
 
-            # 3. Générer + Valider (max 3 essais)
+            # 4. Générer + Valider (max 5 essais avec doc enrichie)
             print(f"[Evolution] GENERATE+VALIDATE: {service_name}")
-            blocks = await self._validate_with_retry(analysis, doc, max_tries=3)
+            blocks = await self._validate_with_retry(analysis, doc, max_tries=5)
 
             if blocks is None:
                 msg = (
-                    f"[ADA EVOLUTION] Échec après 3 tentatives pour '{goal}'.\n"
+                    f"[ADA EVOLUTION] Échec après 5 tentatives pour '{goal}'.\n"
                     f"Service : {service_name}\n"
                     "Aucun fichier déployé. Intervention manuelle requise."
                 )
