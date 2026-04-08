@@ -1,5 +1,7 @@
 import json
 import os
+import threading
+from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 
@@ -13,6 +15,7 @@ class UserProfileManager:
     def __init__(self):
         os.makedirs(USERS_DIR, exist_ok=True)
         os.makedirs(GUESTS_DIR, exist_ok=True)
+        self._locks: dict[str, threading.Lock] = defaultdict(threading.Lock)
 
     def _profile_path(self, user_id: str) -> str:
         if user_id in OWNER_IDS:
@@ -27,49 +30,57 @@ class UserProfileManager:
             return json.load(f)
 
     def save_profile(self, profile: dict) -> None:
-        path = self._profile_path(profile["id"])
+        user_id = profile.get("id")
+        if not user_id:
+            raise ValueError("profile must contain an 'id' key")
+        path = self._profile_path(user_id)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(profile, f, ensure_ascii=False, indent=2)
 
     def save_preference(self, user_id: str, preference: str) -> str:
-        profile = self.get_profile(user_id)
-        if profile is None:
-            return f"Profil inconnu : {user_id}"
-        prefs = profile.setdefault("preferences", [])
-        if preference not in prefs:
-            prefs.append(preference)
-            self.save_profile(profile)
+        with self._locks[user_id]:
+            profile = self.get_profile(user_id)
+            if profile is None:
+                return f"Profil inconnu : {user_id}"
+            prefs = profile.setdefault("preferences", [])
+            if preference not in prefs:
+                prefs.append(preference)
+                self.save_profile(profile)
         return f"Préférence enregistrée pour {profile['name']}."
 
     def save_fact(self, user_id: str, fact: str) -> str:
-        profile = self.get_profile(user_id)
-        if profile is None:
-            return f"Profil inconnu : {user_id}"
-        facts = profile.setdefault("facts", [])
-        if fact not in facts:
-            facts.append(fact)
-            self.save_profile(profile)
+        with self._locks[user_id]:
+            profile = self.get_profile(user_id)
+            if profile is None:
+                return f"Profil inconnu : {user_id}"
+            facts = profile.setdefault("facts", [])
+            if fact not in facts:
+                facts.append(fact)
+                self.save_profile(profile)
         return f"Fait enregistré pour {profile['name']}."
 
     def create_guest(self, name: str) -> dict:
         guest_id = name.lower().strip()
-        existing = self.get_profile(guest_id)
-        if existing:
-            existing["last_seen"] = datetime.utcnow().isoformat()
-            self.save_profile(existing)
-            return existing
-        profile = {
-            "id": guest_id,
-            "name": name,
-            "role": "guest",
-            "preferences": [],
-            "habits": [],
-            "facts": [],
-            "created_at": datetime.utcnow().isoformat(),
-            "last_seen": datetime.utcnow().isoformat(),
-        }
-        self.save_profile(profile)
-        return profile
+        if guest_id in OWNER_IDS:
+            guest_id = f"guest_{guest_id}"
+        with self._locks[guest_id]:
+            existing = self.get_profile(guest_id)
+            if existing:
+                existing["last_seen"] = datetime.utcnow().isoformat()
+                self.save_profile(existing)
+                return existing
+            profile = {
+                "id": guest_id,
+                "name": name,
+                "role": "guest",
+                "preferences": [],
+                "habits": [],
+                "facts": [],
+                "created_at": datetime.utcnow().isoformat(),
+                "last_seen": datetime.utcnow().isoformat(),
+            }
+            self.save_profile(profile)
+            return profile
 
     def get_active_context(self, speakers: list[dict]) -> str:
         if not speakers:
