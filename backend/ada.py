@@ -641,6 +641,9 @@ from tuya_agent import TuyaAgent
 from printer_agent import PrinterAgent
 from memory_manager import MemoryManager, DOCUMENTS_DIR
 from reminder_manager import ReminderManager
+from presence_manager import PresenceManager
+from user_profile_manager import UserProfileManager
+from authenticator import MultiUserFaceDetector
 from mcps.slack_mcp import SlackMCP
 from mcps.telegram_mcp import TelegramMCP
 from mcps.whatsapp_mcp import WhatsAppMCP
@@ -673,6 +676,10 @@ from mcps.tuya_camera_mcp import TuyaCameraMCP
 
 memory = MemoryManager()
 memory.documents_dir = DOCUMENTS_DIR
+
+# ─── PRÉSENCE & PROFILS ──────────────────────────────────────────────────────
+presence_manager = PresenceManager()
+user_profile_manager = UserProfileManager()
 
 class AudioLoop:
     def __init__(self, video_mode=DEFAULT_MODE, on_audio_data=None, on_audio_pcm=None, on_video_frame=None, on_cad_data=None, on_web_data=None, on_transcription=None, on_tool_confirmation=None, on_cad_status=None, on_cad_thought=None, on_project_update=None, on_device_update=None, on_terminal_output=None, on_error=None, input_device_index=None, input_device_name=None, output_device_index=None, tuya_agent=None):
@@ -810,6 +817,26 @@ class AudioLoop:
 
         self.send_text_task = None
         self.stop_event = asyncio.Event()
+
+        self._last_raw_frame = None
+        self._face_detector = MultiUserFaceDetector(camera_label=None)
+        self._guest_detection_pending = False
+
+        async def _on_unknown_voice():
+            if self._guest_detection_pending:
+                return
+            self._guest_detection_pending = True
+            if self.session:
+                try:
+                    await self.session.send(
+                        input="[SYSTÈME] Voix inconnue détectée. Demande à cette personne son prénom de manière naturelle, puis appelle create_guest avec ce prénom.",
+                        end_of_turn=True
+                    )
+                except Exception as e:
+                    print(f"[PRESENCE] guest callback error: {e}")
+            await asyncio.sleep(30)
+            self._guest_detection_pending = False
+        presence_manager.set_unknown_voice_callback(_on_unknown_voice)
 
         self.permissions = {} # Default Empty (Will treat unset as True)
         self._pending_confirmations = {}
@@ -1070,6 +1097,7 @@ class AudioLoop:
                             self.out_queue.put_nowait({"data": data, "mime_type": "audio/pcm"})
                         except asyncio.QueueFull:
                             pass
+                    presence_manager.feed_audio_chunk(data)
 
                 if rms > VAD_THRESHOLD:
                     # Speech Detected
@@ -2708,10 +2736,25 @@ class AudioLoop:
         if cap is not None:
             cap.release()
 
+    async def _face_detection_loop(self):
+        """Détection de visage toutes les secondes, met à jour presence_manager."""
+        while True:
+            await asyncio.sleep(1.0)
+            if self._last_raw_frame is None:
+                continue
+            try:
+                frame = self._last_raw_frame
+                detections = await asyncio.to_thread(self._face_detector.detect, frame)
+                if detections:
+                    presence_manager.update_face_detection(detections)
+            except Exception as e:
+                print(f"[PRESENCE] Face detection error: {e}")
+
     def _get_frame(self, cap):
         ret, frame = cap.read()
         if not ret:
             return None
+        self._last_raw_frame = frame
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         img = PIL.Image.fromarray(frame_rgb)
         img.thumbnail([1024, 1024])
@@ -2851,6 +2894,8 @@ class AudioLoop:
 
                     tg.create_task(self.receive_audio())
                     tg.create_task(self.play_audio())
+                    tg.create_task(presence_manager.run())
+                    tg.create_task(self._face_detection_loop())
 
                     # Handle Startup vs Reconnect Logic
                     if not is_reconnect:
@@ -2859,6 +2904,9 @@ class AudioLoop:
                         if mem_ctx:
                             print(f"[MEMORY] Injecting startup context ({len(mem_ctx)} chars)")
                             await self.session.send(input=mem_ctx, end_of_turn=False)
+                        user_ctx = presence_manager.get_context_block()
+                        if user_ctx:
+                            await self.session.send(input=user_ctx, end_of_turn=False)
 
                         if start_message:
                             print(f"[ADA DEBUG] [INFO] Sending start message: {start_message}")
@@ -3504,6 +3552,43 @@ class AudioLoop:
                 elif n == "spotify_playlists": return await asyncio.to_thread(self.spotify.get_playlists)
                 elif n == "twilio_send_sms":
                                                         result = await asyncio.to_thread(self.twilio.send_sms, args["to"], args["body"])
+                elif n == "remember_for_user":
+                    uid = args.get("user_id", "")
+                    mtype = args.get("memory_type", "preference")
+                    content = args.get("content", "")
+                    if mtype == "preference":
+                        return user_profile_manager.save_preference(uid, content)
+                    elif mtype == "fact":
+                        return user_profile_manager.save_fact(uid, content)
+                    elif mtype == "habit":
+                        profile = user_profile_manager.get_profile(uid)
+                        if profile:
+                            profile.setdefault("habits", []).append(content)
+                            user_profile_manager.save_profile(profile)
+                            return f"Habitude enregistrée pour {profile['name']}."
+                        return f"Profil inconnu : {uid}"
+                    return "Type de mémoire inconnu."
+                elif n == "enroll_voice":
+                    uid = args.get("user_id", "")
+                    import subprocess
+                    subprocess.Popen(
+                        ["conda", "run", "-n", "ada_v2", "python", "backend/enroll.py",
+                         "--user", uid, "--voice-only"],
+                        cwd=os.getenv("JARVIS_ROOT", "/Users/bryandev/jarvis")
+                    )
+                    return f"Enrollment vocal lancé pour '{uid}'. Parle normalement pendant 25 secondes."
+                elif n == "who_is_speaking":
+                    speakers = presence_manager.active_speakers
+                    if not speakers:
+                        return "Aucun utilisateur identifié pour le moment."
+                    lines = [f"- {s['user']} ({s.get('source','?')}, confiance {int(s.get('confidence',0)*100)}%)" for s in speakers]
+                    return "Utilisateurs détectés :\n" + "\n".join(lines)
+                elif n == "create_guest":
+                    name = args.get("name", "Inconnu")
+                    profile = user_profile_manager.create_guest(name)
+                    presence_manager.voice_recognizer.reload_embeddings()
+                    presence_manager._guest_detection_pending = False
+                    return f"Profil créé pour {profile['name']}. Bienvenue !"
                 return f"MCP '{name}' non mappé."
             else:
                 return f"Outil '{name}' non disponible."
