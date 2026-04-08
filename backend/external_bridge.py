@@ -127,6 +127,9 @@ ADA_SYSTEM_PROMPT = (
 
 from mcp_tools_declarations import MCP_TOOLS, MCP_TOOL_NAMES
 from mcps.twilio_mcp import TwilioMCP
+from user_profile_manager import UserProfileManager
+
+_upm = UserProfileManager()
 
 _CORE_TOOL_DEFS = [
     # Gmail
@@ -1001,6 +1004,28 @@ class TextAgent:
             except Exception as e:
                 return f"Erreur écriture: {e}"
 
+        # ── USER PROFILE MANAGER ────────────────────────────────────────────
+        elif name == "remember_for_user":
+            uid = args.get("user_id", "")
+            mtype = args.get("memory_type", "preference")
+            content = args.get("content", "")
+            if mtype == "preference":
+                return _upm.save_preference(uid, content)
+            elif mtype == "fact":
+                return _upm.save_fact(uid, content)
+            elif mtype == "habit":
+                profile = _upm.get_profile(uid)
+                if profile:
+                    profile.setdefault("habits", []).append(content)
+                    _upm.save_profile(profile)
+                    return f"Habitude enregistrée pour {profile['name']}."
+                return f"Profil inconnu : {uid}"
+            return "Type de mémoire inconnu."
+        elif name == "who_is_speaking":
+            return "Mode Telegram — identification vocale non disponible. Utilisateur : Bryan."
+        elif name == "enroll_voice":
+            return "Enrollment vocal non disponible via Telegram. Lance depuis l'interface voix."
+
         # Outil déclaré mais agent None (variable d'env manquante ou init échouée)
         prefix = name.split("_")[0]
         env_var = _ENV_FOR_TOOL.get(prefix)
@@ -1027,7 +1052,9 @@ class TextAgent:
             except Exception:
                 pass
 
-        system = ADA_SYSTEM_PROMPT + memory_block
+        bryan_ctx = _upm.get_active_context([{"user": "bryan", "source": "telegram"}])
+        user_block = f"\n\n{bryan_ctx}" if bryan_ctx else ""
+        system = ADA_SYSTEM_PROMPT + memory_block + user_block
         messages = [types.Content(role="user", parts=[types.Part(text=text)])]
 
         for _ in range(8):  # max 8 tours pour éviter les boucles infinies
