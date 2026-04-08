@@ -21,6 +21,8 @@ aiohttp>=3.9.0
 python-dotenv
 # Face & Hand tracking
 mediapipe
+numpy
+resemblyzer
 # CAD Generation
 build123d
 # Browser-use (navigation web avancée via LLM)
