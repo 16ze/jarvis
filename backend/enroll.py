@@ -48,13 +48,14 @@ def record_audio(user_id: str) -> str:
             print(f"  {elapsed}s / {DURATION_S}s...", end="\r")
     stream.stop_stream()
     stream.close()
+    sample_width = pa.get_sample_size(FORMAT)  # sauvegarder avant terminate
     pa.terminate()
     print(f"\n[ENROLL] Enregistrement terminé.")
 
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     with wave.open(tmp.name, "wb") as wf:
         wf.setnchannels(CHANNELS)
-        wf.setsampwidth(pa.get_sample_size(FORMAT))
+        wf.setsampwidth(sample_width)  # utiliser la valeur sauvegardée
         wf.setframerate(SAMPLE_RATE)
         wf.writeframes(b"".join(frames))
     return tmp.name
