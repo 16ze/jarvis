@@ -3,18 +3,18 @@
     "tool_permissions": {
         "generate_cad": true,
         "run_web_agent": true,
-        "write_file": false,
-        "read_directory": false,
-        "read_file": false,
-        "create_project": false,
-        "switch_project": false,
-        "list_projects": false,
-        "create_directory": false,
-        "iterate_cad": false,
+        "write_file": true,
+        "read_directory": true,
+        "read_file": true,
+        "create_project": true,
+        "switch_project": true,
+        "list_projects": true,
+        "create_directory": true,
+        "iterate_cad": true,
         "print_stl": false,
-        "discover_printers": false,
-        "control_light": false,
-        "list_smart_devices": false
+        "discover_printers": true,
+        "control_light": true,
+        "list_smart_devices": true
     },
     "printers": [
         {
@@ -32,22 +32,98 @@
             "camera_url": null
         }
     ],
-    "kasa_devices": [
+    "tuya_devices": [
         {
-            "ip": "10.0.0.49",
-            "alias": "Right Room Light",
-            "model": "KL135"
+            "ip": "192.168.1.78",
+            "alias": "Lanternes",
+            "model": "Tuya"
         },
         {
-            "ip": "10.0.0.52",
-            "alias": "Left Office Light ",
-            "model": "KL135"
+            "ip": "192.168.1.21",
+            "alias": "Lanternes",
+            "model": "Tuya"
         },
         {
-            "ip": "10.0.0.83",
-            "alias": "Right Office Light",
-            "model": "KL135"
+            "ip": "192.168.1.3",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.93",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.66",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.162",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.44",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.52",
+            "alias": "Couloir",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.17",
+            "alias": "Couloir",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.46",
+            "alias": "Couloir",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.7",
+            "alias": "Couloir",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.91",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.157",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.193",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.110",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.144",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.61",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.159",
+            "alias": "CHAMBRE PRINCIPAL",
+            "model": "Tuya"
         }
     ],
-    "camera_flipped": false
+    "camera_flipped": false,
+    "timezone": "Europe/Paris"
 }
