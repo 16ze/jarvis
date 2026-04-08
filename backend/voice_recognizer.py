@@ -1,4 +1,5 @@
 import os
+import threading
 import numpy as np
 from pathlib import Path
 from typing import Optional
@@ -22,6 +23,7 @@ class VoiceRecognizer:
         self.encoder = VoiceEncoder()
         self._embeddings: dict[str, np.ndarray] = {}
         self._audio_buffer = bytearray()
+        self._lock = threading.Lock()
         self._load_all_embeddings()
 
     def _print_path(self, user_id: str) -> str:
@@ -52,6 +54,8 @@ class VoiceRecognizer:
     def identify(self, audio_array: np.ndarray) -> Optional[dict]:
         if not self._embeddings:
             return None
+        if np.abs(audio_array).mean() < 0.01:
+            return None
         try:
             wav = preprocess_wav(audio_array, source_sr=SAMPLE_RATE)
             embedding = self.encoder.embed_utterance(wav)
@@ -67,11 +71,12 @@ class VoiceRecognizer:
         return None
 
     def feed_chunk(self, pcm_bytes: bytes) -> Optional[dict]:
-        self._audio_buffer.extend(pcm_bytes)
-        if len(self._audio_buffer) < ACCUMULATION_BYTES:
-            return None
-        chunk = bytes(self._audio_buffer[:ACCUMULATION_BYTES])
-        self._audio_buffer = self._audio_buffer[ACCUMULATION_BYTES:]
+        with self._lock:
+            self._audio_buffer.extend(pcm_bytes)
+            if len(self._audio_buffer) < ACCUMULATION_BYTES:
+                return None
+            chunk = bytes(self._audio_buffer[:ACCUMULATION_BYTES])
+            self._audio_buffer = self._audio_buffer[ACCUMULATION_BYTES:]
         audio_array = (
             np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32768.0
         )
