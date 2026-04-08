@@ -3571,12 +3571,15 @@ class AudioLoop:
                 elif n == "enroll_voice":
                     uid = args.get("user_id", "")
                     import subprocess
-                    subprocess.Popen(
-                        ["conda", "run", "-n", "ada_v2", "python", "backend/enroll.py",
-                         "--user", uid, "--voice-only"],
-                        cwd=os.getenv("JARVIS_ROOT", "/Users/bryandev/jarvis")
-                    )
-                    return f"Enrollment vocal lancé pour '{uid}'. Parle normalement pendant 25 secondes."
+                    try:
+                        subprocess.Popen(
+                            ["conda", "run", "-n", "ada_v2", "python", "backend/enroll.py",
+                             "--user", uid, "--voice-only"],
+                            cwd=os.getenv("JARVIS_ROOT", "/Users/bryandev/jarvis")
+                        )
+                        return f"Enrollment vocal lancé pour '{uid}'. Parle normalement pendant 25 secondes."
+                    except Exception as e:
+                        return f"Erreur au lancement de l'enrollment : {e}"
                 elif n == "who_is_speaking":
                     speakers = presence_manager.active_speakers
                     if not speakers:
