@@ -1,47 +1,49 @@
+# backend/capture_face.py
+"""
+Capture une photo de référence pour un utilisateur.
+Usage: conda run -n ada_v2 python backend/capture_face.py --user bryan
+       conda run -n ada_v2 python backend/capture_face.py --user rose
+"""
 import cv2
 import os
+import argparse
 
-def capture_reference_face(output_path="reference.jpg"):
-    """
-    Opens the webcam and captures a frame when the user presses 's' or 'Space'.
-    Saves the frame to the specified output path.
-    """
-    cap = cv2.VideoCapture(0)
+JARVIS_ROOT = os.getenv("JARVIS_ROOT", "/Users/bryandev/jarvis")
+FACE_REFS_DIR = os.path.join(JARVIS_ROOT, "backend", "memory", "face_refs")
 
+
+def capture_reference_face(user_id: str) -> None:
+    os.makedirs(FACE_REFS_DIR, exist_ok=True)
+    output_path = os.path.join(FACE_REFS_DIR, f"{user_id}.jpg")
+
+    cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
     if not cap.isOpened():
-        print("Error: Could not open webcam.")
+        print(f"[CAPTURE] Erreur : impossible d'ouvrir la webcam.")
         return
 
-    print("Press 's' or 'SPACE' to capture your face.")
-    print("Press 'q' or 'ESC' to quit without saving.")
+    print(f"[CAPTURE] Capture pour '{user_id}'. Appuie sur 's' ou ESPACE pour sauvegarder, 'q'/ESC pour annuler.")
 
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("Error: Failed to capture frame.")
+            print("[CAPTURE] Erreur : frame non lue.")
             break
-
-        # Display the resulting frame
-        cv2.imshow('Capture Reference Face', frame)
-
+        cv2.imshow(f"Capture — {user_id}", frame)
         key = cv2.waitKey(1) & 0xFF
-
-        # 's' or SPACE to save
-        if key == ord('s') or key == 32:
+        if key in (ord("s"), 32):
             cv2.imwrite(output_path, frame)
-            print(f"Reference face saved to {output_path}")
+            print(f"[CAPTURE] Photo sauvegardée : {output_path}")
             break
-        
-        # 'q' or ESC to quit
-        if key == ord('q') or key == 27:
-            print("Capture cancelled.")
+        if key in (ord("q"), 27):
+            print("[CAPTURE] Annulé.")
             break
 
     cap.release()
     cv2.destroyAllWindows()
 
+
 if __name__ == "__main__":
-    # Ensure backend directory context
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    save_path = os.path.join(script_dir, "reference.jpg")
-    capture_reference_face(save_path)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--user", required=True, help="ID utilisateur : bryan, rose, ou prénom invité")
+    args = parser.parse_args()
+    capture_reference_face(args.user)
