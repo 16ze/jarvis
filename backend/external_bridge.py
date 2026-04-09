@@ -20,7 +20,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-load_dotenv()
+load_dotenv()  # backend/.env
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))  # racine du projet
 
 # ─── FORMATEUR D'ERREURS ACTIONNABLE ─────────────────────────────────────────
 _ENV_FOR_TOOL: dict = {
@@ -60,7 +61,16 @@ TEXT_VOICE_THRESHOLD = int(os.getenv("TEXT_VOICE_THRESHOLD", "500"))
 
 # ─── FALLBACK LLM (OpenRouter) ────────────────────────────────────────────────
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL   = os.getenv("OPENROUTER_MODEL", "google/gemma-3-27b-it:free")
+OPENROUTER_MODEL   = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+
+# Cascade de modèles gratuits à essayer si le premier est rate-limité
+_FALLBACK_MODELS = [
+    OPENROUTER_MODEL,
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "nvidia/nemotron-nano-9b-v2:free",
+    "openai/gpt-oss-20b:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
+]
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 TEXT_MODEL   = "gemini-2.5-flash"
@@ -79,36 +89,48 @@ def _is_quota_error(e: Exception) -> bool:
 
 
 async def _run_fallback_llm(system_prompt: str, user_text: str) -> str:
-    """Fallback LLM via OpenRouter quand Gemini est HS (quota/crédits épuisés)."""
+    """Fallback LLM via OpenRouter. Essaie plusieurs modèles gratuits en cascade."""
     if not OPENROUTER_API_KEY:
         return (
             "⚠️ Mode dégradé — Gemini indisponible (quota épuisé). "
             "Configure OPENROUTER_API_KEY dans .env pour activer le fallback."
         )
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://github.com/16ze/jarvis",
-                },
-                json={
-                    "model": OPENROUTER_MODEL,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_text},
-                    ],
-                    "max_tokens": 1024,
-                },
-            )
-            data = response.json()
-            if "choices" in data and data["choices"]:
-                return data["choices"][0]["message"]["content"].strip()
-            return f"⚠️ Fallback LLM sans réponse : {data}"
-    except Exception as e:
-        return f"⚠️ Fallback LLM indisponible : {e}"
+
+    # Construire la liste sans doublons en gardant l'ordre
+    models_to_try = list(dict.fromkeys(_FALLBACK_MODELS))
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        for model in models_to_try:
+            try:
+                response = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "https://github.com/16ze/jarvis",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_text},
+                        ],
+                        "max_tokens": 1024,
+                    },
+                )
+                data = response.json()
+                if "choices" in data and data["choices"]:
+                    content = data["choices"][0]["message"]["content"].strip()
+                    if content:
+                        print(f"[TextAgent] Fallback LLM OK via {model}")
+                        return content
+                # 429 ou autre erreur → essayer le suivant
+                err_code = data.get("error", {}).get("code")
+                print(f"[TextAgent] Fallback {model} indisponible (code={err_code}) — essai suivant")
+            except Exception as e:
+                print(f"[TextAgent] Fallback {model} erreur : {e} — essai suivant")
+
+    return "⚠️ Tous les modèles de secours sont indisponibles. Réessaie dans quelques secondes."
 
 # ─── SYSTEM PROMPT ────────────────────────────────────────────────────────────
 
