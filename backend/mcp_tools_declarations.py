@@ -1425,15 +1425,15 @@ advanced_web_navigation_tool = {
 execute_pc_task_tool = {
     "name": "execute_pc_task",
     "description": (
-        "Prend le contrôle total du Mac via screenshots + souris + clavier. "
-        "C'est l'outil PAR DÉFAUT pour TOUT ce qui se passe sur l'ordinateur de Bryan. "
-        "Utilise-le pour : ouvrir n'importe quelle app (Chrome, Safari, Spotify, VS Code, Finder, Terminal, Xcode, Photos, Mail, etc.), "
-        "aller sur un site web dans le vrai navigateur (Google, YouTube, n'importe quelle URL), "
-        "faire une recherche Google visible à l'écran, "
-        "cliquer dans l'interface macOS, taper du texte, déplacer des fichiers, changer les réglages système. "
-        "Exemples : 'ouvre Google', 'va sur YouTube', 'lance Spotify', 'ouvre le Finder', "
-        "'ouvre Chrome et va sur gmail.com', 'règle le volume', 'ferme cette fenêtre', 'prend un screenshot'. "
-        "run_web_agent est RÉSERVÉ aux recherches d'info silencieuses en arrière-plan — ne jamais l'utiliser si Bryan veut voir son écran."
+        "Prend le contrôle visible du Mac de Bryan via screenshots + souris + clavier. "
+        "Tool PAR DÉFAUT pour TOUT ce qui se passe sur l'écran de Bryan : "
+        "ouvrir n'importe quelle application, naviguer sur un site web dans le vrai navigateur, "
+        "remplir un formulaire, faire une recherche Google visible, cliquer dans l'interface, "
+        "taper du texte, copier/coller, changer les réglages système, déplacer des fichiers. "
+        "Exemples : 'ouvre Chrome', 'va sur YouTube', 'remplis ce formulaire', "
+        "'fais une recherche Google sur X', 'ouvre le Finder', 'règle le volume système'. "
+        "run_web_agent est RÉSERVÉ aux recherches silencieuses en arrière-plan "
+        "quand Bryan veut juste une info sans voir son écran."
     ),
     "parameters": {
         "type": "OBJECT",
