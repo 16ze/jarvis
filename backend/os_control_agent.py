@@ -140,9 +140,9 @@ class OsControlAgent:
                 monitor = sct.monitors[1]
                 shot = sct.grab(monitor)
                 img = PIL.Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
-                img.thumbnail([1280, 720])
+                img.thumbnail([960, 540])
                 buf = io.BytesIO()
-                img.save(buf, format="jpeg", quality=65)
+                img.save(buf, format="jpeg", quality=50)
                 return buf.getvalue()
 
         raw = await asyncio.to_thread(_grab)
