@@ -95,6 +95,42 @@ VOICE_MODEL  = "gemini-2.5-flash-preview-tts"
 VOICE_NAME   = "Kore"
 
 
+def _gemini_tools_to_openai(gemini_tools: list[dict]) -> list[dict]:
+    """Convertit les déclarations Gemini (OBJECT/STRING) en format OpenAI (object/string)."""
+    def _convert_type(t: str) -> str:
+        return t.lower()
+
+    def _convert_schema(schema: dict) -> dict:
+        out = {}
+        for k, v in schema.items():
+            if k == "type":
+                out[k] = _convert_type(v)
+            elif k == "properties":
+                out[k] = {pk: _convert_schema(pv) for pk, pv in v.items()}
+            elif k == "items":
+                out[k] = _convert_schema(v)
+            elif k == "behavior":
+                pass  # champ Gemini-only, ignoré
+            else:
+                out[k] = v
+        return out
+
+    result = []
+    for tool in gemini_tools:
+        result.append({
+            "type": "function",
+            "function": {
+                "name": tool["name"],
+                "description": tool.get("description", ""),
+                "parameters": _convert_schema(tool.get("parameters", {"type": "OBJECT", "properties": {}})),
+            },
+        })
+    return result
+
+
+_OPENAI_BRIDGE_TOOLS = _gemini_tools_to_openai(_CORE_TOOL_DEFS + _BRIDGE_MCP_TOOLS)
+
+
 def _is_quota_error(e: Exception) -> bool:
     """Détecte si une erreur Gemini est due à un quota/limite d'usage épuisé."""
     msg = str(e).lower()
@@ -106,7 +142,10 @@ def _is_quota_error(e: Exception) -> bool:
 
 
 async def _run_fallback_llm(system_prompt: str, user_text: str) -> str:
-    """Fallback LLM via OpenRouter. Essaie plusieurs modèles gratuits en cascade."""
+    """
+    Fallback LLM via OpenRouter avec function calling complet.
+    Essaie plusieurs modèles gratuits en cascade, exécute les tools réels.
+    """
     global _last_working_model
     if not OPENROUTER_API_KEY:
         return (
@@ -114,41 +153,90 @@ async def _run_fallback_llm(system_prompt: str, user_text: str) -> str:
             "Configure OPENROUTER_API_KEY dans .env pour activer le fallback."
         )
 
-    # Le dernier modèle fonctionnel en tête de liste pour éviter les essais inutiles
+    # Injecter la liste des appareils Tuya pour éviter les alias hallucinés
+    tuya_block = ""
+    try:
+        if _agent._tuya and _agent._tuya.devices:
+            aliases = sorted({d.alias for d in _agent._tuya.devices.values()})
+            tuya_block = (
+                "\n\nAPPAREILS DOMOTIQUES (alias exacts OBLIGATOIRES) : "
+                + ", ".join(aliases)
+            )
+    except Exception:
+        pass
+    enriched_prompt = system_prompt + tuya_block
+
+    # Le dernier modèle fonctionnel en tête de liste
     ordered = list(dict.fromkeys(
         ([_last_working_model] if _last_working_model else []) + _FALLBACK_MODELS
     ))
-    models_to_try = ordered
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        for model in models_to_try:
+    async with httpx.AsyncClient(timeout=45) as http:
+        for model in ordered:
             try:
-                response = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "https://github.com/16ze/jarvis",
-                    },
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_text},
-                        ],
-                        "max_tokens": 1024,
-                    },
-                )
-                data = response.json()
-                if "choices" in data and data["choices"]:
-                    content = data["choices"][0]["message"]["content"].strip()
-                    if content:
-                        print(f"[TextAgent] Fallback LLM OK via {model}")
-                        _last_working_model = model  # mémoriser pour la prochaine fois
-                        return content
-                # 429 ou autre erreur → essayer le suivant
-                err_code = data.get("error", {}).get("code")
-                print(f"[TextAgent] Fallback {model} indisponible (code={err_code}) — essai suivant")
+                messages = [
+                    {"role": "system", "content": enriched_prompt},
+                    {"role": "user", "content": user_text},
+                ]
+
+                # Agentic loop : max 6 tours
+                for _turn in range(6):
+                    resp = await http.post(
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "https://github.com/16ze/jarvis",
+                        },
+                        json={
+                            "model": model,
+                            "messages": messages,
+                            "tools": _OPENAI_BRIDGE_TOOLS,
+                            "tool_choice": "auto",
+                            "max_tokens": 1024,
+                        },
+                    )
+                    data = resp.json()
+
+                    if "error" in data:
+                        err_code = data["error"].get("code")
+                        print(f"[TextAgent] Fallback {model} indisponible (code={err_code}) — essai suivant")
+                        break  # passer au modèle suivant
+
+                    choice = data.get("choices", [{}])[0]
+                    msg = choice.get("message", {})
+                    tool_calls = msg.get("tool_calls") or []
+
+                    if not tool_calls:
+                        # Réponse finale en texte
+                        content = (msg.get("content") or "").strip()
+                        if content:
+                            print(f"[TextAgent] Fallback LLM OK via {model} (tour {_turn+1})")
+                            _last_working_model = model
+                            return content
+                        break
+
+                    # Exécuter tous les tool calls
+                    messages.append({"role": "assistant", "tool_calls": tool_calls, "content": None})
+                    for tc in tool_calls:
+                        fn = tc.get("function", {})
+                        tool_name = fn.get("name", "")
+                        try:
+                            import json as _json
+                            tool_args = _json.loads(fn.get("arguments", "{}"))
+                        except Exception:
+                            tool_args = {}
+                        print(f"[TextAgent] Fallback tool: {tool_name} args={tool_args}")
+                        try:
+                            result = await _agent._execute_tool(tool_name, tool_args)
+                        except Exception as _te:
+                            result = f"Erreur outil {tool_name}: {_te}"
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.get("id", tool_name),
+                            "content": str(result),
+                        })
+
             except Exception as e:
                 print(f"[TextAgent] Fallback {model} erreur : {e} — essai suivant")
 
