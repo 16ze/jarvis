@@ -65,10 +65,10 @@ OPENROUTER_MODEL   = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-ins
 
 # Cascade de modèles gratuits à essayer si le premier est rate-limité
 _FALLBACK_MODELS = [
-    OPENROUTER_MODEL,
-    "meta-llama/llama-3.2-3b-instruct:free",
     "nvidia/nemotron-nano-9b-v2:free",
     "openai/gpt-oss-20b:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    OPENROUTER_MODEL,
     "nousresearch/hermes-3-llama-3.1-405b:free",
 ]
 _last_working_model: str | None = None  # cache du dernier modèle fonctionnel
