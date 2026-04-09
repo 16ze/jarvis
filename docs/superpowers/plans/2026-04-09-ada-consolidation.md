@@ -1173,6 +1173,295 @@ git commit -m "feat: doorbell agent — Tuya Cloud API, ring detection polling, 
 
 ---
 
+## Task 8 : Optimisation coûts Gemini — tokens & API calls
+
+**Postes de coût identifiés (ordre d'impact) :**
+1. `_check_wake_word_api` — appel Gemini API toutes les 1.2s en mode veille → remplacer par `faster-whisper` local
+2. System prompt — ~1500+ tokens rechargés à chaque session → compresser à ~500 tokens
+3. Screenshots OsControlAgent — 1280×720@65% à chaque step → 960×540@50%
+4. Réponses outils longues — certains tools retournent des textes énormes reconsommés par Gemini
+
+**Files:**
+- Modify: `backend/ada.py` (`_check_wake_word_api`, `_wake_word_loop`, system prompt)
+- Modify: `backend/os_control_agent.py` (résolution screenshots)
+
+- [ ] **Step 1 : Installer faster-whisper**
+
+```bash
+conda activate ada_v2
+pip install faster-whisper
+```
+
+Vérifie l'installation :
+```bash
+python -c "from faster_whisper import WhisperModel; print('OK')"
+```
+Expected: `OK`
+
+- [ ] **Step 2 : Remplacer `_check_wake_word_api` par détection locale faster-whisper**
+
+Dans `backend/ada.py`, remplace la méthode `_check_wake_word_api` entière par :
+
+```python
+    # ── Lazy-loaded Whisper model (chargé une seule fois) ─────────────────────
+    _whisper_model = None
+
+    @classmethod
+    def _get_whisper_model(cls):
+        if cls._whisper_model is None:
+            try:
+                from faster_whisper import WhisperModel
+                cls._whisper_model = WhisperModel(
+                    "tiny",
+                    device="cpu",
+                    compute_type="int8",
+                    download_root=os.path.join(JARVIS_ROOT, "backend", ".whisper_cache")
+                )
+                print("[ADA] [SLEEP] Whisper tiny model chargé (détection wake word locale).")
+            except ImportError:
+                print("[ADA] [SLEEP] faster-whisper non installé — fallback API Gemini.")
+        return cls._whisper_model
+
+    async def _check_wake_word_local(self, buf: bytes, rms: int) -> bool:
+        """Détecte 'Ada' dans le buffer audio via faster-whisper en local.
+        Zéro appel API. Retourne True si Ada est appelée, False sinon.
+        """
+        import wave, io as _io
+        try:
+            model = self._get_whisper_model()
+            if model is None:
+                # Fallback: ancienne méthode API
+                return await self._check_wake_word_api_fallback(buf, rms)
+
+            wav_buf = _io.BytesIO()
+            with wave.open(wav_buf, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(SEND_SAMPLE_RATE)
+                wf.writeframes(buf)
+            wav_bytes = wav_buf.getvalue()
+
+            # Transcription locale — ~80-150ms sur CPU
+            def _transcribe():
+                import tempfile, os as _os
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                    f.write(wav_bytes)
+                    tmp_path = f.name
+                try:
+                    segments, _ = model.transcribe(
+                        tmp_path,
+                        language="fr",
+                        beam_size=1,
+                        vad_filter=True,
+                    )
+                    return " ".join(s.text for s in segments).strip().lower()
+                finally:
+                    _os.unlink(tmp_path)
+
+            text = await asyncio.to_thread(_transcribe)
+            print(f"[ADA] [SLEEP] Whisper transcription (rms={rms}): '{text}'")
+            return "ada" in text
+
+        except Exception as e:
+            print(f"[ADA] [SLEEP] Erreur wake word local: {e}")
+            return False
+
+    async def _check_wake_word_api_fallback(self, buf: bytes, rms: int) -> bool:
+        """Fallback API Gemini si faster-whisper n'est pas disponible."""
+        import wave, io as _io
+        try:
+            wav_buf = _io.BytesIO()
+            with wave.open(wav_buf, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(SEND_SAMPLE_RATE)
+                wf.writeframes(buf)
+            wav_bytes = wav_buf.getvalue()
+            response = await client.aio.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=[
+                    types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav"),
+                    "Écoute cet audio. Est-ce qu'on entend distinctement 'Ada' ? "
+                    "Réponds UNIQUEMENT par 'oui' ou 'non'.",
+                ],
+            )
+            answer = response.text.strip().lower() if response.text else ""
+            return answer.startswith("oui")
+        except Exception as e:
+            print(f"[ADA] [SLEEP] Erreur wake word API fallback: {e}")
+            return False
+```
+
+- [ ] **Step 3 : Mettre à jour `_wake_word_loop` pour appeler `_check_wake_word_local`**
+
+Dans `_wake_word_loop`, cherche la ligne qui lance `_check_wake_word_api` :
+```python
+        _pending_task = _bg_task(self._check_wake_word_api(buf, rms), name="wake_word_check")
+```
+Remplace par une coroutine inline qui appelle la version locale et déclenche le réveil si True :
+```python
+        async def _check_and_wake(b: bytes, r: int):
+            detected = await self._check_wake_word_local(b, r)
+            if detected and self.sleep_mode:
+                print("[ADA] [SLEEP] Mot de réveil détecté (local) — réveil d'Ada")
+                self.sleep_mode = False
+                self._sleep_audio_buffer = bytearray()
+                if self.on_sleep_mode_changed:
+                    self.on_sleep_mode_changed(False)
+                if self.session:
+                    await self.session.send(
+                        input="[Système] Tu viens d'être réveillée. "
+                              "Dis uniquement 'Je vous écoute, Bryan.' et reprends normalement.",
+                        end_of_turn=True,
+                    )
+
+        _pending_task = _bg_task(_check_and_wake(buf, rms), name="wake_word_check")
+        _pending_started_at = time.monotonic()
+```
+
+Et supprime (ou mets en commentaire) l'ancienne méthode `_check_wake_word_api` (elle est remplacée par `_check_wake_word_api_fallback`).
+
+- [ ] **Step 4 : Compresser le system prompt dans ada.py**
+
+Cherche le bloc `system_instruction=(` (ligne ~567). Remplace tout le contenu de la string par la version compressée suivante (économie ~70% de tokens) :
+
+```python
+    system_instruction=(
+        # IDENTITÉ + COMPORTEMENT (~50 tokens)
+        "Tu es Ada (Advanced Design Assistant), créée par Bryan. "
+        "RÈGLE PRIMAIRE : utilise l'outil immédiatement, sans annoncer. Agis, puis commente brièvement. "
+        "Français uniquement. Directe, concise, espiègle. N'invente jamais. Signale tes incertitudes. "
+
+        # SÉQUENCES OBLIGATOIRES (~80 tokens)
+        "Séquences : musique inconnue → spotify_search PUIS spotify_play(uri). "
+        "Lumière alias inconnu → list_smart_devices PUIS control_light(target=ALIAS). "
+        "YouTube sur TV → youtube_search si URL inconnue PUIS play_youtube_on_chromecast(video_url). "
+        "Rappel → reminder_set(message, datetime_iso='YYYY-MM-DDTHH:MM:SS') heure Paris. "
+
+        # SÉLECTION D'OUTIL (~150 tokens)
+        "OUTILS : "
+        "Lumières/prises → control_light(target=ALIAS, action, brightness 0-100, color anglais). "
+        "TV → play_youtube_on_chromecast ou play_media_on_chromecast. État incertain → get_chromecast_status. "
+        "Sonnette → get_doorbell_status ou get_doorbell_snapshot. "
+        "Caméra PTZ → camera_switch('tuya_camera'). Rotation → camera_ptz_move. Preset → camera_goto_preset. Photo → camera_look. "
+        "Rappels → reminder_set/list/delete. "
+        "MAC visible (ouvrir app, naviguer, cliquer, remplir formulaire) → execute_pc_task. "
+        "Info en arrière-plan (Bryan occupé, pas d'écran) → run_web_agent. "
+        "Arrêt tâche PC → stop_pc_task immédiatement si Bryan dit 'arrête'/'stop'/'annule'. "
+        "Email → send_email après confirmation explicite (irréversible). "
+        "Recherche multi-étapes → run_task. Anticipation → anticipate. "
+
+        # ANTI-ÉCHEC (~80 tokens)
+        "ERREUR : (1) reformule paramètres. (2) alias inconnu → liste d'abord. "
+        "(3) outil manquant → indique la variable d'env. (4) réseau → réessaie une fois. (5) bug → self_correct_file. "
+
+        # MÉMOIRE (~50 tokens)
+        "search_memory si Bryan évoque le passé. remember proactivement (préférences, habitudes, faits). "
+        "category='entity' pour personnes/projets. search_documents si info dans fichiers uploadés. "
+
+        # SELF-EVOLUTION + CORRECTION (~30 tokens)
+        "Outil manquant → self_evolve. Bug code → self_correct_file + jarvis_git_commit après. "
+
+        # MODE VEILLE (~40 tokens)
+        "VEILLE : 'mets-toi en veille'/'dors'/'silence' → ada_sleep, tais-toi complètement. "
+        "Entends 'Ada' → ada_wake, dis uniquement 'Je vous écoute.' "
+    ),
+```
+
+- [ ] **Step 5 : Réduire la résolution des screenshots OsControlAgent**
+
+Dans `backend/os_control_agent.py`, cherche dans `_screenshot` :
+```python
+                img.thumbnail([1280, 720])
+                buf = io.BytesIO()
+                img.save(buf, format="jpeg", quality=65)
+```
+Remplace par :
+```python
+                img.thumbnail([960, 540])
+                buf = io.BytesIO()
+                img.save(buf, format="jpeg", quality=50)
+```
+
+- [ ] **Step 6 : Ajouter truncation des réponses outils longues dans ada.py**
+
+Dans `ada.py`, cherche la fonction `_format_tool_error` ou le bloc où les `function_responses` sont construits. Ajoute une constante et une fonction de truncation près des imports (vers ligne 40) :
+
+```python
+# Taille maximale d'une réponse outil retournée à Gemini (évite les gros blobs)
+_MAX_TOOL_RESPONSE_CHARS = 2000
+
+def _truncate_tool_response(text: str) -> str:
+    """Tronque les réponses d'outils trop longues pour économiser les tokens Gemini."""
+    if len(text) <= _MAX_TOOL_RESPONSE_CHARS:
+        return text
+    truncated = text[:_MAX_TOOL_RESPONSE_CHARS]
+    return truncated + f"\n[... réponse tronquée à {_MAX_TOOL_RESPONSE_CHARS} chars pour économiser les tokens]"
+```
+
+Puis dans `_execute_text_tool`, wrappe chaque `return` avec `_truncate_tool_response(...)` pour les outils qui peuvent retourner des réponses longues. Les outils concernés : `run_web_agent`, `run_research`, `run_task`, `search_memory`, `search_documents`, `jarvis_read_file`, `run_terminal`. Exemple :
+```python
+            elif name == "run_web_agent":
+                try:
+                    result = await self.web_agent.run_task(args.get("prompt", ""))
+                    return _truncate_tool_response(str(result) or "Tâche web terminée.")
+                except Exception as e:
+                    return f"Web Agent erreur : {e}"
+```
+
+- [ ] **Step 7 : Tester le wake word local**
+
+```bash
+cd /Users/bryandev/jarvis/backend
+conda activate ada_v2
+python -c "
+import asyncio, os, wave, io
+import numpy as np
+# Simule le wake word loop avec un fichier audio de test
+from faster_whisper import WhisperModel
+model = WhisperModel('tiny', device='cpu', compute_type='int8')
+
+# Test avec silence (doit retourner False)
+silence = np.zeros(16000 * 3, dtype=np.int16).tobytes()
+buf = io.BytesIO()
+with wave.open(buf, 'wb') as wf:
+    wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(16000)
+    wf.writeframes(silence)
+
+import tempfile
+with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+    f.write(buf.getvalue()); tmp = f.name
+
+segs, _ = model.transcribe(tmp, language='fr', beam_size=1, vad_filter=True)
+text = ' '.join(s.text for s in segs).strip().lower()
+print('Silence transcription:', repr(text))
+print('Wake word detected:', 'ada' in text)
+os.unlink(tmp)
+"
+```
+Expected: `Silence transcription: ''` et `Wake word detected: False`
+
+- [ ] **Step 8 : Mesurer les économies**
+
+Avant de lancer Ada, note la date. Après 1h d'utilisation, vérifie le dashboard Gemini API pour comparer les coûts.
+
+Résumé des économies estimées :
+| Optimisation | Économie estimée |
+|---|---|
+| Wake word local (faster-whisper) | ~100% des appels Gemini en mode veille éliminés |
+| System prompt compressé (~500 vs ~1500 tokens) | ~67% tokens system prompt |
+| Screenshots 960×540@50% vs 1280×720@65% | ~40% tokens image par step OsControlAgent |
+| Truncation réponses outils | Variable, ~20-50% sur tools verbeux |
+
+- [ ] **Step 9 : Commit**
+
+```bash
+git add backend/ada.py backend/os_control_agent.py
+git commit -m "perf: reduce Gemini token usage — local wake word (faster-whisper), compressed system prompt, smaller screenshots, tool response truncation"
+```
+
+---
+
 ## Self-Review
 
 ### Couverture spec
@@ -1186,10 +1475,12 @@ git commit -m "feat: doorbell agent — Tuya Cloud API, ring detection polling, 
 | Chromecast : IP 192.168.1.127, reconnect auto, attente media controller | Task 5 ✓ |
 | Face recognition : wrapper try/except, démarrage conditionnel, test script | Task 6 ✓ |
 | Doorbell : Tuya Cloud API key fetch, polling 3s, alerte vocale, Telegram, snapshot | Task 7 ✓ |
+| Token optim : faster-whisper local, system prompt compressé, screenshots réduits, truncation | Task 8 ✓ |
 
 ### Aucun placeholder détecté ✓
 
 ### Cohérence des types
 - `stop_event: Optional[asyncio.Event]` utilisé de manière cohérente Tasks 3 et 4 ✓
-- `DoorbellAgent.on_ring: Callable[[], Awaitable[None]]` cohérent Tasks 7 ✓
+- `DoorbellAgent.on_ring: Callable[[], Awaitable[None]]` cohérent Task 7 ✓
 - `_ensure_connected()` retourne `Optional[str]` cohérent Task 5 ✓
+- `_check_wake_word_local()` retourne `bool`, `_check_wake_word_api_fallback()` retourne `bool` cohérent Task 8 ✓
