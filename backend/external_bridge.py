@@ -74,10 +74,57 @@ WHATSAPP_API_KEY     = os.getenv("WHATSAPP_API_KEY", "")
 WHATSAPP_INSTANCE    = os.getenv("WHATSAPP_INSTANCE", "ada")
 TEXT_VOICE_THRESHOLD = int(os.getenv("TEXT_VOICE_THRESHOLD", "500"))
 
+# ─── FALLBACK LLM (OpenRouter) ────────────────────────────────────────────────
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL   = os.getenv("OPENROUTER_MODEL", "google/gemma-3-27b-it:free")
+
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 TEXT_MODEL   = "gemini-2.5-flash"
 VOICE_MODEL  = "gemini-2.5-flash-preview-tts"
 VOICE_NAME   = "Kore"
+
+
+def _is_quota_error(e: Exception) -> bool:
+    """Détecte si une erreur Gemini est due à un quota/limite d'usage épuisé."""
+    msg = str(e).lower()
+    return any(k in msg for k in [
+        "quota", "resourceexhausted", "resource_exhausted",
+        "429", "rate limit", "rate_limit", "billing",
+        "exceeded", "limit exceeded",
+    ])
+
+
+async def _run_fallback_llm(system_prompt: str, user_text: str) -> str:
+    """Fallback LLM via OpenRouter quand Gemini est HS (quota/crédits épuisés)."""
+    if not OPENROUTER_API_KEY:
+        return (
+            "⚠️ Mode dégradé — Gemini indisponible (quota épuisé). "
+            "Configure OPENROUTER_API_KEY dans .env pour activer le fallback."
+        )
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://github.com/16ze/jarvis",
+                },
+                json={
+                    "model": OPENROUTER_MODEL,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_text},
+                    ],
+                    "max_tokens": 1024,
+                },
+            )
+            data = response.json()
+            if "choices" in data and data["choices"]:
+                return data["choices"][0]["message"]["content"].strip()
+            return f"⚠️ Fallback LLM sans réponse : {data}"
+    except Exception as e:
+        return f"⚠️ Fallback LLM indisponible : {e}"
 
 # ─── SYSTEM PROMPT ────────────────────────────────────────────────────────────
 
@@ -1055,9 +1102,9 @@ class TextAgent:
         """
         Agentic loop : envoie `text` à Gemini avec les outils,
         exécute les function calls, retourne la réponse finale.
+        Fallback automatique vers OpenRouter si quota Gemini épuisé.
         """
         self._init_agents()
-        client = self._get_client()
 
         # Mémoire courte : contexte de session simple (sans état inter-messages pour l'instant)
         memory_block = ""
@@ -1072,23 +1119,41 @@ class TextAgent:
         bryan_ctx = _upm.get_active_context([{"user": "bryan", "source": "telegram"}])
         user_block = f"\n\n{bryan_ctx}" if bryan_ctx else ""
         system = ADA_SYSTEM_PROMPT + memory_block + user_block
+        original_text = text  # conservé pour le fallback LLM
+
+        # Si Gemini non configuré → aller directement au fallback
+        if not GEMINI_API_KEY:
+            print("[TextAgent] GEMINI_API_KEY absente — basculement OpenRouter")
+            return await _run_fallback_llm(system, original_text)
+
+        try:
+            client = self._get_client()
+        except RuntimeError:
+            return await _run_fallback_llm(system, original_text)
+
         messages = [types.Content(role="user", parts=[types.Part(text=text)])]
 
         for _ in range(8):  # max 8 tours pour éviter les boucles infinies
             # Retry jusqu'à 3 fois si le modèle retourne parts=None (thinking budget épuisé)
             parts = []
             for _retry in range(3):
-                response = await asyncio.to_thread(
-                    client.models.generate_content,
-                    model=TEXT_MODEL,
-                    contents=messages,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system,
-                        tools=_BRIDGE_TOOLS,
-                        temperature=0.7,
-                        thinking_config=types.ThinkingConfig(thinking_budget=0),
-                    ),
-                )
+                try:
+                    response = await asyncio.to_thread(
+                        client.models.generate_content,
+                        model=TEXT_MODEL,
+                        contents=messages,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system,
+                            tools=_BRIDGE_TOOLS,
+                            temperature=0.7,
+                            thinking_config=types.ThinkingConfig(thinking_budget=0),
+                        ),
+                    )
+                except Exception as _gemini_err:
+                    if _is_quota_error(_gemini_err):
+                        print(f"[TextAgent] Quota Gemini épuisé — basculement OpenRouter ({_gemini_err})")
+                        return await _run_fallback_llm(system, original_text)
+                    raise
                 candidate = response.candidates[0]
                 content = candidate.content
                 parts = content.parts if (content and content.parts) else []
@@ -1172,27 +1237,72 @@ async def handle_external_message(
 # ─── TTS ──────────────────────────────────────────────────────────────────────
 
 async def _text_to_ogg(text: str) -> bytes | None:
-    try:
-        client = _agent._get_client()
-        response = await asyncio.to_thread(
-            client.models.generate_content,
-            model=VOICE_MODEL,
-            contents=[text],
-            config=types.GenerateContentConfig(
-                response_modalities=["AUDIO"],
-                speech_config=types.SpeechConfig(
-                    voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE_NAME)
-                    )
+    # Tentative 1 : Gemini TTS (voix Kore)
+    if GEMINI_API_KEY:
+        try:
+            client = _agent._get_client()
+            response = await asyncio.to_thread(
+                client.models.generate_content,
+                model=VOICE_MODEL,
+                contents=[text],
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE_NAME)
+                        )
+                    ),
                 ),
-            ),
+            )
+            for part in response.candidates[0].content.parts:
+                if part.inline_data and part.inline_data.data:
+                    return _pcm_to_ogg(part.inline_data.data)
+        except Exception as e:
+            if _is_quota_error(e):
+                print(f"[ExternalBridge] TTS Gemini quota épuisé — basculement edge-tts")
+            else:
+                warnings.warn(f"[ExternalBridge] TTS Gemini erreur : {e}")
+
+    # Tentative 2 : edge-tts (Microsoft, gratuit)
+    return await _text_to_ogg_edge(text)
+
+
+async def _text_to_ogg_edge(text: str) -> bytes | None:
+    """TTS fallback via edge-tts (Microsoft Edge, gratuit, voix française naturelle)."""
+    mp3_path: str | None = None
+    ogg_path: str | None = None
+    try:
+        import edge_tts
+        import shutil
+        if not shutil.which("ffmpeg"):
+            warnings.warn("[ExternalBridge] edge-tts: ffmpeg absent — impossible de convertir en OGG")
+            return None
+
+        communicate = edge_tts.Communicate(text, voice="fr-FR-DeniseNeural")
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            mp3_path = f.name
+        ogg_path = mp3_path.replace(".mp3", ".ogg")
+
+        await communicate.save(mp3_path)
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", mp3_path, "-c:a", "libopus", "-b:a", "32k", ogg_path],
+            check=True, capture_output=True,
         )
-        for part in response.candidates[0].content.parts:
-            if part.inline_data and part.inline_data.data:
-                return _pcm_to_ogg(part.inline_data.data)
+        with open(ogg_path, "rb") as f:
+            return f.read()
+    except ImportError:
+        warnings.warn("[ExternalBridge] edge-tts non installé — pip install edge-tts")
+        return None
     except Exception as e:
-        warnings.warn(f"[ExternalBridge] TTS erreur : {e}")
-    return None
+        warnings.warn(f"[ExternalBridge] edge-tts erreur : {e}")
+        return None
+    finally:
+        for p in [mp3_path, ogg_path]:
+            if p:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
 
 
 def _pcm_to_ogg(pcm_bytes: bytes, sample_rate: int = 24000) -> bytes:
