@@ -29,38 +29,62 @@ class CastAgent:
         except ImportError:
             return "Erreur: pychromecast non installé. Lance: pip install pychromecast"
 
+        target_host = os.getenv("CHROMECAST_HOST", "").strip()
         target_name = os.getenv("CHROMECAST_NAME", "").strip()
 
-        try:
-            chromecasts, browser = pychromecast.get_chromecasts(timeout=10)
-        except Exception as e:
-            return f"Erreur découverte Chromecast: {e}"
+        cast = None
+        browser = None
 
-        if not chromecasts:
+        # Tentative 1 : connexion directe par IP (bypass mDNS — plus fiable)
+        if target_host:
+            try:
+                chromecasts, browser = pychromecast.get_chromecasts(
+                    timeout=8, known_hosts=[target_host]
+                )
+                if chromecasts:
+                    cast = chromecasts[0]
+                    print(f"[CastAgent] Connexion IP directe → {target_host}")
+            except TypeError:
+                pass  # Ancienne version pychromecast sans known_hosts
+            except Exception as e:
+                print(f"[CastAgent] Connexion IP directe échouée : {e}")
+
+        # Tentative 2 : découverte mDNS classique (fallback)
+        if cast is None:
+            try:
+                chromecasts, browser = pychromecast.get_chromecasts(timeout=10)
+                if chromecasts:
+                    if target_name:
+                        for cc in chromecasts:
+                            if cc.name.lower() == target_name.lower():
+                                cast = cc
+                                break
+                    if cast is None:
+                        cast = chromecasts[0]
+            except Exception as e:
+                return f"Erreur découverte Chromecast: {e}"
+
+        if cast is None:
             if browser:
-                browser.stop_discovery()
+                try:
+                    browser.stop_discovery()
+                except Exception:
+                    pass
             self._initialized = True
             return "Aucun Chromecast trouvé sur le réseau."
 
-        # Sélection par nom ou premier disponible
-        cast = None
-        if target_name:
-            for cc in chromecasts:
-                if cc.name.lower() == target_name.lower():
-                    cast = cc
-                    break
-            if cast is None:
-                # Fallback sur le premier si le nom configuré n'est pas trouvé
-                cast = chromecasts[0]
-                print(f"[CastAgent] '{target_name}' non trouvé, utilise '{cast.name}'")
-        else:
-            cast = chromecasts[0]
+        cast.wait()
+        # Attendre que le media controller soit vraiment prêt
+        try:
+            cast.media_controller.update_status()
+            time.sleep(1.0)
+        except Exception:
+            pass
 
-        cast.wait()  # Attend que la connexion soit prête
         self._cast = cast
         self._browser = browser
         self._initialized = True
-        host = cast.cast_info.host if cast.cast_info else "?"
+        host = (cast.cast_info.host if cast.cast_info else None) or target_host or "?"
         print(f"[CastAgent] Connecté à '{cast.name}' ({host})")
         return f"Chromecast '{cast.name}' connecté ({host})."
 
@@ -70,13 +94,31 @@ class CastAgent:
             return "Aucun Chromecast connecté. Appelle initialize() d'abord."
         return None
 
+    async def _ensure_connected(self) -> Optional[str]:
+        """Vérifie la connexion. Si perdue, tente une reconnexion automatique."""
+        if not self._cast:
+            result = await self.initialize()
+            if not self._cast:
+                return result
+        try:
+            _ = self._cast.status
+            return None
+        except Exception:
+            print("[CastAgent] Connexion perdue — reconnexion...")
+            self._cast = None
+            self._initialized = False
+            result = await self.initialize()
+            if not self._cast:
+                return f"Reconnexion Chromecast échouée: {result}"
+            return None
+
     # ──────────────────────────────────────────────────────────────────────────
     # STATUS
     # ──────────────────────────────────────────────────────────────────────────
 
     async def get_status(self) -> str:
         """Retourne ce qui joue en ce moment sur le Chromecast."""
-        err = self._ensure_cast()
+        err = await self._ensure_connected()
         if err:
             return err
         return await asyncio.to_thread(self._sync_get_status)
@@ -119,7 +161,7 @@ class CastAgent:
 
     async def play(self) -> str:
         """Reprend la lecture."""
-        err = self._ensure_cast()
+        err = await self._ensure_connected()
         if err:
             return err
         return await asyncio.to_thread(self._sync_play)
@@ -133,7 +175,7 @@ class CastAgent:
 
     async def pause(self) -> str:
         """Met en pause."""
-        err = self._ensure_cast()
+        err = await self._ensure_connected()
         if err:
             return err
         return await asyncio.to_thread(self._sync_pause)
@@ -147,7 +189,7 @@ class CastAgent:
 
     async def stop(self) -> str:
         """Arrête la lecture et quitte l'app."""
-        err = self._ensure_cast()
+        err = await self._ensure_connected()
         if err:
             return err
         return await asyncio.to_thread(self._sync_stop)
@@ -165,7 +207,7 @@ class CastAgent:
 
     async def set_volume(self, level: float) -> str:
         """Règle le volume (0.0 à 1.0)."""
-        err = self._ensure_cast()
+        err = await self._ensure_connected()
         if err:
             return err
         level = max(0.0, min(1.0, float(level)))
@@ -184,7 +226,7 @@ class CastAgent:
 
     async def play_youtube(self, video_url: str) -> str:
         """Lance une vidéo YouTube sur le Chromecast via son URL."""
-        err = self._ensure_cast()
+        err = await self._ensure_connected()
         if err:
             return err
         video_id = self._extract_youtube_id(video_url)
@@ -220,7 +262,7 @@ class CastAgent:
 
     async def play_media(self, url: str, media_type: str = "video/mp4") -> str:
         """Lance n'importe quel média via URL directe sur le Chromecast."""
-        err = self._ensure_cast()
+        err = await self._ensure_connected()
         if err:
             return err
         return await asyncio.to_thread(self._sync_play_media, url, media_type)
