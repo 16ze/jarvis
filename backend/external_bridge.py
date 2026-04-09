@@ -1522,3 +1522,15 @@ def start_bridge() -> list[asyncio.Task]:
         asyncio.create_task(_whatsapp_polling_loop(), name="whatsapp_bridge"),
     ]
     return tasks
+
+
+if __name__ == "__main__":
+    async def _main():
+        print("[ExternalBridge] Démarrage en mode standalone (sans AudioLoop)...")
+        tasks = [
+            asyncio.create_task(_telegram_polling_loop(), name="telegram_bridge"),
+            asyncio.create_task(_whatsapp_polling_loop(), name="whatsapp_bridge"),
+        ]
+        await asyncio.gather(*tasks)
+
+    asyncio.run(_main())
