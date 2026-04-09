@@ -112,9 +112,6 @@ def _gemini_tools_to_openai(gemini_tools: list[dict]) -> list[dict]:
     return result
 
 
-_OPENAI_BRIDGE_TOOLS = _gemini_tools_to_openai(_CORE_TOOL_DEFS + _BRIDGE_MCP_TOOLS)
-
-
 def _is_quota_error(e: Exception) -> bool:
     """Détecte si une erreur Gemini est due à un quota/limite d'usage épuisé."""
     msg = str(e).lower()
@@ -366,6 +363,7 @@ _EXCLUDED_FROM_BRIDGE = {
 }
 _BRIDGE_MCP_TOOLS = [t for t in MCP_TOOLS if t["name"] not in _EXCLUDED_FROM_BRIDGE]
 _BRIDGE_TOOLS = [{"function_declarations": _CORE_TOOL_DEFS + _BRIDGE_MCP_TOOLS}]
+_OPENAI_BRIDGE_TOOLS = _gemini_tools_to_openai(_CORE_TOOL_DEFS + _BRIDGE_MCP_TOOLS)
 
 # ─── TEXT AGENT ───────────────────────────────────────────────────────────────
 
