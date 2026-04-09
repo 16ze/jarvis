@@ -154,7 +154,13 @@ generate_cad = {
 
 run_web_agent = {
     "name": "run_web_agent",
-    "description": "Récupère une information rapide en arrière-plan (scraping silencieux, Playwright headless). Utilise ce tool UNIQUEMENT si Bryan demande explicitement une recherche d'information rapide sans vouloir voir son écran. Pour tout ce qui est visible sur le Mac (ouvrir Chrome, aller sur Google, naviguer sur un site, ouvrir une app), utilise execute_pc_task à la place.",
+    "description": (
+        "Ada travaille en arrière-plan pendant que Bryan est occupé. "
+        "Playwright invisible — l'écran de Bryan reste intact, rien ne s'ouvre sur son bureau. "
+        "Utiliser UNIQUEMENT pour récupérer des informations (prix, météo, article, horaires, données) "
+        "quand Bryan ne veut PAS voir son navigateur s'ouvrir. "
+        "JAMAIS si Bryan demande d'ouvrir une app, naviguer sur un site visible, ou agir sur son écran."
+    ),
     "parameters": {
         "type": "OBJECT",
         "properties": {
@@ -539,7 +545,6 @@ tools = [{"function_declarations": [
     list_events_tool, create_event_tool, find_event_tool, delete_event_tool,
     create_project_tool, switch_project_tool, list_projects_tool,
     discover_printers_tool, print_stl_tool, get_print_status_tool, iterate_cad_tool,
-    control_computer_tool,
     search_memory_tool, remember_tool, search_documents_tool,
     run_research_tool, run_task_tool, anticipate_tool,
     start_monitoring_tool, stop_monitoring_tool,
@@ -566,7 +571,7 @@ SLEEP_TRIGGERS = [
     "mets-toi en pause", "mets toi en pause",
     "dors", "silence",
 ]
-WAKE_TRIGGERS = ["ada"]
+WAKE_TRIGGERS = ["ada", "hé ada", "hey ada", "ada ?", "ada !", "ada viens"]
 
 # --- CONFIG UPDATE: Enabled Transcription ---
 config = types.LiveConnectConfig(

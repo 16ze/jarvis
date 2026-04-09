@@ -1425,10 +1425,15 @@ advanced_web_navigation_tool = {
 execute_pc_task_tool = {
     "name": "execute_pc_task",
     "description": (
-        "Prend le contrôle total du Mac (souris, clavier, applications) "
-        "pour accomplir n'importe quelle tâche complexe de manière autonome. "
-        "Prend des screenshots en continu, analyse l'écran et agit jusqu'à completion. "
-        "Peut ouvrir le Finder, déplacer des fichiers, coder dans VS Code, changer les réglages système, etc."
+        "Prend le contrôle visible du Mac de Bryan via screenshots + souris + clavier. "
+        "Tool PAR DÉFAUT pour TOUT ce qui se passe sur l'écran de Bryan : "
+        "ouvrir n'importe quelle application, naviguer sur un site web dans le vrai navigateur, "
+        "remplir un formulaire, faire une recherche Google visible, cliquer dans l'interface, "
+        "taper du texte, copier/coller, changer les réglages système, déplacer des fichiers. "
+        "Exemples : 'ouvre Chrome', 'va sur YouTube', 'remplis ce formulaire', "
+        "'fais une recherche Google sur X', 'ouvre le Finder', 'règle le volume système'. "
+        "run_web_agent est RÉSERVÉ aux recherches silencieuses en arrière-plan "
+        "quand Bryan veut juste une info sans voir son écran."
     ),
     "parameters": {
         "type": "OBJECT",
@@ -1609,6 +1614,7 @@ twilio_send_sms_tool = {
 }
 
 MCP_TOOLS = [
+    twilio_send_sms_tool,
     # Communication
     slack_list_channels_tool, slack_read_channel_tool, slack_send_message_tool, slack_search_messages_tool,
     telegram_send_message_tool, telegram_send_photo_tool, telegram_get_updates_tool,
