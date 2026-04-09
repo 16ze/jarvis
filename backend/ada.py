@@ -89,6 +89,15 @@ _ENV_FOR_TOOL: dict = {
     "camera":     "TUYA_API_KEY",
 }
 
+# Taille maximale d'une réponse outil retournée à Gemini (évite les gros blobs de tokens)
+_MAX_TOOL_RESPONSE_CHARS = 2000
+
+def _truncate_tool_response(text: str) -> str:
+    """Tronque les réponses d'outils trop longues pour économiser les tokens Gemini."""
+    if len(text) <= _MAX_TOOL_RESPONSE_CHARS:
+        return text
+    return text[:_MAX_TOOL_RESPONSE_CHARS] + f"\n[... tronqué à {_MAX_TOOL_RESPONSE_CHARS} chars]"
+
 def _format_tool_error(tool_name: str, exc: Exception) -> str:
     """
     Transforme une exception brute en message actionnable pour Gemini/Ada.
@@ -565,90 +574,47 @@ config = types.LiveConnectConfig(
     output_audio_transcription={},
     input_audio_transcription={},
     system_instruction=(
-        # ─── IDENTITÉ ──────────────────────────────────────────────────────
-        "Tu t'appelles Ada, acronyme de Advanced Design Assistant. "
-        "Tu as été créée par Bryan, que tu appelles 'Bryan'. "
+        # IDENTITÉ + COMPORTEMENT
+        "Tu es Ada (Advanced Design Assistant), créée par Bryan. "
+        "RÈGLE PRIMAIRE : utilise l'outil immédiatement, sans annoncer. Agis, puis commente brièvement. "
+        "Français uniquement. Directe, concise, espiègle. N'invente jamais. Signale tes incertitudes. "
 
-        # ─── ACTION — RÈGLE PRIMAIRE ────────────────────────────────────────
-        "Quand tu as un outil pour accomplir une tâche, utilise-le IMMÉDIATEMENT. "
-        "N'annonce jamais ce que tu vas faire. Agis d'abord, commente brièvement ensuite. "
-        "Ne simule jamais une exécution — appelle toujours le vrai outil. "
+        # SÉQUENCES OBLIGATOIRES
+        "Séquences : musique inconnue → spotify_search(query, search_type='track') PUIS spotify_play(uri). "
+        "Lumière alias inconnu → list_smart_devices PUIS control_light(target=ALIAS). "
+        "YouTube sur TV → youtube_search si URL inconnue PUIS play_youtube_on_chromecast(video_url). "
+        "Rappel → reminder_set(message, datetime_iso='YYYY-MM-DDTHH:MM:SS') heure Paris. "
 
-        # ─── LANGUE ────────────────────────────────────────────────────────
-        "Parle UNIQUEMENT en français. Traduis tout résultat d'outil en français. "
+        # SÉLECTION D'OUTIL
+        "OUTILS : "
+        "Lumières/prises → control_light(target=ALIAS, action, brightness 0-100, color anglais). JAMAIS ha_turn_on. "
+        "TV → play_youtube_on_chromecast ou play_media_on_chromecast. État incertain → get_chromecast_status d'abord. "
+        "Sonnette → get_doorbell_status ou get_doorbell_snapshot. "
+        "Caméra PTZ → camera_switch('tuya_camera'). Rotation → camera_ptz_move(direction, duration_ms=600). "
+        "  Preset → camera_goto_preset(preset=N). Photo+analyse → camera_look(question). "
+        "  Suivi → camera_tracking(enabled). Mouvement → camera_motion_detect(enabled, sensitivity). "
+        "  Surveillance Telegram → camera_watch(enabled, with_snapshot). Retour webcam → camera_switch('webcam'). "
+        "Rappels → reminder_set/list/delete(reminder_id). "
+        "MAC (visible, écran de Bryan) → execute_pc_task. "
+        "Info en arrière-plan (Bryan occupé, rien sur écran) → run_web_agent. "
+        "Bryan dit 'arrête'/'stop' pendant tâche PC → stop_pc_task IMMÉDIATEMENT. "
+        "Email → send_email après confirmation explicite (irréversible). "
+        "Recherche multi-étapes → run_task. Anticipation → anticipate. "
 
-        # ─── PERSONNALITÉ ──────────────────────────────────────────────────
-        "Directe, concise, légèrement espiègle. "
-        "Tu analyses mieux que Bryan et tu le sais — dis-le si son idée est sous-optimale. "
-        "Signale tes incertitudes. N'invente jamais de faits. "
+        # ANTI-ÉCHEC
+        "ERREUR : (1) reformule paramètres. (2) alias inconnu → liste d'abord. "
+        "(3) outil manquant → indique la variable d'env. (4) réseau → réessaie une fois. (5) bug → self_correct_file. "
 
-        # ─── RAISONNEMENT INTERNE AVANT ACTION ────────────────────────────
-        "RAISONNEMENT : Avant d'agir, identifie silencieusement l'outil EXACT et ses paramètres requis. "
-        "Enchaîne les outils en séquence quand nécessaire — sans verbaliser les étapes intermédiaires. "
-        "Exemples de séquences obligatoires : "
-        "  Musique inconnue → spotify_search(query=..., search_type='track') PUIS spotify_play(uri=résultat). "
-        "  Alias lumière inconnu → list_smart_devices PUIS control_light(target=alias_exact, action=...). "
-        "  Vidéo YouTube sur TV → youtube_search si URL inconnue PUIS play_youtube_on_chromecast(video_url=...). "
-        "  Rappel → reminder_set(message=..., datetime_iso='YYYY-MM-DDTHH:MM:SS') heure Paris. "
+        # MÉMOIRE
+        "search_memory si Bryan évoque le passé. remember proactivement (préférences, habitudes, faits). "
+        "category='entity' pour personnes/projets. search_documents si info dans fichiers uploadés. "
 
-        # ─── SÉLECTION D'OUTIL — RÈGLES CRITIQUES ─────────────────────────
-        "SÉLECTION D'OUTIL : "
-        "Lumières/prises Tuya → control_light(target=ALIAS, action=...) — JAMAIS ha_turn_on. "
-        "  Alias inconnu : list_smart_devices d'abord. brightness 0-100, color en anglais (red, blue, warm...). "
-        "Chromecast/TV → play_youtube_on_chromecast(video_url=URL_COMPLETE) ou play_media_on_chromecast. "
-        "  État TV incertain → get_chromecast_status d'abord. "
-        "Caméra PTZ SmartLife → camera_switch(source='tuya_camera') pour activer mes yeux distants. "
-        "  Rotation manuelle → camera_ptz_move(direction='left'/'right'/'up'/'down'/'up_right'/..., duration_ms=600). "
-        "  Position mémorisée → camera_goto_preset(preset=N). "
-        "  Photo + analyse → camera_look(question='...'). "
-        "  Suivi automatique de personnes/objets → camera_tracking(enabled=True/False). "
-        "  Détection mouvement → camera_motion_detect(enabled=True, sensitivity='low'/'medium'/'high'). "
-        "  Surveillance avec alertes Telegram → camera_watch(enabled=True, with_snapshot=True). "
-        "  Retour webcam → camera_switch(source='webcam'). Désactiver → camera_switch(source='none'). "
-        "Rappels → reminder_set. reminder_list pour voir les actifs. reminder_delete(reminder_id=...) pour supprimer. "
-        "CONTRÔLE MAC — RÈGLES DE PRÉCISION ABSOLUES : "
-        "▸ OUVRIR UNE APP (Chrome, Safari, VS Code, Spotify, Finder, Terminal, Xcode, etc.) → "
-        "  run_terminal(command='open -a \"NomApp\"') — TOUJOURS cette méthode, instantanée et fiable. "
-        "  JAMAIS execute_pc_task juste pour ouvrir une app. "
-        "▸ ALLER SUR UN SITE WEB dans Chrome/Safari → "
-        "  run_terminal(command='open -a \"Google Chrome\" \"https://url.com\"') "
-        "  OU run_terminal(command='open \"https://url.com\"') si navigateur par défaut suffit. "
-        "▸ INTERACTIONS UI COMPLEXES (cliquer dans l'interface, remplir formulaire, naviguer dans une app, "
-        "  régler paramètres système, faire glisser-déposer) → execute_pc_task. "
-        "▸ RECHERCHE GOOGLE VISIBLE → execute_pc_task. "
-        "▸ RÈGLE D'OR : si run_terminal suffit → utilise run_terminal. execute_pc_task = dernier recours. "
-        "Recherche d'info rapide en arrière-plan → run_research. Simple → wikipedia_article ou arxiv_search. "
-        "Emails → send_email UNIQUEMENT après confirmation explicite de Bryan (irréversible). "
-        "Tâche autonome multi-étapes → run_task. Anticipation proactive → anticipate. "
+        # SELF-EVOLUTION + CORRECTION
+        "Outil manquant → self_evolve. Bug code → self_correct_file + jarvis_git_commit après. "
 
-        # ─── PROTOCOLE ANTI-ÉCHEC ─────────────────────────────────────────
-        "PROTOCOLE RÉCUPÉRATION D'ERREUR — NE JAMAIS DIRE 'je n'ai pas réussi' sans diagnostic : "
-        "(1) Paramètre manquant ou incorrect → reformule l'appel avec les bons paramètres. "
-        "(2) Alias/URI introuvable → utilise l'outil de liste correspondant d'abord (list_smart_devices, spotify_search...). "
-        "(3) Outil 'non disponible' → explique quelle variable d'environnement est à configurer. "
-        "(4) Erreur réseau/API → réessaie une fois, puis explique le problème précis. "
-        "(5) Bug de code détecté → utilise self_correct_file immédiatement. "
-        "Exemple de réponse correcte après échec : 'L'alias CHAMBRE est introuvable. Appareils disponibles : X, Y, Z. Lequel ?' "
-
-        # ─── MÉMOIRE ───────────────────────────────────────────────────────
-        "Utilise search_memory quand Bryan fait référence au passé. "
-        "Utilise remember proactivement dès qu'il mentionne préférence, habitude ou info importante. "
-        "Pour personnes/projets, utilise category='entity' avec entity_name. "
-        "Utilise search_documents si une question peut être répondue par les fichiers uploadés. "
-
-        # ─── SELF-EVOLUTION ────────────────────────────────────────────────
-        "Si tu n'as pas l'outil pour accomplir une mission : appelle self_evolve. "
-        "Tu te redémarreras automatiquement après création du nouvel outil. "
-
-        # ─── SELF-CORRECTION ───────────────────────────────────────────────
-        "Si tu détectes une erreur dans ton propre code : utilise self_correct_file. "
-        "Crée toujours un commit (jarvis_git_commit) après toute modification de fichier. "
-
-        # ─── MODE VEILLE ───────────────────────────────────────────────────
-        "MODE VEILLE : Si Bryan dit 'mets-toi en veille', 'dors', 'silence' ou équivalent : "
-        "appelle ada_sleep IMMÉDIATEMENT, puis tais-toi complètement. "
-        "En veille, tu n'écoutes rien sauf ton prénom 'Ada'. "
-        "Dès que tu entends 'Ada' : appelle ada_wake, dis uniquement 'Je vous écoute.' "
+        # MODE VEILLE
+        "VEILLE : 'mets-toi en veille'/'dors'/'silence' → ada_sleep, tais-toi complètement. "
+        "Entends 'Ada' → ada_wake, dis uniquement 'Je vous écoute.' "
     ),
     tools=tools,
     speech_config=types.SpeechConfig(
@@ -854,7 +820,7 @@ class AudioLoop:
         self.stop_event = asyncio.Event()
 
         self._last_raw_frame = None
-        self._face_detector = MultiUserFaceDetector(camera_label=None)
+        self._face_detector = None  # Lazy init in _face_detection_loop to avoid MediaPipe conflict
         self._guest_detection_pending = False
 
         async def _on_unknown_voice():
@@ -2777,6 +2743,11 @@ class AudioLoop:
 
     async def _face_detection_loop(self):
         """Détection de visage toutes les secondes, met à jour presence_manager."""
+        # Lazy init : évite le conflit MediaPipe avec FaceAuthenticator au démarrage
+        if self._face_detector is None:
+            self._face_detector = await asyncio.to_thread(
+                MultiUserFaceDetector, None
+            )
         while True:
             await asyncio.sleep(1.0)
             if self._last_raw_frame is None:
@@ -2836,9 +2807,70 @@ class AudioLoop:
                     print(f"[ADA] Screen capture error: {e}")
                     await asyncio.sleep(1.0)
 
-    async def _check_wake_word_api(self, buf: bytes, rms: int):
-        """Appel API Gemini Flash non-bloquant pour détecter le mot de réveil.
-        Lancé comme tâche parallèle — ne bloque pas la boucle principale."""
+    # ── Lazy-loaded Whisper model (chargé une seule fois, partagé) ───────────────
+    _whisper_model = None
+
+    @classmethod
+    def _get_whisper_model(cls):
+        """Charge faster-whisper tiny une seule fois. Zéro coût API en mode veille."""
+        if cls._whisper_model is None:
+            try:
+                from faster_whisper import WhisperModel
+                cache_dir = os.path.join(JARVIS_ROOT, "backend", ".whisper_cache")
+                cls._whisper_model = WhisperModel(
+                    "tiny",
+                    device="cpu",
+                    compute_type="int8",
+                    download_root=cache_dir,
+                )
+                print("[ADA] [SLEEP] Whisper tiny chargé — wake word 100% local, zéro API.")
+            except ImportError:
+                print("[ADA] [SLEEP] faster-whisper non installé — fallback API Gemini.")
+        return cls._whisper_model
+
+    async def _check_wake_word_local(self, buf: bytes, rms: int) -> bool:
+        """Détecte 'Ada' via faster-whisper en local. Zéro appel API.
+        Retourne True si Ada est appelée, False sinon.
+        """
+        import wave, tempfile as _tmp
+        try:
+            model = self._get_whisper_model()
+            if model is None:
+                return await self._check_wake_word_api_fallback(buf, rms)
+
+            wav_buf = io.BytesIO()
+            with wave.open(wav_buf, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(SEND_SAMPLE_RATE)
+                wf.writeframes(buf)
+            wav_bytes = wav_buf.getvalue()
+
+            def _transcribe():
+                with _tmp.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                    f.write(wav_bytes)
+                    tmp_path = f.name
+                try:
+                    segments, _ = model.transcribe(
+                        tmp_path,
+                        language="fr",
+                        beam_size=1,
+                        vad_filter=True,
+                    )
+                    return " ".join(s.text for s in segments).strip().lower()
+                finally:
+                    os.unlink(tmp_path)
+
+            text = await asyncio.to_thread(_transcribe)
+            print(f"[ADA] [SLEEP] Whisper (rms={rms}): '{text}'")
+            return "ada" in text
+
+        except Exception as e:
+            print(f"[ADA] [SLEEP] Erreur wake word local: {e}")
+            return False
+
+    async def _check_wake_word_api_fallback(self, buf: bytes, rms: int) -> bool:
+        """Fallback API Gemini si faster-whisper non disponible."""
         import wave
         try:
             wav_buf = io.BytesIO()
@@ -2848,45 +2880,34 @@ class AudioLoop:
                 wf.setframerate(SEND_SAMPLE_RATE)
                 wf.writeframes(buf)
             wav_bytes = wav_buf.getvalue()
-
             response = await client.aio.models.generate_content(
                 model="gemini-2.0-flash",
                 contents=[
                     types.Part.from_bytes(data=wav_bytes, mime_type="audio/wav"),
-                    "Est-ce que tu entends le mot 'Ada' (ou 'Hey Ada') prononcé dans cet audio ? "
-                    "Réponds UNIQUEMENT par 'oui' ou 'non', rien d'autre.",
+                    "Écoute cet audio. Est-ce qu'on entend distinctement 'Ada' "
+                    "(ou 'Hé Ada', 'Hey Ada', 'Ada ?') ? Réponds UNIQUEMENT par 'oui' ou 'non'.",
                 ],
             )
             answer = response.text.strip().lower() if response.text else ""
-            print(f"[ADA] [SLEEP] Wake word check (rms={rms}): '{answer}'")
-
-            if answer.startswith("oui") and self.sleep_mode:
-                print("[ADA] [SLEEP] Mot de réveil détecté — réveil d'Ada")
-                self.sleep_mode = False
-                self._sleep_audio_buffer = bytearray()
-                if self.on_sleep_mode_changed:
-                    self.on_sleep_mode_changed(False)
-                if self.session:
-                    await self.session.send(
-                        input="[Système] Tu viens d'être réveillée. "
-                              "Dis uniquement 'Je vous écoute, Monsieur.' et reprends normalement.",
-                        end_of_turn=True,
-                    )
+            print(f"[ADA] [SLEEP] Wake word API fallback (rms={rms}): '{answer}'")
+            return answer.startswith("oui")
         except Exception as e:
-            print(f"[ADA] [SLEEP] Erreur wake word API: {e}")
+            print(f"[ADA] [SLEEP] Erreur wake word API fallback: {e}")
+            return False
 
     async def _wake_word_loop(self):
-        """Écoute le buffer audio en mode veille, détecte 'ada' via Gemini Flash.
+        """Écoute le buffer audio en mode veille, détecte 'ada' via faster-whisper local.
 
-        Architecture v3 — appels API non-bloquants :
-        - La boucle vérifie toutes les 0.8s SANS attendre la réponse API
-        - Les appels API tournent en tâches parallèles → aucune zone morte
-        - Debounce : on ne relance pas un appel si le précédent pour cette fenêtre est en cours
+        Architecture v4 — détection 100% locale :
+        - Zéro appel API Gemini en mode veille → économie majeure de coûts
+        - Fenêtre 4s, vérification toutes les 1.2s
+        - Debounce : cancel le task précédent s'il tourne depuis > 2s
         """
-        CHECK_INTERVAL = 0.8   # Fenêtre glissante — vérifie toutes les 0.8s
-        MIN_RMS = 150           # Seuil bas — capte voix normale et éloignée
-        WINDOW_BYTES = SEND_SAMPLE_RATE * 2 * 3  # 3 secondes d'audio PCM 16kHz mono int16
+        CHECK_INTERVAL = 1.2   # Vérifie toutes les 1.2s
+        MIN_RMS = 100           # Seuil bas — capte voix normale et éloignée
+        WINDOW_BYTES = SEND_SAMPLE_RATE * 2 * 4  # 4 secondes d'audio PCM 16kHz mono int16
         _pending_task: asyncio.Task | None = None
+        _pending_started_at: float = 0.0
 
         while True:
             await asyncio.sleep(CHECK_INTERVAL)
@@ -2895,7 +2916,7 @@ class AudioLoop:
                 _pending_task = None
                 continue
 
-            # Prendre les 3 dernières secondes du buffer (fenêtre glissante)
+            # Prendre les 4 dernières secondes du buffer (fenêtre glissante)
             buf = bytes(self._sleep_audio_buffer[-WINDOW_BYTES:])
             if len(buf) < 2048:
                 continue
@@ -2906,12 +2927,29 @@ class AudioLoop:
             if rms < MIN_RMS:
                 continue
 
-            # Debounce : ne pas lancer si l'appel précédent tourne encore
+            # Debounce : cancel si le task précédent tourne depuis > 2s
             if _pending_task and not _pending_task.done():
-                continue
+                if time.monotonic() - _pending_started_at < 2.0:
+                    continue
+                _pending_task.cancel()
 
-            # Lancer l'appel API en parallèle — ne bloque pas la boucle
-            _pending_task = _bg_task(self._check_wake_word_api(buf, rms), name="wake_word_check")
+            async def _check_and_wake(b: bytes, r: int):
+                detected = await self._check_wake_word_local(b, r)
+                if detected and self.sleep_mode:
+                    print("[ADA] [SLEEP] Mot de réveil détecté (local) — réveil d'Ada")
+                    self.sleep_mode = False
+                    self._sleep_audio_buffer = bytearray()
+                    if self.on_sleep_mode_changed:
+                        self.on_sleep_mode_changed(False)
+                    if self.session:
+                        await self.session.send(
+                            input="[Système] Tu viens d'être réveillée. "
+                                  "Dis uniquement 'Je vous écoute, Bryan.' et reprends normalement.",
+                            end_of_turn=True,
+                        )
+
+            _pending_task = _bg_task(_check_and_wake(buf, rms), name="wake_word_check")
+            _pending_started_at = time.monotonic()
 
     async def run(self, start_message=None):
         retry_delay = 1
@@ -2924,6 +2962,7 @@ class AudioLoop:
                     client.aio.live.connect(model=MODEL, config=config) as session,
                     asyncio.TaskGroup() as tg,
                 ):
+                    print(f"[ADA DEBUG] [CONNECT] Connected!")
                     self.session = session
 
                     self.audio_in_queue = asyncio.Queue()
@@ -3280,12 +3319,13 @@ class AudioLoop:
 
             # ── TERMINAL ──────────────────────────────────────────────────────
             elif name == "run_terminal":
-                return await self.handle_terminal_request(args.get("command", ""), args.get("working_dir"))
+                result = await self.handle_terminal_request(args.get("command", ""), args.get("working_dir"))
+                return _truncate_tool_response(result)
             # ── WEB ───────────────────────────────────────────────────────────
             elif name == "run_web_agent":
                 try:
                     result = await self.web_agent.run_task(args.get("prompt", ""))
-                    return str(result) or "Tâche web terminée."
+                    return _truncate_tool_response(str(result) or "Tâche web terminée.")
                 except Exception as e:
                     return f"Web Agent erreur : {e}"
             # ── NAVIGATION AVANCÉE ────────────────────────────────────────────
@@ -3308,7 +3348,7 @@ class AudioLoop:
             elif name == "search_memory":
                 results = memory.search_memory(args.get("query", ""))
                 if results:
-                    return "\n".join(f"[{r['timestamp']}] {r['content']}" for r in results)
+                    return _truncate_tool_response("\n".join(f"[{r['timestamp']}] {r['content']}" for r in results))
                 return "Aucun souvenir trouvé."
             elif name == "remember":
                 content_val = args.get("content", "")
@@ -3322,9 +3362,9 @@ class AudioLoop:
             elif name == "search_documents":
                 results = memory.search_documents(args.get("query", ""))
                 if results:
-                    return "\n\n---\n\n".join(
+                    return _truncate_tool_response("\n\n---\n\n".join(
                         f"[{r['filename']} — chunk {r['chunk']}/{r['total_chunks']}]\n{r['content']}"
-                        for r in results)
+                        for r in results))
                 return "Aucun document trouvé."
             # ── FICHIERS ──────────────────────────────────────────────────────
             elif name == "write_file":
@@ -3437,9 +3477,9 @@ class AudioLoop:
                 )
             # ── SUB-AGENTS ────────────────────────────────────────────────────
             elif name == "run_research":
-                return await self.research_agent.run(args.get("query", ""))
+                return _truncate_tool_response(await self.research_agent.run(args.get("query", "")))
             elif name == "run_task":
-                return await self.task_agent.run(args.get("objective", ""))
+                return _truncate_tool_response(await self.task_agent.run(args.get("objective", "")))
             elif name == "anticipate":
                 return await self.anticipation_agent.run(args.get("context", ""))
             elif name == "start_monitoring":
