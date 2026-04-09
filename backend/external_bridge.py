@@ -71,6 +71,7 @@ _FALLBACK_MODELS = [
     "openai/gpt-oss-20b:free",
     "nousresearch/hermes-3-llama-3.1-405b:free",
 ]
+_last_working_model: str | None = None  # cache du dernier modèle fonctionnel
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 TEXT_MODEL   = "gemini-2.5-flash"
@@ -90,14 +91,18 @@ def _is_quota_error(e: Exception) -> bool:
 
 async def _run_fallback_llm(system_prompt: str, user_text: str) -> str:
     """Fallback LLM via OpenRouter. Essaie plusieurs modèles gratuits en cascade."""
+    global _last_working_model
     if not OPENROUTER_API_KEY:
         return (
             "⚠️ Mode dégradé — Gemini indisponible (quota épuisé). "
             "Configure OPENROUTER_API_KEY dans .env pour activer le fallback."
         )
 
-    # Construire la liste sans doublons en gardant l'ordre
-    models_to_try = list(dict.fromkeys(_FALLBACK_MODELS))
+    # Le dernier modèle fonctionnel en tête de liste pour éviter les essais inutiles
+    ordered = list(dict.fromkeys(
+        ([_last_working_model] if _last_working_model else []) + _FALLBACK_MODELS
+    ))
+    models_to_try = ordered
 
     async with httpx.AsyncClient(timeout=30) as client:
         for model in models_to_try:
@@ -123,6 +128,7 @@ async def _run_fallback_llm(system_prompt: str, user_text: str) -> str:
                     content = data["choices"][0]["message"]["content"].strip()
                     if content:
                         print(f"[TextAgent] Fallback LLM OK via {model}")
+                        _last_working_model = model  # mémoriser pour la prochaine fois
                         return content
                 # 429 ou autre erreur → essayer le suivant
                 err_code = data.get("error", {}).get("code")
