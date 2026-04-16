@@ -1600,7 +1600,19 @@ class AudioLoop:
                                     function_response = types.FunctionResponse(
                                         id=fc.id,
                                         name=fc.name,
-                                        response={"result": "Prise de contrôle du Mac démarrée. Cmd+Shift+Esc pour stopper."},
+                                        response={"result": "Prise de contrôle du Mac démarrée. Cmd+Shift+Esc ou dis 'stop' pour arrêter."},
+                                    )
+                                    function_responses.append(function_response)
+
+                                elif fc.name == "stop_pc_task":
+                                    print(f"[ADA DEBUG] [TOOL] Tool Call: 'stop_pc_task'")
+                                    stop_result = "Aucune tâche PC en cours."
+                                    if self.os_control_agent:
+                                        stop_result = await self.os_control_agent.stop()
+                                    function_response = types.FunctionResponse(
+                                        id=fc.id,
+                                        name=fc.name,
+                                        response={"result": stop_result},
                                     )
                                     function_responses.append(function_response)
 
@@ -1983,18 +1995,32 @@ class AudioLoop:
                                         result_str = ""
 
                                         if action == "screenshot":
+                                            # Détecter la taille logique de l'écran macOS
+                                            try:
+                                                _osa_bounds = await asyncio.to_thread(
+                                                    lambda: _sp.run(
+                                                        ["osascript", "-e", 'tell application "Finder" to get bounds of window of desktop'],
+                                                        capture_output=True, text=True, timeout=5
+                                                    ).stdout.strip()
+                                                )
+                                                _p = [s.strip() for s in _osa_bounds.split(",")]
+                                                _sw, _sh = int(_p[2]), int(_p[3])
+                                            except Exception:
+                                                _sw, _sh = 1440, 900
                                             with mss.mss() as sct:
                                                 monitor = sct.monitors[1]
                                                 screenshot = await asyncio.to_thread(sct.grab, monitor)
                                             img = PIL.Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
-                                            img.thumbnail([1280, 720])
+                                            # Redimensionner à la taille EXACTE de l'écran logique
+                                            # → les coords pixel de l'image = coords logiques osascript
+                                            img = img.resize((_sw, _sh), PIL.Image.LANCZOS)
                                             buf = io.BytesIO()
-                                            img.save(buf, format="jpeg", quality=65)
+                                            img.save(buf, format="jpeg", quality=70)
                                             self._latest_image_payload = {
                                                 "mime_type": "image/jpeg",
                                                 "data": base64.b64encode(buf.getvalue()).decode()
                                             }
-                                            result_str = "Screenshot captured. Describe what you see."
+                                            result_str = f"Screenshot capturé ({_sw}×{_sh}px). Les coordonnées x,y à utiliser pour cliquer correspondent exactement aux pixels de cette image."
 
                                         elif action == "type" and text:
                                             # 1. Copy text to clipboard via pbcopy (no permission needed)
@@ -2009,26 +2035,47 @@ class AudioLoop:
                                             result_str = f"Typed: {text[:80]}"
 
                                         elif action == "hotkey" and text:
-                                            # Build osascript: e.g. "ctrl+c" → keystroke "c" using control down
+                                            # Touches spéciales : key code AppleScript (keystroke "return" tape "return" comme texte !)
+                                            _SPECIAL_KEYS = {
+                                                "return": 36, "enter": 36,
+                                                "escape": 53, "esc": 53,
+                                                "tab": 48,
+                                                "space": 49,
+                                                "backspace": 51, "delete": 51,
+                                                "up": 126, "down": 125,
+                                                "left": 123, "right": 124,
+                                                "f1": 122, "f2": 120, "f3": 99, "f4": 118,
+                                                "f5": 96, "f6": 97, "f7": 98, "f8": 100,
+                                                "f9": 101, "f10": 109, "f11": 103, "f12": 111,
+                                                "page_up": 116, "pageup": 116,
+                                                "page_down": 121, "pagedown": 121,
+                                                "home": 115, "end": 119,
+                                            }
                                             _modifier_map = {
-                                                "ctrl": "control down",
-                                                "control": "control down",
-                                                "cmd": "command down",
-                                                "command": "command down",
+                                                "ctrl": "control down", "control": "control down",
+                                                "cmd": "command down", "command": "command down",
                                                 "shift": "shift down",
-                                                "alt": "option down",
-                                                "option": "option down",
+                                                "alt": "option down", "option": "option down",
                                             }
                                             parts = [p.strip().lower() for p in text.split("+")]
                                             key = parts[-1]
                                             mods = [_modifier_map[p] for p in parts[:-1] if p in _modifier_map]
                                             using_clause = ", ".join(mods) if mods else ""
-                                            if using_clause:
-                                                script = f'tell application "System Events" to keystroke "{key}" using {{{using_clause}}}'
+                                            if key in _SPECIAL_KEYS:
+                                                kc = _SPECIAL_KEYS[key]
+                                                script = (
+                                                    f'tell application "System Events" to key code {kc} using {{{using_clause}}}'
+                                                    if using_clause else
+                                                    f'tell application "System Events" to key code {kc}'
+                                                )
                                             else:
-                                                script = f'tell application "System Events" to keystroke "{key}"'
+                                                script = (
+                                                    f'tell application "System Events" to keystroke "{key}" using {{{using_clause}}}'
+                                                    if using_clause else
+                                                    f'tell application "System Events" to keystroke "{key}"'
+                                                )
                                             await asyncio.to_thread(_osascript, script)
-                                            result_str = f"Pressed hotkey: {text}"
+                                            result_str = f"Hotkey: {text}"
 
                                         elif action in ("click", "right_click", "double_click") and x is not None and y is not None:
                                             ix, iy = int(x), int(y)
@@ -2048,13 +2095,16 @@ class AudioLoop:
 
                                         elif action == "scroll" and x is not None and y is not None:
                                             ix, iy, idelta = int(x), int(y), int(delta)
-                                            script = (
-                                                f'tell application "System Events"\n'
-                                                f'    scroll at {{{ix}, {iy}}} by {{0, {idelta}}}\n'
-                                                f'end tell'
-                                            )
-                                            await asyncio.to_thread(_osascript, script)
-                                            result_str = f"Scrolled {idelta} at ({ix}, {iy})"
+                                            # pynput est bien plus fiable qu'AppleScript pour le scroll
+                                            # delta>0 = scroll bas, delta<0 = scroll haut
+                                            def _do_scroll(lx, ly, d):
+                                                from pynput import mouse as _pmouse
+                                                m = _pmouse.Controller()
+                                                m.position = (lx, ly)
+                                                import time as _t; _t.sleep(0.08)
+                                                m.scroll(0, -d)  # pynput: négatif = bas, positif = haut
+                                            await asyncio.to_thread(_do_scroll, ix, iy, idelta)
+                                            result_str = f"Scroll {idelta} at ({ix}, {iy})"
 
                                         else:
                                             result_str = f"Unknown action or missing params: action={action}"
@@ -2780,12 +2830,31 @@ class AudioLoop:
         return {"mime_type": "image/jpeg", "data": base64.b64encode(image_bytes).decode()}
 
     async def get_screen(self):
-        """Continuous screen capture — updates _latest_image_payload for VAD."""
+        """Continuous screen capture — updates _latest_image_payload for VAD.
+
+        Les screenshots sont redimensionnés à la taille EXACTE de l'écran logique macOS.
+        Cela garantit que les coordonnées vues par Gemini (ex: x=720) correspondent
+        exactement aux coordonnées logiques utilisées par osascript (click at {720, 450}).
+        """
         try:
             import mss
         except ImportError:
             print("[ADA] mss not installed. Run: pip install mss")
             return
+
+        # Détection unique de la taille logique de l'écran (points macOS, pas pixels physiques)
+        _screen_w, _screen_h = 1440, 900
+        try:
+            import subprocess as _sp_gs
+            _bounds = _sp_gs.run(
+                ["osascript", "-e", 'tell application "Finder" to get bounds of window of desktop'],
+                capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+            _parts = [p.strip() for p in _bounds.split(",")]
+            _screen_w, _screen_h = int(_parts[2]), int(_parts[3])
+            print(f"[ADA] Écran logique détecté : {_screen_w}×{_screen_h}")
+        except Exception as _e:
+            print(f"[ADA] Impossible de détecter la résolution logique ({_e}) — fallback {_screen_w}×{_screen_h}")
 
         with mss.mss() as sct:
             monitor = sct.monitors[1]  # Primary monitor (index 1 = first real screen)
@@ -2800,7 +2869,9 @@ class AudioLoop:
                 try:
                     screenshot = await asyncio.to_thread(sct.grab, monitor)
                     img = PIL.Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
-                    img.thumbnail([1280, 720])
+                    # Redimensionner à la taille EXACTE de l'écran logique macOS
+                    # Ainsi les coordonnées pixel de l'image = coordonnées logiques osascript
+                    img = img.resize((_screen_w, _screen_h), PIL.Image.LANCZOS)
                     buf = io.BytesIO()
                     img.save(buf, format="jpeg", quality=65)
                     self._latest_image_payload = {
@@ -3349,6 +3420,10 @@ class AudioLoop:
                     return await self.os_control_agent.run(args.get("task_description", ""))
                 except Exception as e:
                     return f"PC task erreur : {e}"
+            elif name == "stop_pc_task":
+                if not self.os_control_agent:
+                    return "OsControlAgent non disponible."
+                return await self.os_control_agent.stop()
             # ── MÉMOIRE ───────────────────────────────────────────────────────
             elif name == "search_memory":
                 results = memory.search_memory(args.get("query", ""))
@@ -3509,13 +3584,28 @@ class AudioLoop:
                     await asyncio.to_thread(_osa, 'tell application "System Events" to keystroke "v" using command down')
                     return f"Tapé : {text_val[:80]}"
                 elif action == "hotkey" and text_val:
+                    _SPECIAL_KEYS = {
+                        "return": 36, "enter": 36, "escape": 53, "esc": 53,
+                        "tab": 48, "space": 49, "backspace": 51, "delete": 51,
+                        "up": 126, "down": 125, "left": 123, "right": 124,
+                        "f1": 122, "f2": 120, "f3": 99, "f4": 118,
+                        "f5": 96, "f6": 97, "f7": 98, "f8": 100,
+                        "f9": 101, "f10": 109, "f11": 103, "f12": 111,
+                        "page_up": 116, "pageup": 116, "page_down": 121, "pagedown": 121,
+                        "home": 115, "end": 119,
+                    }
                     _mods = {"ctrl": "control down", "control": "control down", "cmd": "command down",
                              "command": "command down", "shift": "shift down", "alt": "option down", "option": "option down"}
                     parts_ = [p.strip().lower() for p in text_val.split("+")]
                     key, mods_ = parts_[-1], [_mods[m] for m in parts_[:-1] if m in _mods]
                     clause = ", ".join(mods_)
-                    script = (f'tell application "System Events" to keystroke "{key}" using {{{clause}}}'
-                              if clause else f'tell application "System Events" to keystroke "{key}"')
+                    if key in _SPECIAL_KEYS:
+                        kc = _SPECIAL_KEYS[key]
+                        script = (f'tell application "System Events" to key code {kc} using {{{clause}}}'
+                                  if clause else f'tell application "System Events" to key code {kc}')
+                    else:
+                        script = (f'tell application "System Events" to keystroke "{key}" using {{{clause}}}'
+                                  if clause else f'tell application "System Events" to keystroke "{key}"')
                     await asyncio.to_thread(_osa, script)
                     return f"Raccourci : {text_val}"
                 elif action in ("click", "right_click", "double_click") and x is not None:
@@ -3528,6 +3618,16 @@ class AudioLoop:
                         script = f'tell application "System Events" to double click at {{{ix}, {iy}}}'
                     await asyncio.to_thread(_osa, script)
                     return f"{action} at ({ix},{iy})"
+                elif action == "scroll" and x is not None and y is not None:
+                    ix, iy, idelta = int(x), int(y), int(args.get("delta", 3))
+                    def _do_scroll_txt(lx, ly, d):
+                        from pynput import mouse as _pmouse
+                        m = _pmouse.Controller()
+                        m.position = (lx, ly)
+                        import time as _t; _t.sleep(0.08)
+                        m.scroll(0, -d)
+                    await asyncio.to_thread(_do_scroll_txt, ix, iy, idelta)
+                    return f"Scroll {idelta} at ({ix},{iy})"
                 return f"Action inconnue : {action}"
             # ── IMPRIMANTE 3D ─────────────────────────────────────────────────
             elif name == "discover_printers":

@@ -1448,6 +1448,19 @@ execute_pc_task_tool = {
     "behavior": "NON_BLOCKING"
 }
 
+stop_pc_task_tool = {
+    "name": "stop_pc_task",
+    "description": (
+        "Arrête IMMÉDIATEMENT la tâche de contrôle PC en cours (execute_pc_task). "
+        "Utiliser dès que Bryan dit 'arrête', 'stop', 'annule', 'stoppe', 'quitte' pendant une tâche PC. "
+        "Équivalent software de Cmd+Shift+Esc."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {}
+    }
+}
+
 # ── CAMÉRA TUYA PTZ ──────────────────────────────────────────────────────────
 camera_switch_tool = {
     "name": "camera_switch",
@@ -1650,6 +1663,7 @@ MCP_TOOLS = [
     advanced_web_navigation_tool,
     # OS Control
     execute_pc_task_tool,
+    stop_pc_task_tool,
     # Création
     canva_list_designs_tool, canva_get_design_tool, canva_export_design_tool,
     figma_list_files_tool, figma_get_file_tool, figma_export_node_tool,

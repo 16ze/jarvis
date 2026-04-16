@@ -32,9 +32,9 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 MODEL = "gemini-2.5-flash"
-MAX_STEPS = 30
-TIMEOUT_SEC = 120.0
-HISTORY_SIZE = 5
+MAX_STEPS = 50
+TIMEOUT_SEC = 180.0
+HISTORY_SIZE = 6
 
 SYSTEM_PROMPT = """Tu contrôles un Mac pour Bryan. À chaque étape tu reçois un screenshot + la tâche + l'historique.
 
@@ -127,6 +127,14 @@ class OsControlAgent:
             raise RuntimeError("GEMINI_API_KEY non configurée.")
         self._client = genai.Client(api_key=GEMINI_API_KEY)
         self._stop_event: Optional[asyncio.Event] = None
+        self._current_stop_event: Optional[asyncio.Event] = None  # stop_pc_task
+
+    async def stop(self) -> str:
+        """Interrompt la tâche en cours (appelé par stop_pc_task)."""
+        if self._current_stop_event and not self._current_stop_event.is_set():
+            self._current_stop_event.set()
+            return "Tâche PC interrompue."
+        return "Aucune tâche PC en cours."
 
     def _start_hotkey_listener(self, stop_event: asyncio.Event, loop: asyncio.AbstractEventLoop) -> threading.Thread:
         """
@@ -167,9 +175,9 @@ class OsControlAgent:
                 monitor = sct.monitors[1]
                 shot = sct.grab(monitor)
                 img = PIL.Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
-                img.thumbnail([960, 540])
+                img.thumbnail([1280, 720])
                 buf = io.BytesIO()
-                img.save(buf, format="jpeg", quality=50)
+                img.save(buf, format="jpeg", quality=65)
                 return buf.getvalue()
 
         raw = await asyncio.to_thread(_grab)
@@ -225,6 +233,20 @@ class OsControlAgent:
                 return f"Typed: {text[:80]}"
 
             elif action == "hotkey" and text:
+                # Touches spéciales via key code (keystroke "return" taperait "return" comme texte !)
+                _SPECIAL_KEYS = {
+                    "return": 36, "enter": 36,
+                    "escape": 53, "esc": 53,
+                    "tab": 48, "space": 49,
+                    "backspace": 51, "delete": 51,
+                    "up": 126, "down": 125, "left": 123, "right": 124,
+                    "f1": 122, "f2": 120, "f3": 99, "f4": 118,
+                    "f5": 96, "f6": 97, "f7": 98, "f8": 100,
+                    "f9": 101, "f10": 109, "f11": 103, "f12": 111,
+                    "page_up": 116, "pageup": 116,
+                    "page_down": 121, "pagedown": 121,
+                    "home": 115, "end": 119,
+                }
                 _modifier_map = {
                     "ctrl": "control down", "control": "control down",
                     "cmd": "command down", "command": "command down",
@@ -232,24 +254,37 @@ class OsControlAgent:
                     "alt": "option down", "option": "option down",
                 }
                 parts = [p.strip().lower() for p in text.split("+")]
-                key = parts[-1].replace('"', '\\"')
+                key = parts[-1]
                 mods = [_modifier_map[p] for p in parts[:-1] if p in _modifier_map]
                 using_clause = ", ".join(mods)
-                if using_clause:
-                    script = f'tell application "System Events" to keystroke "{key}" using {{{using_clause}}}'
+                if key in _SPECIAL_KEYS:
+                    kc = _SPECIAL_KEYS[key]
+                    script = (
+                        f'tell application "System Events" to key code {kc} using {{{using_clause}}}'
+                        if using_clause else
+                        f'tell application "System Events" to key code {kc}'
+                    )
                 else:
-                    script = f'tell application "System Events" to keystroke "{key}"'
+                    escaped_key = key.replace('"', '\\"')
+                    script = (
+                        f'tell application "System Events" to keystroke "{escaped_key}" using {{{using_clause}}}'
+                        if using_clause else
+                        f'tell application "System Events" to keystroke "{escaped_key}"'
+                    )
                 await asyncio.to_thread(_run_osascript, script)
                 return f"Hotkey: {text}"
 
             elif action == "scroll" and norm_x is not None and norm_y is not None:
                 lx, ly = to_logical(norm_x, norm_y)
-                script = (
-                    f'tell application "System Events"\n'
-                    f'    scroll at {{{lx}, {ly}}} by {{0, {delta}}}\n'
-                    f'end tell'
-                )
-                await asyncio.to_thread(_run_osascript, script)
+                # pynput pour le scroll (AppleScript scroll est non standard)
+                # delta>0 = scroll bas, delta<0 = scroll haut
+                def _do_scroll(px, py, d):
+                    from pynput import mouse as _pmouse
+                    m = _pmouse.Controller()
+                    m.position = (px, py)
+                    import time as _t; _t.sleep(0.08)
+                    m.scroll(0, -d)  # pynput: négatif = bas, positif = haut
+                await asyncio.to_thread(_do_scroll, lx, ly, delta)
                 return f"Scroll {delta} at ({lx}, {ly})"
 
             elif action == "wait":
@@ -467,6 +502,7 @@ class OsControlAgent:
 
         loop = asyncio.get_running_loop()
         stop_event = asyncio.Event()
+        self._current_stop_event = stop_event  # exposé pour stop_pc_task
         listener = None
 
         try:
@@ -497,6 +533,7 @@ class OsControlAgent:
 
         finally:
             stop_event.set()
+            self._current_stop_event = None
             try:
                 if listener:
                     listener.stop()
