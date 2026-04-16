@@ -1448,6 +1448,25 @@ execute_pc_task_tool = {
     "behavior": "NON_BLOCKING"
 }
 
+screen_click_tool = {
+    "name": "screen_click",
+    "description": (
+        "Trouve et clique sur un élément UI décrit en langage naturel via Gemini vision. "
+        "Exemples : 'le bouton Envoyer', 'la barre d'adresse de Chrome', 'le champ mot de passe'. "
+        "Plus fiable que les coordonnées absolues pour les éléments dont la position peut varier."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "description": {
+                "type": "STRING",
+                "description": "Description en langage naturel de l'élément UI à cliquer."
+            }
+        },
+        "required": ["description"]
+    }
+}
+
 stop_pc_task_tool = {
     "name": "stop_pc_task",
     "description": (
@@ -1664,6 +1683,7 @@ MCP_TOOLS = [
     # OS Control
     execute_pc_task_tool,
     stop_pc_task_tool,
+    screen_click_tool,
     # Création
     canva_list_designs_tool, canva_get_design_tool, canva_export_design_tool,
     figma_list_files_tool, figma_get_file_tool, figma_export_node_tool,

@@ -373,7 +373,7 @@ _EXCLUDED_FROM_BRIDGE = {
     "control_computer",
     "discover_printers", "print_stl", "get_print_status",
     "run_web_agent",
-    "execute_pc_task", "stop_pc_task",
+    "execute_pc_task", "stop_pc_task", "screen_click",
     "ada_sleep", "ada_wake",
     "camera_switch",  # pas de live stream en mode texte
 }

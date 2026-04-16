@@ -637,6 +637,12 @@ from cad_agent import CadAgent
 from google_agent import GoogleAgent
 from web_agent import WebAgent
 from tuya_agent import TuyaAgent
+from agent.planner import TaskPlanner
+from agent.executor import TaskExecutor
+import actions.computer_action as computer_action
+import actions.agents_action as agents_action
+import actions.google_action as google_action
+import actions.smart_home_action as smart_home_action
 from printer_agent import PrinterAgent
 from memory_manager import MemoryManager, DOCUMENTS_DIR
 from reminder_manager import ReminderManager
@@ -748,6 +754,14 @@ class AudioLoop:
             import warnings
             warnings.warn(f"[ADA] OsControlAgent init: {e}")
             self.os_control_agent = None
+        try:
+            self.task_planner = TaskPlanner()
+            self.task_executor = TaskExecutor()
+        except Exception as e:
+            import warnings
+            warnings.warn(f"[ADA] TaskPlanner/Executor init: {e}")
+            self.task_planner = None
+            self.task_executor = None
         self.google_agent = GoogleAgent()
         self.tuya_agent = tuya_agent if tuya_agent else TuyaAgent()
         self.printer_agent = PrinterAgent()
@@ -1376,6 +1390,32 @@ class AudioLoop:
 
         if not self.os_control_agent:
             result = "OsControlAgent non disponible."
+        elif self.task_planner and self.task_executor:
+            # ── Planification multi-étapes (inspiré de Mark-XXXV) ──────────────
+            try:
+                steps = await self.task_planner.plan(task)
+                print(f"[ADA DEBUG] [PC] Plan : {len(steps)} étape(s)")
+                if self.on_web_data:
+                    self.on_web_data({"image": None, "log": f"[PC] Plan : {len(steps)} étape(s)"})
+
+                async def _tool_fn(tool_name: str, args: dict) -> str:
+                    if tool_name == "execute_pc_task":
+                        return await self.os_control_agent.run(
+                            args.get("task_description", task),
+                            step_callback=update_frontend,
+                        )
+                    elif tool_name == "run_terminal":
+                        return await self.handle_terminal_request(
+                            args.get("command", ""), args.get("working_dir")
+                        )
+                    else:
+                        return await self._execute_text_tool(tool_name, args)
+
+                exec_result = await self.task_executor.execute(steps, _tool_fn)
+                result = exec_result.final_message
+            except Exception as e:
+                print(f"[ADA DEBUG] [PC] Planner/Executor erreur : {e} — fallback direct")
+                result = await self.os_control_agent.run(task, step_callback=update_frontend)
         else:
             result = await self.os_control_agent.run(task, step_callback=update_frontend)
 
@@ -1615,6 +1655,17 @@ class AudioLoop:
                                         response={"result": stop_result},
                                     )
                                     function_responses.append(function_response)
+
+                                elif fc.name == "screen_click":
+                                    desc = fc.args.get("description", "")
+                                    print(f"[ADA DEBUG] [TOOL] Tool Call: 'screen_click' desc='{desc[:60]}'")
+                                    if self.os_control_agent:
+                                        sc_result = await self.os_control_agent.screen_click(desc)
+                                    else:
+                                        sc_result = "OsControlAgent non disponible."
+                                    function_responses.append(types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": sc_result}
+                                    ))
 
                                 elif fc.name == "run_terminal":
                                     command = fc.args.get("command", "")
@@ -3424,6 +3475,10 @@ class AudioLoop:
                 if not self.os_control_agent:
                     return "OsControlAgent non disponible."
                 return await self.os_control_agent.stop()
+            elif name == "screen_click":
+                if not self.os_control_agent:
+                    return "OsControlAgent non disponible."
+                return await self.os_control_agent.screen_click(args.get("description", ""))
             # ── MÉMOIRE ───────────────────────────────────────────────────────
             elif name == "search_memory":
                 results = memory.search_memory(args.get("query", ""))

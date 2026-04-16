@@ -475,6 +475,67 @@ class OsControlAgent:
 
         return None  # Pas de fast-path → vision loop
 
+    async def screen_find(self, description: str) -> tuple[int, int]:
+        """
+        Localise un élément UI sur l'écran via Gemini vision.
+        Retourne les coordonnées (x, y) en points logiques macOS.
+        Lève ValueError si l'élément est introuvable ou confidence=low.
+        """
+        raw_bytes, _ = await self._screenshot()
+
+        prompt = (
+            f"Voici un screenshot de l'écran. Trouve l'élément UI correspondant à : '{description}'.\n"
+            'Réponds UNIQUEMENT avec un JSON : {"x": <0-1000>, "y": <0-1000>, "found": true/false, "confidence": "high/medium/low"}\n'
+            "Les coordonnées sont normalisées 0-1000 (0,0=haut-gauche, 1000,1000=bas-droite)."
+        )
+
+        response = await asyncio.to_thread(
+            self._client.models.generate_content,
+            model=MODEL,
+            contents=[
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part(text=prompt),
+                        types.Part.from_bytes(data=raw_bytes, mime_type="image/jpeg"),
+                    ]
+                )
+            ],
+            config=types.GenerateContentConfig(temperature=0.1),
+        )
+
+        raw_text = response.text.strip()
+        # Nettoyer les balises markdown si présentes
+        if raw_text.startswith("```"):
+            lines = raw_text.split("\n")
+            raw_text = "\n".join(lines[1:])
+            raw_text = raw_text.rstrip("`").strip()
+
+        result = json.loads(raw_text)
+
+        if not result.get("found", False) or result.get("confidence", "low") == "low":
+            raise ValueError(f"Élément '{description}' introuvable sur l'écran")
+
+        screen_w, screen_h = await asyncio.to_thread(_get_logical_screen_size)
+        norm_x = result["x"]
+        norm_y = result["y"]
+        lx = int(norm_x * screen_w / 1000)
+        ly = int(norm_y * screen_h / 1000)
+        return lx, ly
+
+    async def screen_click(self, description: str) -> str:
+        """
+        Trouve et clique sur un élément UI décrit en langage naturel.
+        Retourne un message de confirmation ou d'erreur.
+        """
+        try:
+            lx, ly = await self.screen_find(description)
+            script = f'tell application "System Events" to click at {{{lx}, {ly}}}'
+            await asyncio.to_thread(_run_osascript, script)
+            return f"Cliqué sur '{description}' à ({lx}, {ly})"
+        except Exception as e:
+            return f"Impossible de trouver '{description}' sur l'écran : {e}"
+
     async def run(self, task: str, step_callback: Optional[Callable] = None) -> str:
         """
         Point d'entrée principal. Lance la boucle avec failsafe double.
