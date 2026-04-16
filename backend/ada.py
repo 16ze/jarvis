@@ -872,6 +872,8 @@ class AudioLoop:
         self._silence_start_time = None
         # Echo prevention: True while Ada's TTS is playing through speakers
         self._is_ada_speaking = False
+        # PC task lock: True while execute_pc_task is running — mute mic pour éviter les interruptions
+        self._pc_task_active = False
         # Frontend audio mode: mic is captured in Electron (with AEC) and streamed here
         self.frontend_audio_mode = False
         
@@ -1116,8 +1118,13 @@ class AudioLoop:
                         _barge_in_counter = 0
                 else:
                     # Ada is silent — send mic to Gemini normally
+                    # SAUF si une tâche PC est en cours (évite les interruptions par bruits)
                     _barge_in_counter = 0
-                    if self.out_queue:
+                    if self._pc_task_active:
+                        # Mic muté pendant execute_pc_task — seul stop_pc_task vocal reste actif
+                        # (stop_pc_task est géré par le hotkey Cmd+Shift+Esc dans OsControlAgent)
+                        pass
+                    elif self.out_queue:
                         try:
                             self.out_queue.put_nowait({"data": data, "mime_type": "audio/pcm"})
                         except asyncio.QueueFull:
@@ -1375,6 +1382,10 @@ class AudioLoop:
     async def handle_pc_task_request(self, task: str):
         print(f"[ADA DEBUG] [PC] PC Task: '{task}'")
 
+        # ── MUTER LE MICRO dès le début — empêche les interruptions par bruits ──
+        self._pc_task_active = True
+        print("[ADA DEBUG] [PC] Micro muté (pc_task_active=True)")
+
         # Annonce vocale avant de prendre le contrôle
         try:
             if self.session:
@@ -1392,36 +1403,41 @@ class AudioLoop:
             if self.on_web_data:
                 self.on_web_data(data)
 
-        if not self.os_control_agent:
-            result = "OsControlAgent non disponible."
-        elif self.task_planner and self.task_executor:
-            # ── Planification multi-étapes (inspiré de Mark-XXXV) ──────────────
-            try:
-                steps = await self.task_planner.plan(task)
-                print(f"[ADA DEBUG] [PC] Plan : {len(steps)} étape(s)")
-                if self.on_web_data:
-                    self.on_web_data({"image": None, "log": f"[PC] Plan : {len(steps)} étape(s)"})
+        try:
+            if not self.os_control_agent:
+                result = "OsControlAgent non disponible."
+            elif self.task_planner and self.task_executor:
+                # ── Planification multi-étapes (inspiré de Mark-XXXV) ──────────
+                try:
+                    steps = await self.task_planner.plan(task)
+                    print(f"[ADA DEBUG] [PC] Plan : {len(steps)} étape(s)")
+                    if self.on_web_data:
+                        self.on_web_data({"image": None, "log": f"[PC] Plan : {len(steps)} étape(s)"})
 
-                async def _tool_fn(tool_name: str, args: dict) -> str:
-                    if tool_name == "execute_pc_task":
-                        return await self.os_control_agent.run(
-                            args.get("task_description", task),
-                            step_callback=update_frontend,
-                        )
-                    elif tool_name == "run_terminal":
-                        return await self.handle_terminal_request(
-                            args.get("command", ""), args.get("working_dir")
-                        )
-                    else:
-                        return await self._execute_text_tool(tool_name, args)
+                    async def _tool_fn(tool_name: str, args: dict) -> str:
+                        if tool_name == "execute_pc_task":
+                            return await self.os_control_agent.run(
+                                args.get("task_description", task),
+                                step_callback=update_frontend,
+                            )
+                        elif tool_name == "run_terminal":
+                            return await self.handle_terminal_request(
+                                args.get("command", ""), args.get("working_dir")
+                            )
+                        else:
+                            return await self._execute_text_tool(tool_name, args)
 
-                exec_result = await self.task_executor.execute(steps, _tool_fn)
-                result = exec_result.final_message
-            except Exception as e:
-                print(f"[ADA DEBUG] [PC] Planner/Executor erreur : {e} — fallback direct")
+                    exec_result = await self.task_executor.execute(steps, _tool_fn)
+                    result = exec_result.final_message
+                except Exception as e:
+                    print(f"[ADA DEBUG] [PC] Planner/Executor erreur : {e} — fallback direct")
+                    result = await self.os_control_agent.run(task, step_callback=update_frontend)
+            else:
                 result = await self.os_control_agent.run(task, step_callback=update_frontend)
-        else:
-            result = await self.os_control_agent.run(task, step_callback=update_frontend)
+        finally:
+            # ── RÉTABLIR LE MICRO toujours, même en cas d'erreur ────────────────
+            self._pc_task_active = False
+            print("[ADA DEBUG] [PC] Micro réactivé (pc_task_active=False)")
 
         try:
             if self.session:
@@ -1653,6 +1669,8 @@ class AudioLoop:
                                     stop_result = "Aucune tâche PC en cours."
                                     if self.os_control_agent:
                                         stop_result = await self.os_control_agent.stop()
+                                    # Réactiver le micro immédiatement
+                                    self._pc_task_active = False
                                     function_response = types.FunctionResponse(
                                         id=fc.id,
                                         name=fc.name,
@@ -3478,7 +3496,9 @@ class AudioLoop:
             elif name == "stop_pc_task":
                 if not self.os_control_agent:
                     return "OsControlAgent non disponible."
-                return await self.os_control_agent.stop()
+                result = await self.os_control_agent.stop()
+                self._pc_task_active = False
+                return result
             elif name == "screen_click":
                 if not self.os_control_agent:
                     return "OsControlAgent non disponible."
