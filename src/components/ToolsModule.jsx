@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Globe, Box, Monitor, BookOpen } from 'lucide-react';
+import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Box, Monitor, BookOpen } from 'lucide-react';
 
 const ToolsModule = ({
     isConnected,
@@ -19,8 +19,6 @@ const ToolsModule = ({
     showPrinterWindow,
     onToggleCad,
     showCadWindow,
-    onToggleBrowser,
-    showBrowserWindow,
     isScreenMode,
     onToggleScreenMode,
     onToggleDocuments,
@@ -144,17 +142,6 @@ const ToolsModule = ({
                         } `}
                 >
                     <Monitor size={24} />
-                </button>
-
-                {/* Web Agent Toggle */}
-                <button
-                    onClick={onToggleBrowser}
-                    className={`p-3 rounded-full border-2 transition-all duration-300 ${showBrowserWindow
-                        ? 'border-blue-400 bg-blue-400/10 text-blue-400 hover:bg-blue-400/20 shadow-[0_0_15px_rgba(96,165,250,0.3)]'
-                        : 'border-cyan-900 text-cyan-700 hover:border-blue-500 hover:text-blue-500'
-                        } `}
-                >
-                    <Globe size={24} />
                 </button>
 
                 {/* Documents / RAG */}

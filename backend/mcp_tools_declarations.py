@@ -1422,6 +1422,20 @@ advanced_web_navigation_tool = {
 }
 
 # ── OS CONTROL (Full Computer Use) ───────────────────────────────────────────
+stop_pc_task_tool = {
+    "name": "stop_pc_task",
+    "description": (
+        "Arrête IMMÉDIATEMENT le contrôle PC en cours. "
+        "À appeler dès que Bryan dit 'arrête', 'stop', 'lâche mon ordi', 'arrête de toucher', "
+        "'c'est bon', 'stop le contrôle', ou toute demande d'interruption du contrôle PC. "
+        "Aucun paramètre requis."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {}
+    }
+}
+
 execute_pc_task_tool = {
     "name": "execute_pc_task",
     "description": (
@@ -1614,119 +1628,44 @@ twilio_send_sms_tool = {
 }
 
 MCP_TOOLS = [
-    twilio_send_sms_tool,
-    # Communication
-    slack_list_channels_tool, slack_read_channel_tool, slack_send_message_tool, slack_search_messages_tool,
+    # ── Communication ─────────────────────────────────────────────────────────
     telegram_send_message_tool, telegram_send_photo_tool, telegram_get_updates_tool,
-    whatsapp_send_message_tool, whatsapp_send_media_tool, whatsapp_get_messages_tool,
-    # Productivité
-    notion_search_tool, notion_get_page_tool, notion_create_page_tool, notion_query_database_tool, notion_append_page_tool,
+    # ── Productivité Google ───────────────────────────────────────────────────
+    notion_search_tool, notion_get_page_tool, notion_create_page_tool,
+    notion_query_database_tool, notion_append_page_tool,
     drive_list_files_tool, drive_read_file_tool, drive_upload_file_tool,
     sheets_read_tool, sheets_write_tool, sheets_append_tool, docs_read_tool,
-    linear_list_issues_tool, linear_get_issue_tool, linear_create_issue_tool, linear_update_issue_tool, linear_list_projects_tool, linear_list_teams_tool,
-    stripe_list_customers_tool, stripe_get_customer_tool, stripe_list_payments_tool, stripe_list_invoices_tool,
-    stripe_get_balance_tool, stripe_create_invoice_item_tool, stripe_send_invoice_tool,
-    qonto_get_balance_tool, qonto_list_transactions_tool, qonto_get_organization_tool,
-    # Dev & Infra
-    supabase_query_tool, supabase_insert_tool, supabase_update_tool, supabase_delete_tool, supabase_sql_tool, supabase_list_tables_tool,
-    vercel_list_projects_tool, vercel_get_project_tool, vercel_list_deployments_tool, vercel_get_deployment_tool, vercel_get_logs_tool,
-    github_list_repos_tool, github_get_repo_tool, github_list_issues_tool, github_create_issue_tool,
-    github_list_prs_tool, github_list_commits_tool, github_search_code_tool,
-    docker_list_containers_tool, docker_get_logs_tool, docker_start_tool, docker_stop_tool,
-    docker_restart_tool, docker_list_images_tool, docker_stats_tool,
-    # Smart Home — Tuya local (priorité sur Home Assistant)
+    # ── Dev (GitHub uniquement) ───────────────────────────────────────────────
+    github_list_repos_tool, github_get_repo_tool, github_list_issues_tool,
+    github_create_issue_tool, github_list_prs_tool, github_list_commits_tool,
+    github_search_code_tool,
+    # ── Smart Home (Tuya) ─────────────────────────────────────────────────────
     list_smart_devices_tool, control_light_tool, refresh_tuya_devices_tool,
-    ha_get_states_tool, ha_get_entity_tool, ha_call_service_tool, ha_turn_on_tool, ha_turn_off_tool,
-    # Chromecast
-    get_chromecast_status_tool, control_chromecast_tool, play_youtube_on_chromecast_tool, play_media_on_chromecast_tool,
-    spotify_current_tool, spotify_play_tool, spotify_pause_tool, spotify_next_tool, spotify_previous_tool,
-    spotify_volume_tool, spotify_search_tool, spotify_playlists_tool,
+    # ── TV / Chromecast ───────────────────────────────────────────────────────
+    get_chromecast_status_tool, control_chromecast_tool,
+    play_youtube_on_chromecast_tool, play_media_on_chromecast_tool,
+    # ── Musique (Spotify) ─────────────────────────────────────────────────────
+    spotify_current_tool, spotify_play_tool, spotify_pause_tool, spotify_next_tool,
+    spotify_previous_tool, spotify_volume_tool, spotify_search_tool, spotify_playlists_tool,
+    # ── Santé (Apple Health) ──────────────────────────────────────────────────
     health_steps_tool, health_sleep_tool, health_heart_rate_tool, health_activity_tool,
+    # ── Maps ──────────────────────────────────────────────────────────────────
     maps_directions_tool, maps_travel_time_tool, maps_search_places_tool, maps_geocode_tool,
-    # Recherche
+    # ── Recherche ─────────────────────────────────────────────────────────────
     youtube_search_tool, youtube_video_info_tool, youtube_transcript_tool,
     wikipedia_search_tool, wikipedia_article_tool,
-    arxiv_search_tool, arxiv_paper_tool,
-    advanced_web_navigation_tool,
-    # OS Control
-    execute_pc_task_tool,
-    # Création
-    canva_list_designs_tool, canva_get_design_tool, canva_export_design_tool,
-    figma_list_files_tool, figma_get_file_tool, figma_export_node_tool,
-    elevenlabs_tts_tool, elevenlabs_list_voices_tool,
-    replicate_generate_image_tool, replicate_run_model_tool,
-    # Self-correction (Jarvis repo)
-    jarvis_read_file_tool, jarvis_write_file_tool, jarvis_list_files_tool, jarvis_git_commit_tool, self_correct_file_tool,
-    # Rappels
-    reminder_set_tool, reminder_list_tool, reminder_delete_tool,
-    # Mode veille
-    ada_sleep_tool, ada_wake_tool,
-    # Self-evolution
-    self_evolve_tool,
-    # Caméra Tuya PTZ
+    # ── Contrôle PC ───────────────────────────────────────────────────────────
+    execute_pc_task_tool, stop_pc_task_tool,
+    # ── Caméra Tuya PTZ ───────────────────────────────────────────────────────
     camera_switch_tool, camera_ptz_move_tool, camera_goto_preset_tool, camera_look_tool,
     camera_tracking_tool, camera_motion_detect_tool, camera_watch_tool,
-    # Twilio
-    twilio_send_sms_tool,
-    # Multi-user recognition
-    {
-        "name": "remember_for_user",
-        "description": (
-            "Enregistre une préférence, une habitude ou un fait pour l'utilisateur actuellement identifié. "
-            "Utilise ce tool dès qu'un utilisateur mentionne une préférence, une habitude ou une information "
-            "personnelle (ex: 'j'aime le café', 'je travaille le matin', 'j'ai deux enfants'). "
-            "Ne l'utilise pas pour Bryan si ce n'est pas Bryan qui parle."
-        ),
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "user_id": {
-                    "type": "STRING",
-                    "description": "ID de l'utilisateur : 'bryan', 'rose', ou le prénom en minuscules d'un invité."
-                },
-                "memory_type": {
-                    "type": "STRING",
-                    "description": "Type de mémoire : 'preference', 'habit', ou 'fact'."
-                },
-                "content": {
-                    "type": "STRING",
-                    "description": "La préférence, habitude ou fait à enregistrer."
-                }
-            },
-            "required": ["user_id", "memory_type", "content"]
-        }
-    },
-    {
-        "name": "enroll_voice",
-        "description": (
-            "Lance l'enrollment vocal pour un utilisateur. À utiliser quand Bryan demande à Ada "
-            "d'enregistrer la voix de quelqu'un (ex: 'Ada, enregistre la voix de Rose'). "
-            "L'enrollment dure 25 secondes — prévenir l'utilisateur de parler normalement."
-        ),
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {
-                "user_id": {
-                    "type": "STRING",
-                    "description": "ID de l'utilisateur à enregistrer : 'bryan', 'rose', ou prénom invité."
-                }
-            },
-            "required": ["user_id"]
-        }
-    },
-    {
-        "name": "who_is_speaking",
-        "description": (
-            "Retourne la liste des utilisateurs actuellement identifiés (voix + visage). "
-            "Utilise ce tool quand Ada n'est pas sûre de qui lui parle ou quand Bryan demande "
-            "'qui est là ?' / 'tu reconnais qui ?'."
-        ),
-        "parameters": {
-            "type": "OBJECT",
-            "properties": {},
-            "required": []
-        }
-    },
+    # ── Rappels ───────────────────────────────────────────────────────────────
+    reminder_set_tool, reminder_list_tool, reminder_delete_tool,
+    # ── Mode veille ───────────────────────────────────────────────────────────
+    ada_sleep_tool, ada_wake_tool,
+    # ── Self-correction & évolution ───────────────────────────────────────────
+    jarvis_read_file_tool, jarvis_write_file_tool, jarvis_list_files_tool,
+    jarvis_git_commit_tool, self_correct_file_tool, self_evolve_tool,
 ]
 
 MCP_TOOL_NAMES = {t["name"] for t in MCP_TOOLS}
