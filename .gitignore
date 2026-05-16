@@ -64,3 +64,10 @@ IDEAS/
 
 # Git worktrees
 .worktrees/
+
+# Vision objet (YOLO)
+*.pt
+backend/memory/vision_timeline.db
+backend/memory/vision_timeline.db-journal
+backend/memory/vision_timeline.db-wal
+backend/memory/vision_timeline.db-shm
