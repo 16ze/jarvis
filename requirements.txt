@@ -31,3 +31,23 @@ browser-use>=0.1.0
 langchain-google-genai>=2.0.0
 # OS Control (keyboard & mouse automation)
 pynput>=1.7.0
+# Memory (vector search)
+chromadb
+# HTTP client
+httpx
+# Twilio SMS
+twilio
+# Google OAuth2 / API
+google-auth-oauthlib
+google-api-python-client
+# Numpy (audio processing)
+numpy
+# Research tools
+wikipedia-api
+arxiv
+
+# Vision objet (YOLO + Open Images V7)
+ultralytics==8.3.40
+torch>=2.2.0
+torchvision>=0.17.0
+pytest-asyncio>=0.23
