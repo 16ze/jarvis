@@ -235,6 +235,10 @@ class MultiUserFaceDetector:
     def __init__(self, camera_label: str = None):
         self.camera_label = camera_label
         self._reference_landmarks: dict[str, np.ndarray] = {}
+        # ═══ BRAIN INTEGRATION — début ═══
+        self._last_landmarks: dict[str, np.ndarray] = {}
+        self._last_motion: float = 0.0
+        # ═══ BRAIN INTEGRATION — fin ═══
         self.landmarker = None
         self._faces_dir = os.path.join(
             os.getenv("JARVIS_ROOT", "/Users/bryandev/jarvis"),
@@ -317,6 +321,8 @@ class MultiUserFaceDetector:
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         detected_landmarks = self._extract_landmarks(frame_rgb)
         results = []
+        # ═══ BRAIN INTEGRATION — début ═══
+        motion_values = []
         for face_lm in detected_landmarks:
             best_user = None
             best_score = -1.0
@@ -326,9 +332,41 @@ class MultiUserFaceDetector:
                     best_score = score
                     best_user = user_id
             if best_score >= self.CONFIDENCE_THRESHOLD and best_user:
+                try:
+                    motion_values.append(self._compute_motion(best_user, face_lm))
+                except Exception:
+                    pass
                 results.append({
                     "user": best_user,
                     "confidence": best_score,
                     "location": self.camera_label,
                 })
+        if motion_values:
+            self._last_motion = max(motion_values)
+        # ═══ BRAIN INTEGRATION — fin ═══
         return results
+
+    # ═══ BRAIN INTEGRATION — début ═══
+    def _compute_motion(self, user: str, current_landmarks) -> float:
+        """
+        Calcule la magnitude du mouvement entre deux frames consécutives
+        pour le user donné. Utilisé par le brain SNN.
+        """
+        try:
+            current = np.asarray(current_landmarks, dtype=np.float32).flatten()
+        except Exception:
+            return 0.0
+
+        last = self._last_landmarks.get(user)
+        self._last_landmarks[user] = current
+        if last is None or last.shape != current.shape:
+            return 0.0
+
+        delta = float(np.linalg.norm(current - last))
+        return min(1.0, delta / 50.0)
+
+    @property
+    def last_motion(self) -> float:
+        """Magnitude du dernier mouvement détecté [0.0-1.0]. Lu par le brain."""
+        return self._last_motion
+    # ═══ BRAIN INTEGRATION — fin ═══
