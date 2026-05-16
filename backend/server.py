@@ -7,6 +7,7 @@ if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 import socketio
+import engineio.payload
 import uvicorn
 from fastapi import FastAPI, UploadFile, File, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +34,7 @@ from authenticator import FaceAuthenticator
 from tuya_agent import TuyaAgent
 from web_agent import WebAgent
 from chromecast_agent import CastAgent
+from hand_gesture_os_controller import HandGestureOsController
 
 # ─── API AUTH ─────────────────────────────────────────────────────────────────
 _bearer = HTTPBearer(auto_error=False)
@@ -47,6 +49,20 @@ def require_token(creds: HTTPAuthorizationCredentials = Security(_bearer)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token invalide ou manquant")
 
 # ─── SOCKETIO + APP ───────────────────────────────────────────────────────────
+# Audio chunks can arrive in bursts while the browser is still on polling.
+# The default Engine.IO limit is 16 packets per payload, too low for mic audio.
+engineio.payload.Payload.max_decode_packets = int(
+    os.getenv("ENGINEIO_MAX_DECODE_PACKETS", "200")
+)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # Create a Socket.IO server
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 app = FastAPI()
@@ -79,6 +95,7 @@ authenticator = None
 tuya_agent = TuyaAgent()
 standalone_web_agent = WebAgent()
 cast_agent = CastAgent()
+hand_gesture_os_controller = HandGestureOsController()
 SETTINGS_FILE = "settings.json"
 
 DEFAULT_SETTINGS = {
@@ -402,6 +419,8 @@ async def connect(sid, environ):
     async def on_auth_status(is_auth):
         print(f"[SERVER] Auth status change: {is_auth}")
         await sio.emit('auth_status', {'authenticated': is_auth})
+        if is_auth and _env_bool("AUTO_START_AUDIO_ON_AUTH", True):
+            asyncio.create_task(start_audio(sid, {"muted": False}))
 
     # Callback for Auth Camera Frames
     async def on_auth_frame(frame_b64):
@@ -430,6 +449,8 @@ async def connect(sid, environ):
             # We don't change authenticator state to true to avoid confusion if re-enabled? 
             # Or we should just tell client it's auth'd.
             await sio.emit('auth_status', {'authenticated': True})
+            if _env_bool("AUTO_START_AUDIO_ON_AUTH", True):
+                asyncio.create_task(start_audio(sid, {"muted": False}))
 
 @sio.event
 async def disconnect(sid):
@@ -1225,6 +1246,30 @@ async def control_kasa(sid, data):
 @sio.event
 async def get_settings(sid):
     await sio.emit('settings', SETTINGS)
+
+@sio.event
+async def hand_control_toggle(sid, data):
+    enabled = bool((data or {}).get("enabled"))
+    status = hand_gesture_os_controller.set_enabled(enabled)
+    print(f"[HandOS] toggle enabled={status.enabled} ok={status.ok} msg={status.message}")
+    await sio.emit('hand_control_status', {
+        'enabled': status.enabled,
+        'ok': status.ok,
+        'message': status.message,
+    }, to=sid)
+
+@sio.event
+async def hand_control_event(sid, data):
+    try:
+        hand_gesture_os_controller.handle_event(data or {})
+    except Exception as e:
+        print(f"[HandOS] event error: {e}")
+        hand_gesture_os_controller.set_enabled(False)
+        await sio.emit('hand_control_status', {
+            'enabled': False,
+            'ok': False,
+            'message': f"Hand OS control error: {e}",
+        }, to=sid)
 
 @sio.event
 async def update_settings(sid, data):
