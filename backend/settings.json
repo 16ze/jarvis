@@ -44,89 +44,98 @@
             "model": "Tuya"
         },
         {
-            "ip": "192.168.1.3",
+            "ip": "192.168.1.5",
             "alias": "Cuisine",
             "model": "Tuya"
         },
         {
-            "ip": "192.168.1.93",
+            "ip": "192.168.1.95",
             "alias": "Cuisine",
             "model": "Tuya"
         },
         {
-            "ip": "192.168.1.66",
+            "ip": "192.168.1.68",
             "alias": "Cuisine",
             "model": "Tuya"
         },
         {
-            "ip": "192.168.1.162",
+            "ip": "192.168.1.164",
             "alias": "Cuisine",
-            "model": "Tuya"
-        },
-        {
-            "ip": "192.168.1.44",
-            "alias": "Cuisine",
-            "model": "Tuya"
-        },
-        {
-            "ip": "192.168.1.52",
-            "alias": "Couloir",
-            "model": "Tuya"
-        },
-        {
-            "ip": "192.168.1.17",
-            "alias": "Couloir",
             "model": "Tuya"
         },
         {
             "ip": "192.168.1.46",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.54",
             "alias": "Couloir",
             "model": "Tuya"
         },
         {
-            "ip": "192.168.1.7",
+            "ip": "192.168.1.19",
             "alias": "Couloir",
             "model": "Tuya"
         },
         {
-            "ip": "192.168.1.91",
-            "alias": "Salon",
+            "ip": "192.168.1.48",
+            "alias": "Cuisine",
             "model": "Tuya"
         },
         {
-            "ip": "192.168.1.157",
-            "alias": "Salon",
+            "ip": "192.168.1.9",
+            "alias": "Couloir",
             "model": "Tuya"
         },
         {
-            "ip": "192.168.1.193",
-            "alias": "Salon",
-            "model": "Tuya"
-        },
-        {
-            "ip": "192.168.1.110",
-            "alias": "Salon",
-            "model": "Tuya"
-        },
-        {
-            "ip": "192.168.1.144",
-            "alias": "Salon",
-            "model": "Tuya"
-        },
-        {
-            "ip": "192.168.1.61",
+            "ip": "192.168.1.94",
             "alias": "Salon",
             "model": "Tuya"
         },
         {
             "ip": "192.168.1.159",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.195",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.112",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.146",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.63",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.162",
             "alias": "CHAMBRE PRINCIPAL",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.187",
+            "alias": "camera",
             "model": "Tuya"
         }
     ],
     "camera_flipped": false,
     "timezone": "Europe/Paris",
     "cameras": [
-        {"id": 0, "type": "webcam", "label": "bureau"}
+        {
+            "id": 0,
+            "type": "webcam",
+            "label": "bureau"
+        }
     ]
 }

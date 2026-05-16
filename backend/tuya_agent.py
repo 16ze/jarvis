@@ -106,6 +106,9 @@ class TuyaDevice:
             return
         try:
             data = self._tuya.status()
+            if not data or data.get("Error") or data.get("Err"):
+                # Device unreachable or returned error dict
+                return
             dps = data.get("dps", {})
             if self.is_bulb:
                 self.is_on = bool(dps.get("20", False))
@@ -132,7 +135,10 @@ class TuyaDevice:
         if not self._tuya:
             return False
         try:
-            self._tuya.turn_on()
+            result = self._tuya.turn_on()
+            if result and (result.get("Error") or result.get("Err")):
+                print(f"[TuyaAgent] turn_on error for '{self.alias}' ({self.ip}): {result.get('Error')}")
+                return False
             self.is_on = True
             return True
         except Exception as e:
@@ -143,7 +149,10 @@ class TuyaDevice:
         if not self._tuya:
             return False
         try:
-            self._tuya.turn_off()
+            result = self._tuya.turn_off()
+            if result and (result.get("Error") or result.get("Err")):
+                print(f"[TuyaAgent] turn_off error for '{self.alias}' ({self.ip}): {result.get('Error')}")
+                return False
             self.is_on = False
             return True
         except Exception as e:
@@ -209,7 +218,7 @@ class TuyaAgent:
         self.known_devices_config: list = known_devices or []
 
     async def initialize(self):
-        """Load devices from devices.json. Returns quietly if file is absent."""
+        """Load devices from devices.json. Auto-scans network if too many devices are unreachable."""
         device_configs = self._load_device_configs()
         if not device_configs:
             print("[TuyaAgent] No devices configured (devices.json absent or empty).")
@@ -234,11 +243,20 @@ class TuyaAgent:
             tasks.append(asyncio.to_thread(dev._sync_status))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
+        unreachable = 0
         for dev, result in zip(list(self.devices.values()), results):
             if isinstance(result, Exception):
                 print(f"[TuyaAgent] Could not reach '{dev.alias}' ({dev.ip}): {result}")
+                unreachable += 1
             else:
-                print(f"[TuyaAgent] Loaded '{dev.alias}' ({dev.ip}) {'ON' if dev.is_on else 'OFF'}")
+                state = "ON" if dev.is_on else "OFF"
+                print(f"[TuyaAgent] Loaded '{dev.alias}' ({dev.ip}) {state}")
+
+        # Auto-scan si la majorité des devices sont injoignables (IPs DHCP changées)
+        reachable = len(self.devices) - unreachable
+        if unreachable > reachable and len(self.devices) > 2:
+            print(f"[TuyaAgent] {unreachable}/{len(self.devices)} devices injoignables — scan réseau pour mettre à jour les IPs...")
+            await self._scan_and_update_ips()
 
     def _load_device_configs(self) -> list:
         if DEVICES_JSON.exists():
@@ -250,6 +268,61 @@ class TuyaAgent:
         if self.known_devices_config:
             return self.known_devices_config
         return []
+
+    async def _scan_and_update_ips(self):
+        """Scanne le réseau local et met à jour les IPs dans devices.json si elles ont changé (DHCP)."""
+        if not tinytuya:
+            return
+        try:
+            scan_result = await asyncio.to_thread(tinytuya.deviceScan, False, 3)
+        except Exception as e:
+            print(f"[TuyaAgent] Scan réseau échoué: {e}")
+            return
+
+        # Map gwId → IP depuis le scan
+        scan_by_id: dict[str, str] = {info.get("gwId", ""): ip for ip, info in scan_result.items()}
+
+        # Charger devices.json pour mise à jour
+        configs = self._load_device_configs()
+        changed = False
+        for cfg in configs:
+            dev_id = cfg.get("id", "")
+            new_ip = scan_by_id.get(dev_id)
+            if new_ip and new_ip != cfg.get("ip"):
+                print(f"[TuyaAgent] IP update: {cfg.get('name')} {cfg.get('ip')} → {new_ip}")
+                cfg["ip"] = new_ip
+                changed = True
+
+        if not changed:
+            print("[TuyaAgent] Scan terminé — aucun changement d'IP.")
+            return
+
+        # Sauvegarder devices.json
+        import shutil
+        shutil.copy(DEVICES_JSON, str(DEVICES_JSON) + ".bak")
+        with open(DEVICES_JSON, "w") as f:
+            json.dump(configs, f, indent=2, ensure_ascii=False)
+        print("[TuyaAgent] devices.json mis à jour avec les nouvelles IPs.")
+
+        # Recharger en mémoire
+        self.devices.clear()
+        tasks = []
+        for cfg in configs:
+            ip = cfg.get("ip")
+            dev_id = cfg.get("id")
+            key = cfg.get("key")
+            if not all([ip, dev_id, key]):
+                continue
+            dev = TuyaDevice(
+                cfg.get("name") or cfg.get("alias", "Unknown"),
+                dev_id, key, ip,
+                self._detect_type(cfg),
+                str(cfg.get("version", "3.3")),
+            )
+            self.devices[ip] = dev
+            tasks.append(asyncio.to_thread(dev._sync_status))
+        await asyncio.gather(*tasks, return_exceptions=True)
+        print(f"[TuyaAgent] Rechargé après scan : {len(self.devices)} devices.")
 
     @staticmethod
     def _detect_type(cfg: dict) -> str:
@@ -301,14 +374,26 @@ class TuyaAgent:
         alias_lower = alias.lower()
         return [dev for dev in self.devices.values() if dev.alias.lower() == alias_lower]
 
+    # Mots-clés qui désignent l'ensemble des appareils
+    _ALL_KEYWORDS = {"all", "toutes", "tout", "tous", "lumières", "lumieres", "lights", "all lights", "toutes les lumières"}
+
     def _resolve_group(self, target: str) -> list[TuyaDevice]:
         """
         Résout un target (IP ou alias) en liste d'appareils.
+        0. Mots-clés globaux (all, toutes, lumières…) → tous les devices
         1. IP exacte
         2. Alias exact (insensible à la casse)
         3. Alias contient le target (ex: "salon" → "Salon", "Lampe salon")
         4. Target contient l'alias (ex: "lumières du salon" → "Salon")
         """
+        target_lower = target.strip().lower()
+
+        # Mot-clé global → tous les devices
+        if target_lower in self._ALL_KEYWORDS:
+            all_devs = list(self.devices.values())
+            print(f"[TuyaAgent] '{target}' → {len(all_devs)} device(s) [ALL]")
+            return all_devs
+
         if target in self.devices:
             return [self.devices[target]]
 
@@ -319,7 +404,6 @@ class TuyaAgent:
             return matches
 
         # Partial match: alias contains target OR target contains alias
-        target_lower = target.lower()
         partial = [
             d for d in self.devices.values()
             if target_lower in d.alias.lower() or d.alias.lower() in target_lower
@@ -423,13 +507,18 @@ class TuyaAgent:
         cloud_map = {dev.get("id", ""): dev for dev in cloud_devices if dev.get("id")}
 
         changes = []
-        # Update names in existing entries
+        # Update names AND keys from cloud
         for dev_id, cloud_dev in cloud_map.items():
             new_name = cloud_dev.get("name", "")
+            new_key  = cloud_dev.get("local_key", cloud_dev.get("key", ""))
             if dev_id in local_map:
                 old_name = local_map[dev_id].get("name", "")
+                old_key  = local_map[dev_id].get("key", "")
                 if old_name != new_name:
                     changes.append(f"{old_name} → {new_name} ({local_map[dev_id].get('ip', '?')})")
+                if new_key and new_key != old_key:
+                    changes.append(f"Clé mise à jour : {local_map[dev_id].get('name', dev_id)}")
+                    local_map[dev_id]["key"] = new_key
                 local_map[dev_id]["name"] = new_name
             else:
                 # New device not in local — add with cloud IP (might be WAN, not ideal)

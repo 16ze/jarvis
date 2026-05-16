@@ -10,6 +10,9 @@ app.commandLine.appendSwitch('ignore-gpu-blocklist');
 
 let mainWindow;
 let pythonProcess;
+let shuttingDown = false;
+let backendHealthOk = false;
+let pythonStderrBuf = '';
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -63,55 +66,100 @@ function createWindow() {
     });
 }
 
-function startPythonBackend() {
-    const scriptPath = path.join(__dirname, '../backend/server.py');
-    console.log(`Starting Python backend: ${scriptPath}`);
-
-    // Detect Python binary — multi-platform conda paths + fallback
+function resolvePythonBackendBinary() {
     const fs = require('fs');
+    const envOverride = process.env.JARVIS_PYTHON || process.env.ADA_PYTHON;
+    if (envOverride && fs.existsSync(envOverride)) {
+        console.log(`Using Python from JARVIS_PYTHON / ADA_PYTHON: ${envOverride}`);
+        return envOverride;
+    }
+    if (envOverride && !fs.existsSync(envOverride)) {
+        console.warn(`JARVIS_PYTHON / ADA_PYTHON points to missing file: ${envOverride}`);
+    }
+
+    const home = process.env.HOME || process.env.USERPROFILE || '';
     const condaPaths = process.platform === 'win32'
         ? [
             path.join(process.env.USERPROFILE || '', 'miniconda3', 'envs', 'ada_v2', 'python.exe'),
             path.join(process.env.USERPROFILE || '', 'anaconda3', 'envs', 'ada_v2', 'python.exe'),
+            path.join(process.env.USERPROFILE || '', 'mambaforge', 'envs', 'ada_v2', 'python.exe'),
+            path.join(process.env.USERPROFILE || '', 'miniforge3', 'envs', 'ada_v2', 'python.exe'),
             path.join('C:', 'ProgramData', 'miniconda3', 'envs', 'ada_v2', 'python.exe'),
             path.join('C:', 'ProgramData', 'anaconda3', 'envs', 'ada_v2', 'python.exe'),
         ]
         : process.platform === 'darwin'
         ? [
             '/opt/homebrew/Caskroom/miniconda/base/envs/ada_v2/bin/python',
-            path.join(process.env.HOME || '', 'miniconda3', 'envs', 'ada_v2', 'bin', 'python'),
-            path.join(process.env.HOME || '', 'anaconda3', 'envs', 'ada_v2', 'bin', 'python'),
+            '/usr/local/Caskroom/miniconda/base/envs/ada_v2/bin/python',
+            path.join(home, 'miniconda3', 'envs', 'ada_v2', 'bin', 'python'),
+            path.join(home, 'anaconda3', 'envs', 'ada_v2', 'bin', 'python'),
+            path.join(home, 'mambaforge', 'envs', 'ada_v2', 'bin', 'python'),
+            path.join(home, 'miniforge3', 'envs', 'ada_v2', 'bin', 'python'),
             '/opt/miniconda3/envs/ada_v2/bin/python',
+            '/usr/local/miniconda3/envs/ada_v2/bin/python',
         ]
         : [
-            path.join(process.env.HOME || '', 'miniconda3', 'envs', 'ada_v2', 'bin', 'python'),
-            path.join(process.env.HOME || '', 'anaconda3', 'envs', 'ada_v2', 'bin', 'python'),
+            path.join(home, 'miniconda3', 'envs', 'ada_v2', 'bin', 'python'),
+            path.join(home, 'anaconda3', 'envs', 'ada_v2', 'bin', 'python'),
+            path.join(home, 'mambaforge', 'envs', 'ada_v2', 'bin', 'python'),
+            path.join(home, 'miniforge3', 'envs', 'ada_v2', 'bin', 'python'),
             '/opt/conda/envs/ada_v2/bin/python',
+            '/opt/miniconda3/envs/ada_v2/bin/python',
         ];
 
-    const condaPython = condaPaths.find(p => fs.existsSync(p));
-    const pythonBin = condaPython || 'python3';
-    const finalBin = (pythonBin === 'python3' && !condaPython) ? 'python3' : pythonBin;
+    const found = condaPaths.find(p => fs.existsSync(p));
+    if (found) {
+        return found;
+    }
+    console.warn(
+        'Aucun interpréteur conda "ada_v2" trouvé dans les chemins connus — repli sur "python3" ' +
+        '(souvent incomplet : installe les deps du backend ou définis JARVIS_PYTHON).'
+    );
+    return 'python3';
+}
 
+function startPythonBackend() {
+    const scriptPath = path.join(__dirname, '../backend/server.py');
+    console.log(`Starting Python backend: ${scriptPath}`);
+
+    pythonStderrBuf = '';
+    const finalBin = resolvePythonBackendBinary();
     console.log(`Using Python binary: ${finalBin}`);
 
-    pythonProcess = spawn(finalBin, [scriptPath], {
+    pythonProcess = spawn(finalBin, ['-u', scriptPath], {
         cwd: path.join(__dirname, '../backend'),
+        env: { ...process.env, PYTHONUNBUFFERED: '1' },
     });
 
     pythonProcess.on('error', (err) => {
         console.error(`[Python spawn error]: ${err.message}`);
         dialog.showErrorBox(
             'Backend Python introuvable',
-            `Impossible de démarrer le backend Python.\n\nErreur : ${err.message}\n\nBinaire utilisé : ${finalBin}\n\nVérifiez que l'environnement conda "ada_v2" est bien créé ou que python3 est installé.`
+            `Impossible de démarrer le backend Python.\n\nErreur : ${err.message}\n\nBinaire utilisé : ${finalBin}\n\n` +
+            'Crée l\'environnement conda "ada_v2" (voir CLAUDE.md) ou définis JARVIS_PYTHON vers le Python du projet.'
         );
     });
 
     pythonProcess.on('exit', (code, signal) => {
+        if (shuttingDown) {
+            return;
+        }
         if (code !== 0 && code !== null) {
             console.error(`[Python] Process exited with code ${code} (signal: ${signal})`);
         } else {
             console.log(`[Python] Process exited cleanly (code: ${code})`);
+        }
+        if (!backendHealthOk && code !== 0 && code !== null) {
+            const tail = pythonStderrBuf.replace(/\r/g, '').trim().slice(-3500);
+            dialog.showErrorBox(
+                'Backend Python arrêté au démarrage',
+                `Le processus serveur s'est terminé (code ${code}).\n\n` +
+                'Cause fréquente : "python3" système sans les paquets du backend (ex. playwright).\n' +
+                'Utilise le Python de l\'environnement conda ada_v2, ou définis :\n' +
+                '  export JARVIS_PYTHON="/chemin/vers/ada_v2/bin/python"\n\n' +
+                '--- stderr (extrait) ---\n' +
+                (tail || '(pas de sortie stderr capturée)')
+            );
         }
     });
 
@@ -120,6 +168,11 @@ function startPythonBackend() {
     });
 
     pythonProcess.stderr.on('data', (data) => {
+        const s = data.toString();
+        pythonStderrBuf += s;
+        if (pythonStderrBuf.length > 12000) {
+            pythonStderrBuf = pythonStderrBuf.slice(-12000);
+        }
         console.error(`[Python Error]: ${data}`);
     });
 }
@@ -202,10 +255,10 @@ app.whenReady().then(() => {
             waitForBackend().then(createWindow);
         } else {
             startPythonBackend();
-            // Give it a moment to start, then wait for health check
+            // Imports lourds + disque lent : laisser le temps avant le healthcheck
             setTimeout(() => {
                 waitForBackend().then(createWindow);
-            }, 1000);
+            }, 3500);
         }
     });
 
@@ -233,7 +286,7 @@ function checkBackendPort(port) {
     });
 }
 
-function waitForBackend(maxRetries = 30) {
+function waitForBackend(maxRetries = 60) {
     return new Promise((resolve) => {
         let attempts = 0;
 
@@ -242,6 +295,7 @@ function waitForBackend(maxRetries = 30) {
             const req = http.get('http://127.0.0.1:8000/status', (res) => {
                 if (res.statusCode === 200) {
                     console.log('Backend is ready!');
+                    backendHealthOk = true;
                     resolve({ success: true });
                 } else {
                     retry();
@@ -290,6 +344,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
+    shuttingDown = true;
     console.log('App closing... Killing Python backend.');
     if (pythonProcess) {
         if (process.platform === 'win32') {
