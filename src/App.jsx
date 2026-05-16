@@ -4,7 +4,6 @@ import io from 'socket.io-client';
 import Visualizer from './components/Visualizer';
 import TopAudioBar from './components/TopAudioBar';
 import CadWindow from './components/CadWindow';
-import BrowserWindow from './components/BrowserWindow';
 import TerminalWindow from './components/TerminalWindow';
 import ChatModule from './components/ChatModule';
 import ToolsModule from './components/ToolsModule';
@@ -68,7 +67,6 @@ function App() {
     const [cadData, setCadData] = useState(null);
     const [cadThoughts, setCadThoughts] = useState(''); // Streaming AI thoughts
     const [cadRetryInfo, setCadRetryInfo] = useState({ attempt: 1, maxAttempts: 3, error: null }); // Retry status
-    const [browserData, setBrowserData] = useState({ image: null, logs: [] });
     // showMemoryPrompt removed - memory is now actively saved to project
     const [confirmationRequest, setConfirmationRequest] = useState(null); // { id, tool, args }
     const [kasaDevices, setKasaDevices] = useState([]);
@@ -76,7 +74,7 @@ function App() {
     const [showPrinterWindow, setShowPrinterWindow] = useState(false);
     const [showDocumentsWindow, setShowDocumentsWindow] = useState(false);
     const [showCadWindow, setShowCadWindow] = useState(false);
-    const [showBrowserWindow, setShowBrowserWindow] = useState(false);
+
     const [showTerminalWindow, setShowTerminalWindow] = useState(false);
     const [terminalEntries, setTerminalEntries] = useState([]);
 
@@ -122,7 +120,7 @@ function App() {
         chat: { w: 550, h: 220 },
         tools: { w: 500, h: 80 }, // Approx
         cad: { w: 400, h: 400 },
-        browser: { w: 550, h: 380 },
+
         video: { w: 320, h: 180 },
         kasa: { w: 300, h: 380 }, // Approx
         printer: { w: 380, h: 380 } // Approx
@@ -502,22 +500,8 @@ function App() {
             // Append streaming thought text
             setCadThoughts(prev => prev + data.text);
         });
-        socket.on('browser_frame', (data) => {
-            setBrowserData(prev => ({
-                image: data.image ?? prev.image, // keep last image if new frame has none
-                logs: [...prev.logs, data.log].filter(l => l).slice(-50)
-            }));
-            setShowBrowserWindow(true);
-            // Auto-show browser window if hidden, clamped to viewport
-            if (!elementPositions.browser) {
-                const size = { w: 550, h: 380 };
-                const clamped = clampToViewport({ x: window.innerWidth / 2 - 200, y: window.innerHeight / 2 }, size);
-                setElementPositions(prev => ({
-                    ...prev,
-                    browser: clamped
-                }));
-            }
-        });
+        // browser_frame supprimé — le web agent Playwright a été retiré
+        // Les logs execute_pc_task arrivent via terminal_output
 
         socket.on('terminal_output', (data) => {
             setTerminalEntries(prev => [...prev, { command: data.command, output: data.output }].slice(-100));
@@ -737,7 +721,7 @@ function App() {
             socket.off('cad_data');
             socket.off('cad_thought');
             socket.off('cad_status');
-            socket.off('browser_frame');
+
             socket.off('transcription');
             socket.off('tool_confirmation_request');
             socket.off('kasa_devices');
@@ -1795,38 +1779,6 @@ function App() {
                 )}
 
 
-                {/* Browser Window Overlay */}
-                {showBrowserWindow && (
-                    <div
-                        id="browser"
-                        className={`absolute flex flex-col transition-all duration-200 
-                        backdrop-blur-xl bg-black/40 border border-white/10 shadow-2xl overflow-hidden rounded-lg
-                        ${activeDragElement === 'browser' ? 'ring-2 ring-green-500 bg-green-500/10' : ''}
-                    `}
-                        style={{
-                            left: elementPositions.browser?.x || window.innerWidth / 2 - 200,
-                            top: elementPositions.browser?.y || window.innerHeight / 2,
-                            transform: 'translate(-50%, -50%)',
-                            width: `${elementSizes.browser.w}px`,
-                            height: `${elementSizes.browser.h}px`,
-                            pointerEvents: 'auto',
-                            zIndex: getZIndex('browser')
-                        }}
-                        onMouseDown={(e) => handleMouseDown(e, 'browser')}
-                    >
-                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay z-10"></div>
-                        <div className="relative z-20 w-full h-full">
-                            <BrowserWindow
-                                imageSrc={browserData.image}
-                                logs={browserData.logs}
-                                onClose={() => setShowBrowserWindow(false)}
-                                socket={socket}
-                            />
-                        </div>
-                    </div>
-                )}
-
-
                 {/* Terminal Window */}
                 {showTerminalWindow && (
                     <div
@@ -1894,8 +1846,6 @@ function App() {
                         showPrinterWindow={showPrinterWindow}
                         onToggleCad={() => setShowCadWindow(!showCadWindow)}
                         showCadWindow={showCadWindow}
-                        onToggleBrowser={() => setShowBrowserWindow(!showBrowserWindow)}
-                        showBrowserWindow={showBrowserWindow}
                         isScreenMode={isScreenMode}
                         onToggleScreenMode={toggleScreenMode}
                         onToggleDocuments={() => setShowDocumentsWindow(true)}
