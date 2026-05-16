@@ -3,7 +3,7 @@
 # Lance le backend Python + le frontend Vite en séquence.
 # Le frontend attend que le backend soit prêt avant de démarrer.
 
-JARVIS_ROOT="/Users/bryandev/jarvis"
+JARVIS_ROOT="$(cd "$(dirname "$0")" && pwd)"
 CONDA_ENV="ada_v2"
 BACKEND_URL="http://127.0.0.1:8000/status"
 MAX_WAIT=60  # secondes max avant abandon
@@ -15,7 +15,7 @@ echo "🚀 Démarrage du backend Ada..."
 osascript <<EOF
 tell application "Terminal"
     activate
-    do script "conda activate $CONDA_ENV && cd $JARVIS_ROOT/backend && python server.py"
+    do script "conda activate $CONDA_ENV && cd \"$JARVIS_ROOT/backend\" && python server.py"
 end tell
 EOF
 
@@ -37,7 +37,7 @@ echo "🌐 Démarrage du frontend..."
 osascript <<EOF
 tell application "Terminal"
     activate
-    do script "cd $JARVIS_ROOT && npm run dev"
+    do script "cd \"$JARVIS_ROOT\" && npm run dev"
 end tell
 EOF
 

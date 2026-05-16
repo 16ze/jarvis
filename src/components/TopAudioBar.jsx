@@ -1,14 +1,26 @@
-import React, { useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 
-const TopAudioBar = ({ audioData }) => {
+const TopAudioBar = ({ audioData, audioDataRef }) => {
     const canvasRef = useRef(null);
+    const localAudioDataRef = useRef(audioData || []);
+
+    useEffect(() => {
+        localAudioDataRef.current = audioData || [];
+    }, [audioData]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
+        let animationId;
+        let lastDraw = 0;
 
-        const draw = () => {
+        const draw = (timestamp) => {
+            animationId = requestAnimationFrame(draw);
+            if (timestamp - lastDraw < 33) return;
+            lastDraw = timestamp;
+
+            const values = audioDataRef?.current || localAudioDataRef.current || [];
             const width = canvas.width;
             const height = canvas.height;
             ctx.clearRect(0, 0, width, height);
@@ -24,7 +36,7 @@ const TopAudioBar = ({ audioData }) => {
             const center = width / 2;
 
             for (let i = 0; i < totalBars / 2; i++) {
-                const value = audioData[i % audioData.length] || 0;
+                const value = values[i % values.length] || 0;
                 const percent = value / 255;
                 const barHeight = Math.max(2, percent * height);
 
@@ -38,8 +50,9 @@ const TopAudioBar = ({ audioData }) => {
             }
         };
 
-        requestAnimationFrame(draw);
-    }, [audioData]);
+        animationId = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(animationId);
+    }, [audioDataRef]);
 
     return (
         <canvas
@@ -51,4 +64,4 @@ const TopAudioBar = ({ audioData }) => {
     );
 };
 
-export default TopAudioBar;
+export default memo(TopAudioBar);

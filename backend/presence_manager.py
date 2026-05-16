@@ -16,6 +16,9 @@ class PresenceManager:
         self._active_speakers: list[dict] = []
         self._audio_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
         self._on_unknown_voice: Optional[Callable[[], Awaitable[None]]] = None
+        # ═══ BRAIN INTEGRATION — début ═══
+        self.face_detector = None
+        # ═══ BRAIN INTEGRATION — fin ═══
 
     @property
     def active_speakers(self) -> list[dict]:

@@ -2,11 +2,15 @@ const { app, BrowserWindow, ipcMain, dialog, session } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 
-// Use ANGLE D3D11 backend - more stable on Windows while keeping WebGL working
-// This fixes "GPU state invalid after WaitForGetOffsetInRange" error
-app.commandLine.appendSwitch('use-angle', 'd3d11');
-app.commandLine.appendSwitch('enable-features', 'Vulkan');
-app.commandLine.appendSwitch('ignore-gpu-blocklist');
+// Keep the Windows GPU workaround scoped to Windows. Forcing D3D/Vulkan on
+// other platforms can make Electron's compositor noticeably less responsive.
+if (process.platform === 'win32') {
+    app.commandLine.appendSwitch('use-angle', 'd3d11');
+    app.commandLine.appendSwitch('enable-features', 'Vulkan');
+    app.commandLine.appendSwitch('ignore-gpu-blocklist');
+}
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
 let mainWindow;
 let pythonProcess;
@@ -21,6 +25,7 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false, // For simple IPC/Socket.IO usage
+            backgroundThrottling: false,
         },
         backgroundColor: '#000000',
         frame: false, // Frameless for custom UI
@@ -42,7 +47,7 @@ function createWindow() {
                 console.log('Frontend loaded successfully!');
                 windowWasShown = true;
                 mainWindow.show();
-                if (isDev) {
+                if (isDev && process.env.OPEN_DEVTOOLS === '1') {
                     mainWindow.webContents.openDevTools();
                 }
             })
