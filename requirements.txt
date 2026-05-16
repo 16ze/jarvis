@@ -45,3 +45,9 @@ numpy
 # Research tools
 wikipedia-api
 arxiv
+
+# Vision objet (YOLO + Open Images V7)
+ultralytics==8.3.40
+torch>=2.2.0
+torchvision>=0.17.0
+pytest-asyncio>=0.23
