@@ -239,6 +239,9 @@ class MultiUserFaceDetector:
         self._last_landmarks: dict[str, np.ndarray] = {}
         self._last_motion: float = 0.0
         # ═══ BRAIN INTEGRATION — fin ═══
+        # ═══ VISION OBJECT (YOLO) — partage de frame webcam ═══
+        # Évite d'ouvrir une 2e capture webcam (incompatible macOS).
+        self._last_frame: "np.ndarray | None" = None
         self.landmarker = None
         self._faces_dir = os.path.join(
             os.getenv("JARVIS_ROOT", "/Users/bryandev/jarvis"),
@@ -316,6 +319,11 @@ class MultiUserFaceDetector:
         [{"user": str, "confidence": float, "location": Optional[str]}]
         Retourne [] si aucun visage reconnu ou si aucune référence chargée.
         """
+        # Partagé avec VisionObjectAgent (YOLO) — pas de seconde capture webcam.
+        try:
+            self._last_frame = frame_bgr.copy() if frame_bgr is not None else None
+        except Exception:
+            self._last_frame = None
         if not self._reference_landmarks:
             return []
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
@@ -370,3 +378,13 @@ class MultiUserFaceDetector:
         """Magnitude du dernier mouvement détecté [0.0-1.0]. Lu par le brain."""
         return self._last_motion
     # ═══ BRAIN INTEGRATION — fin ═══
+
+    # ═══ VISION OBJECT (YOLO) — partage de frame webcam ═══
+    def get_last_frame(self):
+        """Renvoie la dernière frame BGR capturée par MediaPipe (peut être None).
+
+        Utilisé par VisionObjectAgent pour exécuter YOLO sans ouvrir une seconde
+        capture webcam (incompatible avec macOS qui n'autorise qu'un seul processus).
+        """
+        return self._last_frame
+    # ═══ VISION OBJECT (YOLO) — fin ═══
