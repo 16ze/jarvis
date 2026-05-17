@@ -15,7 +15,7 @@ from threading import Lock
 from brain.limbic import CerveauEmotif
 from brain.modulators import get_gemini_params as _params_for_mood
 from brain.mood_block import build_mood_block, build_runtime_mood_update
-from brain.network import ReseauAttention
+from brain.network import EtatEveil, ReseauAttention
 from brain.sensors_adapter import MediaPipeAdapter
 
 
@@ -136,6 +136,7 @@ class BrainManager:
         def notify() -> str | None:
             movement = float(event.get("movement", 0.0) or 0.0)
             attention = float(event.get("attention_need", 0.0) or 0.0)
+            risk = str(event.get("risk") or "none").lower()
             person = str(event.get("person") or "").lower()
             presence = 1.0 if person not in {"", "personne", "unknown"} else 0.0
             self.reseau.tick_visual(
@@ -143,6 +144,9 @@ class BrainManager:
                 mouvement=max(movement, attention),
             )
             self.limbic.analyser_scene_visuelle(event)
+            should_emit = risk == "high" or self.reseau.etat == EtatEveil.EVEIL
+            if not should_emit:
+                return None
             return self.limbic.verifier_action_spontanee()
 
         return self._safe("notify_visual_scene", notify, fallback=None)

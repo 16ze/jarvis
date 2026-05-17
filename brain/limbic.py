@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 
+from brain.calibration import env_float
 from brain.lexicons import (
     CORRECTIONS,
     CURIOSITE,
@@ -49,12 +50,12 @@ OXYTOCINE_PRESENCE = 0.0003
 SEROTONINE_PRESENCE = 0.0001
 CONFIANCE_CORRECTION = 0.10
 SEUIL_RUPTURE = 0.88
-SEUIL_DOPAMINE_SPONTANE = 0.90
+SEUIL_DOPAMINE_SPONTANE = env_float("BRAIN_SEUIL_DOPAMINE_SPONTANE", 0.95)
 SEUIL_SUPERIORITE = 0.70
-SEUIL_FATIGUE = 0.70
-SEUIL_MOUVEMENT = 0.45
-REFRACTORY_SPONTANE = 90.0
-REFRACTORY_VISUEL = 240.0
+SEUIL_FATIGUE = env_float("BRAIN_SEUIL_FATIGUE", 0.75)
+SEUIL_MOUVEMENT = env_float("BRAIN_SEUIL_MOUVEMENT", 0.55)
+REFRACTORY_SPONTANE = env_float("BRAIN_REFRACTORY_SPONTANE_SEC", 150.0)
+REFRACTORY_VISUEL = env_float("BRAIN_REFRACTORY_VISUEL_SEC", 360.0)
 JOURNAL_MAX = 50
 _MEMOIRE_VALENCE_TAILLE = 6
 _MOMENTUM_AMP_MAX = 0.60
@@ -281,7 +282,7 @@ class CerveauEmotif:
             elif risk == "medium":
                 self.cortisol = _clamp(self.cortisol + 0.22 + attention * 0.10)
                 self.dernier_stimulus = "vision_alerte"
-                if attention > 0.65:
+                if attention > 0.75:
                     self._set_action_spontanee_locked(
                         hint
                         or "Signale calmement ce que tu viens de remarquer visuellement."
@@ -292,7 +293,7 @@ class CerveauEmotif:
                 self.serotonine = _clamp(self.serotonine - 0.04)
                 self.cortisol = _clamp(self.cortisol + 0.06)
                 self.dernier_stimulus = f"vision_{emotion}"
-                if attention > 0.55 or person == "bryan":
+                if attention > 0.70 or person == "bryan":
                     self._set_action_spontanee_locked(
                         hint
                         or "Tu remarques que Bryan semble affecté. Réagis avec douceur, en une phrase."
@@ -302,6 +303,11 @@ class CerveauEmotif:
                 self.dopamine = _clamp(self.dopamine + 0.08 + max(valence, 0.0) * 0.08)
                 self.cortisol = _clamp(self.cortisol - 0.04)
                 self.dernier_stimulus = f"vision_{emotion}"
+                if attention > 0.75 or person == "bryan":
+                    self._set_action_spontanee_locked(
+                        hint
+                        or "Tu remarques une scène positive ou intime. Réagis avec retenue, en une phrase."
+                    )
             elif emotion == "angry":
                 self.cortisol = _clamp(self.cortisol + 0.18)
                 self.self_confidence = _clamp(self.self_confidence - 0.03)
