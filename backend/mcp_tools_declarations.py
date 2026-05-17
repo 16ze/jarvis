@@ -1627,6 +1627,71 @@ twilio_send_sms_tool = {
     }
 }
 
+# ───── Couche vision objet (YOLO) ─────────────────────────────────
+detect_objects_tool = {
+    "name": "detect_objects",
+    "description": (
+        "Détecte les objets visibles via YOLO sur la caméra ou l'écran. "
+        "Réponse immédiate, ne dépend pas du quota Gemini. "
+        "Utilise quand l'utilisateur demande 'tu vois X ?', 'qu'est-ce qu'il y a sur mon bureau', "
+        "'qu'est-ce que je tiens', ou pour vérifier la présence d'un objet précis."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "source": {
+                "type": "STRING",
+                "description": "'camera' (webcam) ou 'screen' (capture écran). Défaut: 'camera'.",
+            },
+            "filter": {
+                "type": "STRING",
+                "description": "Optionnel. Nom de classe FR à filtrer (ex: 'téléphone'). Vide = toutes classes.",
+            },
+            "max_results": {
+                "type": "INTEGER",
+                "description": "Nombre max de détections. Défaut: 10.",
+            },
+        },
+        "required": [],
+    },
+}
+
+query_seen_objects_tool = {
+    "name": "query_seen_objects",
+    "description": (
+        "Recherche dans l'historique des objets vus (SQLite + ChromaDB). "
+        "Utilise pour 'où j'ai laissé X', 'quand j'ai vu X pour la dernière fois'."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "object": {"type": "STRING", "description": "Description FR de l'objet (peut être flou)."},
+            "since": {"type": "STRING", "description": "Optionnel. ISO ou relatif ('hier', 'cette semaine'). Défaut: 24h."},
+            "max_results": {"type": "INTEGER", "description": "Défaut: 5."},
+        },
+        "required": ["object"],
+    },
+}
+
+count_objects_seen_tool = {
+    "name": "count_objects_seen",
+    "description": (
+        "Compte le nombre de fois qu'un objet a été vu sur une période. "
+        "Compte par track_id distinct (3 passages du chat = 3, pas 47 frames)."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "object": {"type": "STRING", "description": "Classe FR à compter (ex: 'chat', 'téléphone')."},
+            "period": {
+                "type": "STRING",
+                "description": "'today'|'yesterday'|'this_week'|'last_24h'|'last_hour'. Défaut: 'today'.",
+            },
+        },
+        "required": ["object"],
+    },
+}
+
 MCP_TOOLS = [
     # ── Communication ─────────────────────────────────────────────────────────
     telegram_send_message_tool, telegram_send_photo_tool, telegram_get_updates_tool,
@@ -1666,6 +1731,8 @@ MCP_TOOLS = [
     # ── Self-correction & évolution ───────────────────────────────────────────
     jarvis_read_file_tool, jarvis_write_file_tool, jarvis_list_files_tool,
     jarvis_git_commit_tool, self_correct_file_tool, self_evolve_tool,
+    # ── Vision objet (YOLO) ───────────────────────────────────────────────────
+    detect_objects_tool, query_seen_objects_tool, count_objects_seen_tool,
 ]
 
 MCP_TOOL_NAMES = {t["name"] for t in MCP_TOOLS}
