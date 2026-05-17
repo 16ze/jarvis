@@ -144,6 +144,18 @@ class ScreenWatcher:
 
     async def _analyze_frame(self, frame_bytes: bytes):
         """Analyse un frame et met à jour le buffer."""
+        # Greffon couche vision objet (YOLO) — fire-and-forget en parallèle de Gemini
+        if os.getenv("VISION_OBJECT_ENABLED", "false").lower() == "true" \
+           and os.getenv("VISION_OBJECT_SCREEN_LOOP", "true").lower() == "true":
+            try:
+                from vision_object_agent import VisionObjectAgent
+                agent = VisionObjectAgent.peek_singleton()
+                if agent is not None:
+                    asyncio.create_task(
+                        agent.detect_on_frame_bytes(frame_bytes, source="screen")
+                    )
+            except Exception as exc:
+                print(f"[VISION_OBJ] screen greffon failed: {exc}")
         try:
             event = await analyze_visual_scene(frame_bytes, source="screen")
             desc = event.get("description") or "Écran visible."
