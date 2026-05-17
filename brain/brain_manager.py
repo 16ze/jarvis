@@ -131,6 +131,14 @@ class BrainManager:
                 self.limbic.penser(after["last_stimulus"])
 
         self._safe("notify_user_message", notify, fallback=None)
+        if self._v3 is not None and self._v3.enabled:
+            try:
+                self._v3.observe(
+                    {"text": text, "valence": 0.0, "audio": audio_features or {}},
+                    channel="text",
+                )
+            except Exception as exc:
+                print(f"[BRAIN_V3] notify_user_message observe failed: {exc}")
 
     def notify_llm_response(self) -> None:
         if not self.enabled or self._is_degraded():

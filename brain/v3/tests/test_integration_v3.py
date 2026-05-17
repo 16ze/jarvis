@@ -52,3 +52,19 @@ def test_repeated_stimulus_eventually_suppressed_by_habituation(monkeypatch):
             reactions += 1
     assert reactions < 10
     brain._v3.stop()
+
+
+def test_notify_user_message_observes_in_v3_without_gating(monkeypatch):
+    _enable_brain(monkeypatch)
+    monkeypatch.setenv("BRAIN_V3_SHADOW_MODE", "false")
+    brain = BrainManager()
+    brain.notify_user_message("salut, comment vas-tu ?", audio_features=None)
+    state = brain._v3.get_debug_state()
+    text_traces = [
+        decision for decision in state["recent_decisions"]
+        if decision["stimulus"].startswith("text:")
+    ]
+    assert text_traces, "v3 devrait avoir observé le texte user"
+    assert text_traces[0]["action"] == "OBSERVE"
+    assert text_traces[0]["reason"] == "passive_observe"
+    brain._v3.stop()
