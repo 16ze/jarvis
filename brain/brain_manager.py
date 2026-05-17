@@ -132,24 +132,11 @@ class BrainManager:
     def notify_visual_scene(self, event: dict) -> str | None:
         if not self.enabled or self._is_degraded():
             return None
-
-        def notify() -> str | None:
-            movement = float(event.get("movement", 0.0) or 0.0)
-            attention = float(event.get("attention_need", 0.0) or 0.0)
-            risk = str(event.get("risk") or "none").lower()
-            person = str(event.get("person") or "").lower()
-            presence = 1.0 if person not in {"", "personne", "unknown"} else 0.0
-            self.reseau.tick_visual(
-                presence=presence,
-                mouvement=max(movement, attention),
-            )
-            self.limbic.analyser_scene_visuelle(event)
-            should_emit = risk == "high" or self.reseau.etat == EtatEveil.EVEIL
-            if not should_emit:
-                return None
-            return self.limbic.verifier_action_spontanee()
-
-        return self._safe("notify_visual_scene", notify, fallback=None)
+        return self._safe(
+            "notify_visual_scene",
+            lambda: self._dispatch_stimulus(event, channel="vision_scene"),
+            fallback=None,
+        )
 
     def consume_spontaneous_impulse(self) -> str | None:
         if not self.enabled or self._is_degraded():
@@ -176,6 +163,29 @@ class BrainManager:
             },
             fallback=defaults,
         )
+
+    def _existing_visual_scene_logic(self, event: dict) -> str | None:
+        """Logique v2 originelle de notify_visual_scene."""
+        movement = float(event.get("movement", 0.0) or 0.0)
+        attention = float(event.get("attention_need", 0.0) or 0.0)
+        risk = str(event.get("risk") or "none").lower()
+        person = str(event.get("person") or "").lower()
+        presence = 1.0 if person not in {"", "personne", "unknown"} else 0.0
+        self.reseau.tick_visual(
+            presence=presence,
+            mouvement=max(movement, attention),
+        )
+        self.limbic.analyser_scene_visuelle(event)
+        should_emit = risk == "high" or self.reseau.etat == EtatEveil.EVEIL
+        if not should_emit:
+            return None
+        return self.limbic.verifier_action_spontanee()
+
+    def _dispatch_stimulus(self, payload: dict, channel: str) -> str | None:
+        """Route un stimulus via v3 si activé, sinon v2 direct."""
+        if channel == "vision_scene":
+            return self._existing_visual_scene_logic(payload)
+        return None
 
     def _start_impl(
         self,
