@@ -319,6 +319,38 @@ class VisionObjectAgent:
         if os.getenv("VISION_OBJECT_CAMERA_LOOP", "true").lower() == "true":
             fps = int(os.getenv("VISION_OBJECT_FPS", "10"))
             await self.start_camera_loop(fps=fps)
+        await self.start_cleanup_loop()
+
+    async def start_cleanup_loop(
+        self, interval_sec: float = 86400.0, retention_days: int | None = None,
+    ) -> None:
+        if self._cleanup_task is not None and not self._cleanup_task.done():
+            return
+        retention = (
+            retention_days if retention_days is not None
+            else int(os.getenv("VISION_OBJECT_RETENTION_DAYS", "30"))
+        )
+        self._stopping = False
+        self._cleanup_task = asyncio.create_task(
+            self._run_cleanup_loop(interval_sec=interval_sec, retention_days=retention)
+        )
+        _LOG.info("[VISION_OBJ] Cleanup loop started (interval=%.0fs, retention=%dd)", interval_sec, retention)
+
+    async def _run_cleanup_loop(self, interval_sec: float, retention_days: int) -> None:
+        while not self._stopping:
+            try:
+                deleted = await asyncio.to_thread(
+                    self._storage.cleanup_older_than, retention_days
+                )
+                _LOG.info(
+                    "[VISION_OBJ] Nightly cleanup: %d events purged (retention=%dd)",
+                    deleted, retention_days,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _LOG.warning("[VISION_OBJ] Cleanup failed: %s", exc)
+            await asyncio.sleep(interval_sec)
 
     async def start_camera_loop(self, fps: int = 10) -> None:
         """Démarre la boucle continue sur la caméra (partagée avec MediaPipe)."""

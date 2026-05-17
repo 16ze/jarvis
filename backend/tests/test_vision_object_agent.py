@@ -206,3 +206,21 @@ async def test_camera_loop_does_not_double_start(mock_memory_manager, temp_db_pa
         await agent.start_camera_loop(fps=10)
         assert agent._camera_task is first_task
         await agent.stop()
+
+
+async def test_cleanup_loop_triggers_storage_cleanup(mock_memory_manager, temp_db_path):
+    with patch("vision_object_agent.YoloDetector"):
+        agent = VisionObjectAgent(
+            face_frame_source=MagicMock(),
+            memory_manager=mock_memory_manager,
+            db_path=temp_db_path,
+        )
+        agent._storage = MagicMock()
+        agent._storage.cleanup_older_than = MagicMock(return_value=42)
+
+        # Force le déclenchement immédiat (sans attendre 4h du matin)
+        await agent.start_cleanup_loop(interval_sec=0.05, retention_days=30)
+        await asyncio.sleep(0.15)
+        await agent.stop()
+
+    assert agent._storage.cleanup_older_than.call_count >= 1
