@@ -369,6 +369,7 @@ ADA_SYSTEM_PROMPT = (
 from mcp_tools_declarations import MCP_TOOLS, MCP_TOOL_NAMES
 from mcps.twilio_mcp import TwilioMCP
 from user_profile_manager import UserProfileManager
+from vision_object_agent import VisionObjectAgent
 
 _upm = UserProfileManager()
 
@@ -557,6 +558,8 @@ class TextAgent:
         self._client: genai.Client | None = None
         self._google = None
         self._memory = None
+        # ═══ VISION OBJECT (YOLO) — singleton partagé avec AudioLoop ═══
+        self._vision_agent: VisionObjectAgent | None = None
         self._slack = None
         self._telegram = None
         self._whatsapp = None
@@ -844,6 +847,15 @@ class TextAgent:
                 api_key=GEMINI_API_KEY,
             )
         return self._client
+
+    async def _ensure_vision_agent(self) -> VisionObjectAgent:
+        """Récupère le singleton VisionObjectAgent (partagé avec AudioLoop)."""
+        if self._vision_agent is None:
+            self._vision_agent = await asyncio.to_thread(
+                VisionObjectAgent.get_or_create_singleton,
+                memory_manager=self._memory,
+            )
+        return self._vision_agent
 
     async def _execute_tool(self, name: str, args: dict) -> str:
         """Exécute un outil et retourne son résultat en string."""
@@ -1706,6 +1718,28 @@ class TextAgent:
             return "Mode Telegram — identification vocale non disponible. Utilisateur : Bryan."
         elif name == "enroll_voice":
             return "Enrollment vocal non disponible via Telegram. Lance depuis l'interface voix."
+
+        # ═══ VISION OBJECT (YOLO) ═══
+        elif name == "detect_objects":
+            agent = await self._ensure_vision_agent()
+            return await agent.detect_on_demand(
+                source=args.get("source", "camera"),
+                filter_class=args.get("filter") or None,
+                max_results=int(args.get("max_results", 10)),
+            )
+        elif name == "query_seen_objects":
+            agent = await self._ensure_vision_agent()
+            return await agent.query_history(
+                object_query=args.get("object", ""),
+                since=args.get("since"),
+                max_results=int(args.get("max_results", 5)),
+            )
+        elif name == "count_objects_seen":
+            agent = await self._ensure_vision_agent()
+            return await agent.count_seen(
+                object_class=args.get("object", ""),
+                period=args.get("period", "today"),
+            )
 
         # Outil déclaré mais agent None (variable d'env manquante ou init échouée)
         prefix = name.split("_")[0]
