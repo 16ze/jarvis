@@ -274,10 +274,31 @@ async def startup_event():
     print("[SERVER] Startup: Démarrage du bridge Telegram/WhatsApp...")
     external_bridge.start_bridge()
 
+    # ── Vision objet (YOLO) — singleton env-gated ─────────────────────────────
+    if os.getenv("VISION_OBJECT_ENABLED", "false").lower() == "true":
+        try:
+            from vision_object_agent import VisionObjectAgent
+            VisionObjectAgent.get_or_create_singleton(memory_manager=None)
+            print("[SERVER] VisionObjectAgent singleton initialized")
+        except Exception as exc:
+            print(f"[SERVER] VisionObjectAgent init failed: {exc}")
+
     # ── Health report initial ─────────────────────────────────────────────────
     global _health_report
     _health_report = await build_health_report()
     await sio.emit("health_report", _health_report)
+
+
+@app.on_event("shutdown")
+async def shutdown_vision_object_agent():
+    """Stoppe proprement le VisionObjectAgent (cancel boucles caméra + cleanup)."""
+    try:
+        from vision_object_agent import VisionObjectAgent
+        agent = VisionObjectAgent.peek_singleton()
+        if agent is not None:
+            await agent.stop()
+    except Exception as exc:
+        print(f"[SERVER] VisionObjectAgent shutdown failed: {exc}")
 
 
 @app.get("/health")
