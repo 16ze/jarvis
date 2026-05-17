@@ -10,7 +10,7 @@
         "switch_project": true,
         "list_projects": true,
         "create_directory": true,
-        "iterate_cad": true,
+        "iterate_cad": false,
         "print_stl": false,
         "discover_printers": true,
         "control_light": true,
@@ -129,7 +129,7 @@
             "model": "Tuya"
         }
     ],
-    "camera_flipped": false,
+    "camera_flipped": true,
     "timezone": "Europe/Paris",
     "cameras": [
         {
