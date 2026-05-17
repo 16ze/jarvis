@@ -10,9 +10,16 @@ import logging
 from dataclasses import dataclass
 
 import numpy as np
-from ultralytics import YOLO
 
 from vision_translations import translate_class
+
+# Import tolérant : ultralytics n'est pas requis pour que le module s'importe.
+# Permet à ada.py / external_bridge.py de booter sans avoir ultralytics installé.
+# YoloDetector lève une ImportError claire si on essaie de l'instancier sans.
+try:
+    from ultralytics import YOLO  # type: ignore
+except ImportError:
+    YOLO = None  # type: ignore
 
 _LOG = logging.getLogger("vision_object")
 
@@ -36,6 +43,11 @@ class YoloDetector:
         device: str = "mps",
         confidence_min: float = 0.45,
     ) -> None:
+        if YOLO is None:
+            raise ImportError(
+                "ultralytics non installé. Pour activer la couche YOLO : "
+                "`pip install 'ultralytics>=8.4'` (compatible numpy 2.x)."
+            )
         self._device = device
         self._confidence_min = confidence_min
         # Téléchargement automatique du modèle si absent (~52 MB pour yolov8m-oiv7)
