@@ -315,6 +315,29 @@ async def status():
     return {"status": "running", "service": "A.D.A Backend"}
 
 
+@app.get("/brain/v3/traces")
+async def brain_v3_traces(n: int = 50):
+    """Retourne les N dernières décisions du brain v3 pour calibration shadow."""
+    try:
+        from brain.brain_manager import get_brain
+        brain = get_brain()
+        v3 = getattr(brain, "_v3", None)
+        if v3 is None:
+            return {"enabled": False, "decisions": []}
+        state = v3.get_debug_state()
+        limit = max(1, min(int(n), 500))
+        return {
+            "enabled": state["enabled"],
+            "shadow_mode": state["shadow_mode"],
+            "degraded": state["degraded"],
+            "budget": state["budget"],
+            "habituation_size": state["habituation_size"],
+            "decisions": state["recent_decisions"][:limit],
+        }
+    except Exception as exc:
+        return {"error": str(exc), "decisions": []}
+
+
 # ─── SPOTIFY OAuth ────────────────────────────────────────────────────────────
 
 @app.get("/spotify/auth")
