@@ -34,6 +34,14 @@ class BrainManager:
         self._lock = Lock()
         self._last_temperature: float | None = None
         self._degraded_until = 0.0
+        self._v3 = None
+        if _env_bool("BRAIN_V3_ENABLED", False):
+            try:
+                from brain.v3.v3_manager import V3Manager
+                self._v3 = V3Manager(limbic_ref=self.limbic)
+            except Exception as exc:
+                print(f"[BRAIN_V3] init failed, falling back to v2: {exc}")
+                self._v3 = None
 
     @property
     def enabled(self) -> bool:
@@ -138,6 +146,19 @@ class BrainManager:
             fallback=None,
         )
 
+    def ingest_stimulus(self, stimulus: dict) -> str | None:
+        """Pont YOLO/screen_watcher -> brain."""
+        if not self.enabled or self._is_degraded():
+            return None
+        return self._safe(
+            "ingest_stimulus",
+            lambda: self._dispatch_stimulus(
+                stimulus,
+                channel=stimulus.get("source", "vision_object"),
+            ),
+            fallback=None,
+        )
+
     def consume_spontaneous_impulse(self) -> str | None:
         if not self.enabled or self._is_degraded():
             return None
@@ -182,10 +203,27 @@ class BrainManager:
         return self.limbic.verifier_action_spontanee()
 
     def _dispatch_stimulus(self, payload: dict, channel: str) -> str | None:
-        """Route un stimulus via v3 si activé, sinon v2 direct."""
+        """Route un stimulus visuel via v3 si activé, puis v2 dans tous les cas."""
+        decision = None
+        if self._v3 is not None and self._v3.enabled:
+            decision = self._v3.process(payload, channel=channel)
+            if self._v3.shadow_mode:
+                decision = None
+
+        v2_prompt: str | None = None
         if channel == "vision_scene":
-            return self._existing_visual_scene_logic(payload)
-        return None
+            v2_prompt = self._existing_visual_scene_logic(payload)
+        elif channel == "vision_object":
+            try:
+                self.limbic.analyser_scene_visuelle(payload)
+            except Exception:
+                pass
+
+        if decision is not None and decision.action != "REACT":
+            return None
+        if decision is not None and decision.action == "REACT" and decision.prompt_hint:
+            return decision.prompt_hint
+        return v2_prompt
 
     def _start_impl(
         self,
@@ -210,6 +248,8 @@ class BrainManager:
             if self._adapter is not None:
                 self._adapter.arret_propre()
                 self._adapter = None
+            if self._v3 is not None:
+                self._v3.stop()
 
     def _internal_compute_block(self) -> str:
         return build_mood_block(self.limbic.penser("system_instruction"))
