@@ -27,6 +27,14 @@ class MemoryManager:
         self.entities = self.client.get_or_create_collection("entities")
         self.documents = self.client.get_or_create_collection("documents")
 
+        # Collection pour la couche vision objet (YOLO)
+        # Tolère un échec d'init : la couche vision sait fonctionner sans Chroma.
+        try:
+            self.vision_collection = self.client.get_or_create_collection("vision_objects")
+        except Exception as exc:
+            print(f"[MEMORY] vision_objects collection init failed: {exc}")
+            self.vision_collection = None
+
         # Mémoire procédurale — fichier JSON
         self.procedural_path = MEMORY_DIR / "procedural.json"
         if not self.procedural_path.exists():
