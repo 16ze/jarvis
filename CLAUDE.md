@@ -65,6 +65,36 @@ self_correction_agent.py → Claude Opus 4.6 — auto-correction des erreurs
 | Anticipation | `anticipation_agent.py` | asyncio/Gemini pur |
 | Monitoring | `monitoring_agent.py` | asyncio/Gemini pur |
 
+### Couche vision objet (YOLO)
+
+Détection d'objets locale en complément de MediaPipe (visages/gestes) et Gemini multimodal (scène sémantique).
+**Sans rien retirer ni modifier le brain SNN.**
+
+| Fichier | Rôle |
+|---|---|
+| `backend/yolo_detector.py` | Wrapper stateless YOLO + ByteTrack (ultralytics) |
+| `backend/vision_translations.py` | Mapping OIV7 EN → FR (80+ classes) |
+| `backend/vision_deduplicator.py` | IoU matching → events APPEARED/MOVED/DISAPPEARED/UPDATED |
+| `backend/vision_storage.py` | SQLite (factuel) + ChromaDB (sémantique) |
+| `backend/vision_object_agent.py` | Singleton orchestrateur (PULL + boucles PUSH + cleanup) |
+
+**Master switch :** `VISION_OBJECT_ENABLED=false` désactive tout (aucun import).
+
+**3 tools Gemini exposés (mode PULL) :**
+- `detect_objects(source, filter?, max?)` — détection one-shot caméra ou écran
+- `query_seen_objects(object, since?, max_results?)` — recherche historique (SQLite + Chroma)
+- `count_objects_seen(object, period)` — comptage par `track_id` distinct
+
+**Mode PUSH :**
+- Boucle caméra 10 fps (partage la frame avec MediaPipe via `MultiUserFaceDetector.get_last_frame()`)
+- Boucle écran greffée sur `screen_watcher._analyze_frame` (fire-and-forget)
+- Stimuli propagés au brain SNN avec `source="vision_object"` (même schéma que `visual_scene_observer`)
+
+**Throttling :** 1 event/sec/classe, hard cap 10/s. Classes `Person/Cat/Dog/Fire/Knife/Gun` bypass le throttle.
+
+**Spec :** `docs/superpowers/specs/2026-05-17-yolo-vision-layer-design.md`
+**Plan :** `docs/superpowers/plans/2026-05-17-yolo-vision-layer-implementation.md`
+
 ### Connecteurs MCP (`backend/mcps/`)
 
 GitHub, Telegram, Slack, WhatsApp, Spotify, Google Maps, Drive, YouTube,
