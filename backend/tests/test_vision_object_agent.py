@@ -154,3 +154,55 @@ async def test_count_seen_returns_string(mock_memory_manager, temp_db_path):
         )
         result = await agent.count_seen(object_class="chat", period="today")
     assert isinstance(result, str)
+
+
+async def test_camera_loop_calls_detector_when_frame_available(mock_memory_manager, temp_db_path, fake_frame_bgr):
+    """Boucle camera : au moins 1 inférence si la frame est disponible."""
+    detector = MagicMock()
+    detector.detect = MagicMock(return_value=[])
+
+    with patch("vision_object_agent.YoloDetector", return_value=detector):
+        agent = VisionObjectAgent(
+            face_frame_source=MagicMock(get_last_frame=MagicMock(return_value=fake_frame_bgr)),
+            memory_manager=mock_memory_manager,
+            db_path=temp_db_path,
+        )
+        await agent.start_camera_loop(fps=20)
+        await asyncio.sleep(0.2)
+        await agent.stop()
+
+    assert detector.detect.call_count >= 1
+
+
+async def test_camera_loop_skips_when_frame_is_none(mock_memory_manager, temp_db_path):
+    detector = MagicMock()
+    detector.detect = MagicMock(return_value=[])
+
+    with patch("vision_object_agent.YoloDetector", return_value=detector):
+        agent = VisionObjectAgent(
+            face_frame_source=MagicMock(get_last_frame=MagicMock(return_value=None)),
+            memory_manager=mock_memory_manager,
+            db_path=temp_db_path,
+        )
+        await agent.start_camera_loop(fps=20)
+        await asyncio.sleep(0.15)
+        await agent.stop()
+
+    assert detector.detect.call_count == 0
+
+
+async def test_camera_loop_does_not_double_start(mock_memory_manager, temp_db_path, fake_frame_bgr):
+    detector = MagicMock()
+    detector.detect = MagicMock(return_value=[])
+
+    with patch("vision_object_agent.YoloDetector", return_value=detector):
+        agent = VisionObjectAgent(
+            face_frame_source=MagicMock(get_last_frame=MagicMock(return_value=fake_frame_bgr)),
+            memory_manager=mock_memory_manager,
+            db_path=temp_db_path,
+        )
+        await agent.start_camera_loop(fps=10)
+        first_task = agent._camera_task
+        await agent.start_camera_loop(fps=10)
+        assert agent._camera_task is first_task
+        await agent.stop()

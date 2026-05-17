@@ -316,6 +316,37 @@ class VisionObjectAgent:
 
     async def start(self) -> None:
         _LOG.info("[VISION_OBJ] Agent started (singleton)")
+        if os.getenv("VISION_OBJECT_CAMERA_LOOP", "true").lower() == "true":
+            fps = int(os.getenv("VISION_OBJECT_FPS", "10"))
+            await self.start_camera_loop(fps=fps)
+
+    async def start_camera_loop(self, fps: int = 10) -> None:
+        """Démarre la boucle continue sur la caméra (partagée avec MediaPipe)."""
+        if self._camera_task is not None and not self._camera_task.done():
+            return
+        period = 1.0 / max(1, fps)
+        self._stopping = False
+        self._camera_task = asyncio.create_task(self._run_camera_loop(period))
+        _LOG.info("[VISION_OBJ] Camera loop started (period=%.3fs, fps=%d)", period, fps)
+
+    async def _run_camera_loop(self, period: float) -> None:
+        while not self._stopping:
+            tick_start = time.monotonic()
+            try:
+                frame = None
+                if self._face_source is not None:
+                    frame = self._face_source.get_last_frame()
+                if frame is None:
+                    await asyncio.sleep(period)
+                    continue
+                await self._process_frame(frame, source="camera")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _LOG.warning("[VISION_OBJ] Camera loop tick failed: %s", exc)
+            elapsed = time.monotonic() - tick_start
+            sleep_for = max(0.0, period - elapsed)
+            await asyncio.sleep(sleep_for)
 
     async def stop(self) -> None:
         self._stopping = True
