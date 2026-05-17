@@ -62,3 +62,19 @@ def test_scene_visuelle_triste_augmente_attachement():
     )
     assert c.get_snapshot()["oxytocine"] > BASELINE["oxytocine"]
     assert c.verifier_action_spontanee()
+
+
+def test_scene_visuelle_banal_reste_silencieuse():
+    c = CerveauEmotif()
+    c.analyser_scene_visuelle(
+        {
+            "description": "une table et une tasse",
+            "risk": "none",
+            "human_emotion": "unknown",
+            "movement": 0.05,
+            "attention_need": 0.10,
+            "affection": 0.0,
+            "valence": 0.0,
+        }
+    )
+    assert c.verifier_action_spontanee() is None
