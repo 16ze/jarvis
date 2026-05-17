@@ -16,6 +16,27 @@
 
 ---
 
+## Brain v3 — couche neurobiologique en surcouche
+
+Active par `BRAIN_V3_ENABLED=true`. En surcouche au-dessus du brain v2 (limbic v2 inchangé) :
+
+- `brain/v3/adapters.py` — normalise YOLO/scène/face/texte en Stimulus canoniques
+- `brain/v3/neurons.py` — `AdaptiveLIF` : LIF + threshold drift + AHP + modulation
+- `brain/v3/attention.py` — `AttentionField` : 5 neurones + inhibition latérale
+- `brain/v3/habituation.py` — `HabituationTracker` : LRU + decay exponentiel
+- `brain/v3/neuromodulation.py` — hormones v2 → ModulationVector
+- `brain/v3/policy.py` — `ReactionPolicy` : SUPPRESS/OBSERVE/REACT
+- `brain/v3/v3_manager.py` — façade défensive, refill loop
+
+**Mode shadow** (`BRAIN_V3_SHADOW_MODE=true`) : v3 logge ses décisions sans bloquer v2. Endpoint `GET /brain/v3/traces?n=50` pour visualiser en live.
+
+**Bug corrigé** : `ada.py:_on_vision_object_event` appelait `brain.ingest_stimulus()` qui n'existait pas dans v2 → tous les stimuli YOLO étaient perdus. v3 fournit cette méthode et le pont fonctionne.
+
+**Spec** : `docs/superpowers/specs/2026-05-17-brain-v3-neurobiological-design.md`
+**Plan** : `docs/superpowers/plans/2026-05-17-brain-v3-implementation.md`
+
+---
+
 ## Architecture — vue d'ensemble
 
 ```
