@@ -4797,9 +4797,12 @@ class AudioLoop:
     async def _on_vision_object_event(self, stimulus: dict) -> None:
         """Pont vers le brain SNN (additif, ne casse pas on_scene_event)."""
         brain = getattr(self, "_brain", None) or getattr(self, "brain", None)
+        if brain is None:
+            from brain.brain_manager import get_brain
+            brain = get_brain()
         if brain is not None and hasattr(brain, "ingest_stimulus"):
             try:
-                await brain.ingest_stimulus(stimulus)
+                await asyncio.to_thread(brain.ingest_stimulus, stimulus)
             except Exception as exc:
                 print(f"[VISION_OBJ] brain.ingest_stimulus failed: {exc}")
 
