@@ -911,6 +911,7 @@ from presence_manager import PresenceManager
 from user_profile_manager import UserProfileManager
 from authenticator import MultiUserFaceDetector
 from visual_scene_observer import analyze_visual_scene
+from vision_object_agent import VisionObjectAgent
 from mcps.slack_mcp import SlackMCP
 from mcps.telegram_mcp import TelegramMCP
 from mcps.whatsapp_mcp import WhatsAppMCP
@@ -1122,6 +1123,8 @@ class AudioLoop:
 
             warnings.warn(f"[ADA] SelfEvolutionAgent init: {e}")
             self.evolution_agent = None
+        # ═══ VISION OBJECT (YOLO) — lazy-init singleton ═══
+        self._vision_agent: VisionObjectAgent | None = None
         self.docker = DockerMCP()
         self.ha = HomeAssistantMCP()
         self.spotify = SpotifyMCP()
@@ -4778,6 +4781,28 @@ class AudioLoop:
 
         return "Désolé, je n'ai pas pu terminer cette tâche."
 
+    async def _ensure_vision_agent(self) -> VisionObjectAgent:
+        """Lazy-init du singleton VisionObjectAgent (partage la frame avec MediaPipe)."""
+        if self._vision_agent is None:
+            face_source = getattr(self, "_face_detector", None) or getattr(self, "face_detector", None)
+            self._vision_agent = await asyncio.to_thread(
+                VisionObjectAgent.get_or_create_singleton,
+                memory_manager=getattr(self, "memory", None),
+                face_frame_source=face_source,
+                on_object_event=self._on_vision_object_event,
+            )
+            await self._vision_agent.start()
+        return self._vision_agent
+
+    async def _on_vision_object_event(self, stimulus: dict) -> None:
+        """Pont vers le brain SNN (additif, ne casse pas on_scene_event)."""
+        brain = getattr(self, "_brain", None) or getattr(self, "brain", None)
+        if brain is not None and hasattr(brain, "ingest_stimulus"):
+            try:
+                await brain.ingest_stimulus(stimulus)
+            except Exception as exc:
+                print(f"[VISION_OBJ] brain.ingest_stimulus failed: {exc}")
+
     async def _execute_text_tool(self, name: str, args: dict) -> str:
         """Dispatch d'outils pour le mode texte (Telegram/WhatsApp/etc.)."""
         print(f"[ADA TEXT] Tool: {name}")
@@ -5832,6 +5857,27 @@ class AudioLoop:
                     presence_manager.voice_recognizer.reload_embeddings()
                     self._guest_detection_pending = False
                     return f"Profil créé pour {profile['name']}. Bienvenue !"
+                # ═══ VISION OBJECT (YOLO) ═══
+                elif n == "detect_objects":
+                    agent = await self._ensure_vision_agent()
+                    return await agent.detect_on_demand(
+                        source=args.get("source", "camera"),
+                        filter_class=args.get("filter") or None,
+                        max_results=int(args.get("max_results", 10)),
+                    )
+                elif n == "query_seen_objects":
+                    agent = await self._ensure_vision_agent()
+                    return await agent.query_history(
+                        object_query=args.get("object", ""),
+                        since=args.get("since"),
+                        max_results=int(args.get("max_results", 5)),
+                    )
+                elif n == "count_objects_seen":
+                    agent = await self._ensure_vision_agent()
+                    return await agent.count_seen(
+                        object_class=args.get("object", ""),
+                        period=args.get("period", "today"),
+                    )
                 return f"MCP '{name}' non mappé."
             else:
                 return f"Outil '{name}' non disponible."
