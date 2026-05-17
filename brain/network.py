@@ -10,6 +10,7 @@ observateur : ses spikes sont consommés par limbic via le brain_manager.
 
 from enum import Enum
 
+from brain.calibration import env_float
 from brain.neurons import NeuroneLIF
 
 
@@ -21,11 +22,36 @@ class EtatEveil(Enum):
 
 class ReseauAttention:
     def __init__(self) -> None:
-        self.n_vision    = NeuroneLIF("vision",    seuil=0.65, fuite=0.12, periode_refractaire=0.3)
-        self.n_mouvement = NeuroneLIF("mouvement", seuil=0.45, fuite=0.22, periode_refractaire=0.3)
-        self.n_audition  = NeuroneLIF("audition",  seuil=0.55, fuite=0.15, periode_refractaire=0.3)
-        self.n_textuel   = NeuroneLIF("textuel",   seuil=0.55, fuite=0.18, periode_refractaire=0.5)
-        self.n_thalamus  = NeuroneLIF("thalamus",  seuil=1.0,  fuite=0.07, periode_refractaire=25.0)
+        self.n_vision = NeuroneLIF(
+            "vision",
+            seuil=env_float("BRAIN_VISION_THRESHOLD", 0.70),
+            fuite=env_float("BRAIN_VISION_FUITE", 0.12),
+            periode_refractaire=env_float("BRAIN_VISION_REFRACTORY_SEC", 0.3),
+        )
+        self.n_mouvement = NeuroneLIF(
+            "mouvement",
+            seuil=env_float("BRAIN_MOVEMENT_THRESHOLD", 0.55),
+            fuite=env_float("BRAIN_MOVEMENT_FUITE", 0.22),
+            periode_refractaire=env_float("BRAIN_MOVEMENT_REFRACTORY_SEC", 0.3),
+        )
+        self.n_audition = NeuroneLIF(
+            "audition",
+            seuil=env_float("BRAIN_AUDITION_THRESHOLD", 0.60),
+            fuite=env_float("BRAIN_AUDITION_FUITE", 0.15),
+            periode_refractaire=env_float("BRAIN_AUDITION_REFRACTORY_SEC", 0.3),
+        )
+        self.n_textuel = NeuroneLIF(
+            "textuel",
+            seuil=env_float("BRAIN_TEXT_THRESHOLD", 0.60),
+            fuite=env_float("BRAIN_TEXT_FUITE", 0.18),
+            periode_refractaire=env_float("BRAIN_TEXT_REFRACTORY_SEC", 0.5),
+        )
+        self.n_thalamus = NeuroneLIF(
+            "thalamus",
+            seuil=env_float("BRAIN_THALAMUS_THRESHOLD", 1.25),
+            fuite=env_float("BRAIN_THALAMUS_FUITE", 0.05),
+            periode_refractaire=env_float("BRAIN_THALAMUS_REFRACTORY_SEC", 35.0),
+        )
         self._etat = EtatEveil.SOMMEIL
 
     def tick_visual(self, presence: float, mouvement: float) -> bool:
