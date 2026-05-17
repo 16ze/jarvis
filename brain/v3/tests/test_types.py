@@ -5,6 +5,7 @@ from brain.v3.types import ModulationVector, ReactionDecision, Stimulus
 
 
 def test_stimulus_is_frozen():
+    from dataclasses import FrozenInstanceError
     s = Stimulus(
         canonical_id="obj:cat:appeared",
         channel="vision_object",
@@ -15,7 +16,7 @@ def test_stimulus_is_frozen():
         ts=1234.5,
         raw={},
     )
-    with pytest.raises(Exception):  # FrozenInstanceError ou AttributeError
+    with pytest.raises(FrozenInstanceError):
         s.intensity = 0.9
 
 
@@ -38,3 +39,31 @@ def test_stimulus_intensity_bounds_documented_only():
     s = Stimulus("k", "vision_object", intensity=2.0, valence=0.0,
                   risk="none", attention_need=0.0, ts=0.0, raw={})
     assert s.intensity == 2.0  # pas de clamp ici
+
+
+def test_stimulus_is_hashable():
+    """raw est exclu du hash, donc Stimulus peut être utilisé dans des sets/dict keys."""
+    s = Stimulus(
+        canonical_id="obj:cat:appeared",
+        channel="vision_object",
+        intensity=0.5,
+        valence=0.0,
+        risk="none",
+        attention_need=0.3,
+        ts=1234.5,
+        raw={"foo": 1},
+    )
+    h = hash(s)
+    assert isinstance(h, int)
+    # Deux stimuli avec les mêmes champs sauf raw doivent avoir le même hash
+    s2 = Stimulus(
+        canonical_id="obj:cat:appeared",
+        channel="vision_object",
+        intensity=0.5,
+        valence=0.0,
+        risk="none",
+        attention_need=0.3,
+        ts=1234.5,
+        raw={"different": "payload"},
+    )
+    assert hash(s) == hash(s2)

@@ -1,7 +1,7 @@
 """Dataclasses immuables échangées entre les modules du brain v3."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,7 @@ class Stimulus:
     risk: str               # "none" | "low" | "medium" | "high"
     attention_need: float   # [0..1]
     ts: float               # time.monotonic()
-    raw: dict               # payload original — passé tel quel à limbic v2
+    raw: dict = field(default_factory=dict, hash=False, compare=False)  # payload original — passé tel quel à limbic v2
 
 
 @dataclass(frozen=True)
