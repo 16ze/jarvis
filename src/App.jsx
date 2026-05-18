@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { windowVariants, reduceMotionWindowVariants } from './lib/windowAnim';
 import io from 'socket.io-client';
 
 import Visualizer from './components/Visualizer';
@@ -47,6 +49,7 @@ const ipcRenderer = (() => {
 
 const isMobile = window.innerWidth < 768 || /iPhone|iPad|Android/i.test(navigator.userAgent);
 const isElectron = Boolean(window?.process?.versions?.electron);
+const effectiveWindowVariants = isElectron ? reduceMotionWindowVariants : windowVariants;
 
 function App() {
     const [status, setStatus] = useState('Disconnected');
@@ -2077,13 +2080,27 @@ function App() {
                     PROJECT: {currentProject?.toUpperCase()}
                 </div>
 
-                <div
+                <motion.div
                     id="video"
-                    className={`fixed bottom-4 right-4 transition-all duration-200 
-                        ${isVideoOn ? 'opacity-100' : 'opacity-0 pointer-events-none'} 
-                        backdrop-blur-md bg-black/40 border border-white/10 shadow-xl rounded-xl
-                    `}
-                    style={{ zIndex: 20 }}
+                    animate={isVideoOn ? 'open' : 'closed'}
+                    variants={{
+                        open: {
+                            scale: 1,
+                            opacity: 1,
+                            transition: { type: 'spring', stiffness: 280, damping: 24 },
+                        },
+                        closed: {
+                            scale: 0.85,
+                            opacity: 0,
+                            transition: { duration: 0.18, ease: 'easeIn' },
+                        },
+                    }}
+                    className="fixed bottom-4 right-4 backdrop-blur-md bg-white/60 border border-blue-400/40 shadow-xl rounded-xl"
+                    style={{
+                        zIndex: 20,
+                        pointerEvents: isVideoOn ? 'auto' : 'none',
+                        transformOrigin: 'center bottom',
+                    }}
                 >
                     <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none mix-blend-overlay"></div>
                     {/* Compact Display Container (1080p Source) */}
@@ -2112,103 +2129,146 @@ function App() {
                             </div>
                         )}
                     </div>
-                </div>
+                </motion.div>
 
                 {/* Settings Modal - Moved outside Video so it shows independently */}
-                {showSettings && (
-                    <SettingsWindow
-                        socket={socket}
-                        micDevices={micDevices}
-                        speakerDevices={speakerDevices}
-                        webcamDevices={webcamDevices}
-                        selectedMicId={selectedMicId}
-                        setSelectedMicId={setSelectedMicId}
-                        selectedSpeakerId={selectedSpeakerId}
-                        setSelectedSpeakerId={setSelectedSpeakerId}
-                        selectedWebcamId={selectedWebcamId}
-                        setSelectedWebcamId={setSelectedWebcamId}
-                        cursorSensitivity={cursorSensitivity}
-                        setCursorSensitivity={setCursorSensitivity}
-                        isCameraFlipped={isCameraFlipped}
-                        setIsCameraFlipped={setIsCameraFlipped}
-                        handleFileUpload={handleFileUpload}
-                        onClose={() => setShowSettings(false)}
-                    />
-                )}
-
-                {/* CAD Window Overlay - Moved outside of Video so it can show independently */}
-                {showCadWindow && (
-                    <div
-                        id="cad"
-                        className={`absolute flex flex-col transition-all duration-200
-                        backdrop-blur-xl bg-white/70 border border-blue-400/40 shadow-2xl overflow-hidden rounded-2xl
-                        ${activeDragElement === 'cad' ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''}
-                    `}
-                        style={{
-                            left: elementPositions.cad?.x || window.innerWidth / 2,
-                            top: elementPositions.cad?.y || window.innerHeight / 2,
-                            transform: 'translate(-50%, -50%)',
-                            width: `${elementSizes.cad.w}px`,
-                            height: `${elementSizes.cad.h}px`,
-                            pointerEvents: 'auto',
-                            zIndex: getZIndex('cad')
-                        }}
-                        onMouseDown={(e) => handleMouseDown(e, 'cad')}
-                    >
-                        {/* Drag Handle Header */}
-                        <div
-                            data-drag-handle
-                            className="h-8 bg-white/60 border-b border-blue-400/30 flex items-center justify-between px-3 cursor-grab active:cursor-grabbing shrink-0"
+                <AnimatePresence>
+                    {showSettings && (
+                        <motion.div
+                            key="settings-wrap"
+                            variants={effectiveWindowVariants}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            style={{ transformOrigin: 'center bottom', position: 'absolute', inset: 0, pointerEvents: 'none' }}
                         >
-                            <span className="text-xs font-bold tracking-widest text-blue-700">CAD PROTOTYPE</span>
-                            <button
-                                onClick={() => setShowCadWindow(false)}
-                                className="text-slate-500 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
-                            >
-                                ✕
-                            </button>
-                        </div>
-                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay z-10"></div>
-                        <div className="relative z-20 flex-1 min-h-0">
-                            <CadWindow
-                                data={cadData}
-                                thoughts={cadThoughts}
-                                retryInfo={cadRetryInfo}
-                                onClose={() => setShowCadWindow(false)}
+                            <SettingsWindow
                                 socket={socket}
+                                micDevices={micDevices}
+                                speakerDevices={speakerDevices}
+                                webcamDevices={webcamDevices}
+                                selectedMicId={selectedMicId}
+                                setSelectedMicId={setSelectedMicId}
+                                selectedSpeakerId={selectedSpeakerId}
+                                setSelectedSpeakerId={setSelectedSpeakerId}
+                                selectedWebcamId={selectedWebcamId}
+                                setSelectedWebcamId={setSelectedWebcamId}
+                                cursorSensitivity={cursorSensitivity}
+                                setCursorSensitivity={setCursorSensitivity}
+                                isCameraFlipped={isCameraFlipped}
+                                setIsCameraFlipped={setIsCameraFlipped}
+                                handleFileUpload={handleFileUpload}
+                                onClose={() => setShowSettings(false)}
                             />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* CAD Window Overlay */}
+                <AnimatePresence>
+                    {showCadWindow && (
+                        <div
+                            style={{
+                                position: 'absolute',
+                                left: elementPositions.cad?.x || window.innerWidth / 2,
+                                top: elementPositions.cad?.y || window.innerHeight / 2,
+                                transform: 'translate(-50%, -50%)',
+                                width: `${elementSizes.cad.w}px`,
+                                height: `${elementSizes.cad.h}px`,
+                                pointerEvents: 'auto',
+                                zIndex: getZIndex('cad'),
+                            }}
+                        >
+                            <motion.div
+                                id="cad"
+                                key="cad"
+                                variants={effectiveWindowVariants}
+                                initial="initial"
+                                animate="animate"
+                                exit="exit"
+                                onMouseDown={(e) => handleMouseDown(e, 'cad')}
+                                style={{
+                                    transformOrigin: 'center bottom',
+                                    width: '100%',
+                                    height: '100%',
+                                }}
+                                className={`flex flex-col
+                                backdrop-blur-xl bg-white/70 border border-blue-400/40 shadow-2xl overflow-hidden rounded-2xl
+                                ${activeDragElement === 'cad' ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''}
+                            `}
+                            >
+                                {/* Drag Handle Header */}
+                                <div
+                                    data-drag-handle
+                                    className="h-8 bg-white/60 border-b border-blue-400/30 flex items-center justify-between px-3 cursor-grab active:cursor-grabbing shrink-0"
+                                >
+                                    <span className="text-xs font-bold tracking-widest text-blue-700">CAD PROTOTYPE</span>
+                                    <button
+                                        onClick={() => setShowCadWindow(false)}
+                                        className="text-slate-500 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                                <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay z-10"></div>
+                                <div className="relative z-20 flex-1 min-h-0">
+                                    <CadWindow
+                                        data={cadData}
+                                        thoughts={cadThoughts}
+                                        retryInfo={cadRetryInfo}
+                                        onClose={() => setShowCadWindow(false)}
+                                        socket={socket}
+                                    />
+                                </div>
+                            </motion.div>
                         </div>
-                    </div>
-                )}
+                    )}
+                </AnimatePresence>
 
 
                 {/* Terminal Window */}
-                {showTerminalWindow && (
-                    <div
-                        id="terminal"
-                        className={`absolute flex flex-col transition-all duration-200
-                        backdrop-blur-xl bg-white/70 border border-blue-400/40 shadow-2xl overflow-hidden rounded-lg
-                        ${activeDragElement === 'terminal' ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''}
-                    `}
-                        style={{
-                            left: elementPositions.terminal?.x || window.innerWidth / 2 + 100,
-                            top: elementPositions.terminal?.y || window.innerHeight / 2 - 100,
-                            transform: 'translate(-50%, -50%)',
-                            width: '520px',
-                            height: '340px',
-                            pointerEvents: 'auto',
-                            zIndex: getZIndex('terminal')
-                        }}
-                        onMouseDown={(e) => handleMouseDown(e, 'terminal')}
-                    >
-                        <div className="relative z-20 w-full h-full">
-                            <TerminalWindow
-                                entries={terminalEntries}
-                                onClose={() => setShowTerminalWindow(false)}
-                            />
+                <AnimatePresence>
+                    {showTerminalWindow && (
+                        <div
+                            style={{
+                                position: 'absolute',
+                                left: elementPositions.terminal?.x || window.innerWidth / 2 + 100,
+                                top: elementPositions.terminal?.y || window.innerHeight / 2 - 100,
+                                transform: 'translate(-50%, -50%)',
+                                width: '520px',
+                                height: '340px',
+                                pointerEvents: 'auto',
+                                zIndex: getZIndex('terminal'),
+                            }}
+                        >
+                            <motion.div
+                                id="terminal"
+                                key="terminal"
+                                variants={effectiveWindowVariants}
+                                initial="initial"
+                                animate="animate"
+                                exit="exit"
+                                onMouseDown={(e) => handleMouseDown(e, 'terminal')}
+                                style={{
+                                    transformOrigin: 'center bottom',
+                                    width: '100%',
+                                    height: '100%',
+                                }}
+                                className={`flex flex-col
+                                backdrop-blur-xl bg-white/70 border border-blue-400/40 shadow-2xl overflow-hidden rounded-lg
+                                ${activeDragElement === 'terminal' ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''}
+                            `}
+                            >
+                                <div className="relative z-20 w-full h-full">
+                                    <TerminalWindow
+                                        entries={terminalEntries}
+                                        onClose={() => setShowTerminalWindow(false)}
+                                    />
+                                </div>
+                            </motion.div>
                         </div>
-                    </div>
-                )}
+                    )}
+                </AnimatePresence>
 
                 {/* Chat Module */}
                 <ChatModule
@@ -2264,36 +2324,69 @@ function App() {
                 </div>
 
                 {/* Kasa Window */}
-                {showKasaWindow && (
-                    <KasaWindow
-                        socket={socket}
-                        position={elementPositions.kasa}
-                        activeDragElement={activeDragElement}
-                        setActiveDragElement={setActiveDragElement}
-                        devices={kasaDevices}
-                        onClose={() => setShowKasaWindow(false)}
-                        onMouseDown={(e) => handleMouseDown(e, 'kasa')}
-                        zIndex={getZIndex('kasa')}
-                    />
-                )}
+                <AnimatePresence>
+                    {showKasaWindow && (
+                        <motion.div
+                            key="kasa-wrap"
+                            variants={effectiveWindowVariants}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            style={{ transformOrigin: 'center bottom', position: 'absolute', inset: 0, pointerEvents: 'none' }}
+                        >
+                            <KasaWindow
+                                socket={socket}
+                                position={elementPositions.kasa}
+                                activeDragElement={activeDragElement}
+                                setActiveDragElement={setActiveDragElement}
+                                devices={kasaDevices}
+                                onClose={() => setShowKasaWindow(false)}
+                                onMouseDown={(e) => handleMouseDown(e, 'kasa')}
+                                zIndex={getZIndex('kasa')}
+                            />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 {/* Printer Window */}
-                {showPrinterWindow && (
-                    <PrinterWindow
-                        socket={socket}
-                        onClose={() => setShowPrinterWindow(false)}
-                        position={elementPositions.printer}
-                        onMouseDown={(e) => handleMouseDown(e, 'printer')}
-                        activeDragElement={activeDragElement}
-                        setActiveDragElement={setActiveDragElement}
-                        zIndex={getZIndex('printer')}
-                    />
-                )}
+                <AnimatePresence>
+                    {showPrinterWindow && (
+                        <motion.div
+                            key="printer-wrap"
+                            variants={effectiveWindowVariants}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            style={{ transformOrigin: 'center bottom', position: 'absolute', inset: 0, pointerEvents: 'none' }}
+                        >
+                            <PrinterWindow
+                                socket={socket}
+                                onClose={() => setShowPrinterWindow(false)}
+                                position={elementPositions.printer}
+                                onMouseDown={(e) => handleMouseDown(e, 'printer')}
+                                activeDragElement={activeDragElement}
+                                setActiveDragElement={setActiveDragElement}
+                                zIndex={getZIndex('printer')}
+                            />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 {/* Documents / RAG Window */}
-                {showDocumentsWindow && (
-                    <DocumentsWindow onClose={() => setShowDocumentsWindow(false)} />
-                )}
+                <AnimatePresence>
+                    {showDocumentsWindow && (
+                        <motion.div
+                            key="documents-wrap"
+                            variants={effectiveWindowVariants}
+                            initial="initial"
+                            animate="animate"
+                            exit="exit"
+                            style={{ transformOrigin: 'center bottom', position: 'absolute', inset: 0, pointerEvents: 'none' }}
+                        >
+                            <DocumentsWindow onClose={() => setShowDocumentsWindow(false)} />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 {/* Tool Confirmation Modal */}
                 <ConfirmationPopup
