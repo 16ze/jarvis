@@ -26,9 +26,9 @@ const ChatModule = ({
         <div
             id="chat"
             onMouseDown={onMouseDown}
-            className={`absolute px-6 py-4 pointer-events-auto transition-all duration-200 
-            backdrop-blur-xl bg-black/40 border border-white/10 shadow-2xl rounded-2xl
-            ${isModularMode ? (activeDragElement === 'chat' ? 'ring-2 ring-green-500' : 'ring-1 ring-yellow-500/30') : ''}
+            className={`absolute px-6 py-4 pointer-events-auto transition-all duration-200
+            backdrop-blur-xl bg-white/70 border border-blue-400/40 shadow-2xl rounded-2xl
+            ${isModularMode ? (activeDragElement === 'chat' ? 'ring-2 ring-blue-500' : 'ring-1 ring-blue-300/40') : ''}
         `}
             style={{
                 left: position.x,
@@ -45,9 +45,9 @@ const ChatModule = ({
                 style={{ height: height ? `calc(${height}px - 70px)` : '15rem' }}
             >
                 {messages.slice(-5).map((msg, i) => (
-                    <div key={i} className="text-sm border-l-2 border-cyan-800/50 pl-3 py-1">
-                        <span className="text-cyan-600 font-mono text-xs opacity-70">[{msg.time}]</span> <span className="font-bold text-cyan-300 drop-shadow-sm">{msg.sender}</span>
-                        <div className="text-gray-300 mt-1 leading-relaxed">{msg.text}</div>
+                    <div key={i} className="text-sm border-l-2 border-blue-400/40 pl-3 py-1">
+                        <span className="text-blue-600 font-mono text-xs opacity-70">[{msg.time}]</span> <span className="font-bold text-blue-700 drop-shadow-sm">{msg.sender}</span>
+                        <div className="text-slate-700 mt-1 leading-relaxed">{msg.text}</div>
                     </div>
                 ))}
                 <div ref={messagesEndRef} />
@@ -60,10 +60,10 @@ const ChatModule = ({
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleSend}
                     placeholder="INITIALIZE COMMAND..."
-                    className="flex-1 bg-black/40 border border-cyan-700/30 rounded-lg p-3 text-cyan-50 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 transition-all placeholder-cyan-800/50 backdrop-blur-sm"
+                    className="flex-1 bg-white/70 border border-blue-400/40 rounded-lg p-3 text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400/50 transition-all placeholder:text-slate-400 backdrop-blur-sm"
                 />
             </div>
-            {isModularMode && <div className={`absolute -top-6 left-0 text-xs font-bold tracking-widest ${activeDragElement === 'chat' ? 'text-green-500' : 'text-yellow-500/50'}`}>CHAT MODULE</div>}
+            {isModularMode && <div className={`absolute -top-6 left-0 text-xs font-bold tracking-widest ${activeDragElement === 'chat' ? 'text-blue-600' : 'text-blue-400/60'}`}>CHAT MODULE</div>}
         </div>
     );
 };

@@ -2140,9 +2140,9 @@ function App() {
                 {showCadWindow && (
                     <div
                         id="cad"
-                        className={`absolute flex flex-col transition-all duration-200 
-                        backdrop-blur-xl bg-black/40 border border-white/10 shadow-2xl overflow-hidden rounded-2xl
-                        ${activeDragElement === 'cad' ? 'ring-2 ring-green-500 bg-green-500/10' : ''}
+                        className={`absolute flex flex-col transition-all duration-200
+                        backdrop-blur-xl bg-white/70 border border-blue-400/40 shadow-2xl overflow-hidden rounded-2xl
+                        ${activeDragElement === 'cad' ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''}
                     `}
                         style={{
                             left: elementPositions.cad?.x || window.innerWidth / 2,
@@ -2158,12 +2158,12 @@ function App() {
                         {/* Drag Handle Header */}
                         <div
                             data-drag-handle
-                            className="h-8 bg-gray-900/80 border-b border-cyan-500/20 flex items-center justify-between px-3 cursor-grab active:cursor-grabbing shrink-0"
+                            className="h-8 bg-white/60 border-b border-blue-400/30 flex items-center justify-between px-3 cursor-grab active:cursor-grabbing shrink-0"
                         >
-                            <span className="text-xs font-bold tracking-widest text-cyan-500/70">CAD PROTOTYPE</span>
+                            <span className="text-xs font-bold tracking-widest text-blue-700">CAD PROTOTYPE</span>
                             <button
                                 onClick={() => setShowCadWindow(false)}
-                                className="text-gray-400 hover:text-red-400 hover:bg-red-500/20 p-1 rounded transition-colors"
+                                className="text-slate-500 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
                             >
                                 ✕
                             </button>
@@ -2187,8 +2187,8 @@ function App() {
                     <div
                         id="terminal"
                         className={`absolute flex flex-col transition-all duration-200
-                        backdrop-blur-xl bg-black/40 border border-white/10 shadow-2xl overflow-hidden rounded-lg
-                        ${activeDragElement === 'terminal' ? 'ring-2 ring-green-500 bg-green-500/10' : ''}
+                        backdrop-blur-xl bg-white/70 border border-blue-400/40 shadow-2xl overflow-hidden rounded-lg
+                        ${activeDragElement === 'terminal' ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''}
                     `}
                         style={{
                             left: elementPositions.terminal?.x || window.innerWidth / 2 + 100,
