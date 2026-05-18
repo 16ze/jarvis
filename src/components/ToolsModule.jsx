@@ -1,5 +1,32 @@
-import React from 'react';
-import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Box, Monitor, BookOpen } from 'lucide-react';
+import React, { useState } from 'react';
+import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Box, Monitor, BookOpen, Image } from 'lucide-react';
+
+const ToolBubble = ({ icon, label, active, disabled, onClick, title, className = '' }) => (
+    <button
+        type="button"
+        onClick={disabled ? undefined : onClick}
+        disabled={disabled}
+        title={title || label}
+        aria-label={title || label}
+        className={`ada-glass-circle group flex h-[86px] w-[86px] flex-col items-center justify-center gap-1.5 text-[11px] font-medium text-[#10294d] transition-all duration-300 hover:-translate-y-1 hover:scale-[1.03] disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:scale-100 ${active ? 'text-blue-600 ring-2 ring-blue-400/40' : ''} ${className}`}
+    >
+        <span className={`${active ? 'text-blue-600' : 'text-blue-600/90'} transition-colors`}>
+            {icon}
+        </span>
+        <span className="max-w-[68px] truncate leading-none">{label}</span>
+    </button>
+);
+
+const MenuIcon = ({ open }) => (
+    <span className="relative block h-6 w-7 text-blue-600">
+        <span
+            className={`absolute left-0 top-[7px] h-[2px] w-7 rounded-full bg-current transition-transform duration-300 ${open ? 'translate-y-1 rotate-45' : ''}`}
+        />
+        <span
+            className={`absolute left-0 top-[15px] h-[2px] w-7 rounded-full bg-current transition-transform duration-300 ${open ? '-translate-y-1 -rotate-45' : ''}`}
+        />
+    </span>
+);
 
 const ToolsModule = ({
     isConnected,
@@ -23,134 +50,160 @@ const ToolsModule = ({
     onToggleScreenMode,
     onToggleDocuments,
     activeDragElement,
+    isModularMode = false,
 
     position,
     onMouseDown
 }) => {
+    const [isOpen, setIsOpen] = useState(false);
+
+    const tools = [
+        {
+            key: 'camera',
+            label: 'Camera',
+            icon: isVideoOn ? <Video size={27} strokeWidth={1.8} /> : <VideoOff size={27} strokeWidth={1.8} />,
+            active: isVideoOn,
+            onClick: onToggleVideo,
+        },
+        {
+            key: 'documents',
+            label: 'Documents',
+            icon: <BookOpen size={27} strokeWidth={1.8} />,
+            active: false,
+            onClick: onToggleDocuments,
+        },
+        {
+            key: 'settings',
+            label: 'Parametres',
+            icon: <Settings size={27} strokeWidth={1.8} />,
+            active: showSettings,
+            onClick: onToggleSettings,
+        },
+        {
+            key: 'mic',
+            label: isMuted ? 'Muet' : 'Micro',
+            icon: isMuted ? <MicOff size={27} strokeWidth={1.8} /> : <Mic size={27} strokeWidth={1.8} />,
+            active: !isMuted && isConnected,
+            disabled: !isConnected,
+            onClick: onToggleMute,
+        },
+        {
+            key: 'gallery',
+            label: 'Galerie',
+            icon: <Image size={27} strokeWidth={1.8} />,
+            active: false,
+            onClick: onToggleDocuments,
+        },
+        {
+            key: 'cad',
+            label: 'CAD',
+            icon: <Box size={25} strokeWidth={1.8} />,
+            active: showCadWindow,
+            onClick: onToggleCad,
+        },
+        {
+            key: 'printer',
+            label: 'Printer',
+            icon: <Printer size={25} strokeWidth={1.8} />,
+            active: showPrinterWindow,
+            onClick: onTogglePrinter,
+        },
+        {
+            key: 'home',
+            label: 'Maison',
+            icon: <Lightbulb size={25} strokeWidth={1.8} />,
+            active: showKasaWindow,
+            onClick: onToggleKasa,
+        },
+        {
+            key: 'hand',
+            label: 'Main',
+            icon: <Hand size={25} strokeWidth={1.8} />,
+            active: isHandTrackingEnabled,
+            onClick: onToggleHand,
+        },
+        {
+            key: 'power',
+            label: 'Power',
+            icon: <Power size={25} strokeWidth={1.8} />,
+            active: isConnected,
+            onClick: onTogglePower,
+        },
+    ];
+
     return (
         <div
             id="tools"
             onMouseDown={onMouseDown}
-            className={`absolute px-6 py-3 transition-all duration-200 
-                        backdrop-blur-xl bg-black/40 border border-white/10 shadow-2xl rounded-full`}
+            className="absolute pointer-events-auto"
             style={{
                 left: position.x,
                 top: position.y,
                 transform: 'translate(-50%, -50%)',
-                pointerEvents: 'auto'
+                width: 560,
+                height: 320,
+                zIndex: 80,
             }}
         >
-            <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none mix-blend-overlay rounded-full"></div>
+            <div
+                className={`absolute left-1/2 top-[88px] h-[190px] w-[610px] -translate-x-1/2 rounded-full bg-white/70 blur-xl transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0'}`}
+                aria-hidden="true"
+            />
+            <div className={`absolute inset-0 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
+                {tools.slice(0, 5).map((tool, index) => {
+                    const { key, ...toolProps } = tool;
+                    const positions = [
+                        { left: 280, top: 38 },
+                        { left: 164, top: 96 },
+                        { left: 396, top: 96 },
+                        { left: 116, top: 210 },
+                        { left: 444, top: 210 },
+                    ];
+                    return (
+                        <div
+                            key={key}
+                            className="absolute transition-all duration-300"
+                            style={{
+                                left: positions[index].left,
+                                top: positions[index].top,
+                                transform: isOpen ? 'translate(-50%, -50%) scale(1)' : 'translate(-50%, 25%) scale(0.7)',
+                                transitionDelay: `${index * 28}ms`,
+                            }}
+                        >
+                            <ToolBubble {...toolProps} />
+                        </div>
+                    );
+                })}
+            </div>
 
-            <div className="flex justify-center gap-6 relative z-10">
-                {/* Power Button */}
-                <button
-                    onClick={onTogglePower}
-                    className={`p-3 rounded-full border-2 transition-all duration-300 ${isConnected
-                        ? 'border-green-500 bg-green-500/10 text-green-500 hover:bg-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.3)]'
-                        : 'border-gray-600 bg-gray-600/10 text-gray-500 hover:bg-gray-600/20'
-                        } `}
-                >
-                    <Power size={24} />
-                </button>
+            <div className={`absolute inset-0 transition-opacity duration-300 ${isOpen && isModularMode ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
+                {tools.slice(5).map((tool, index) => {
+                    const { key, ...toolProps } = tool;
+                    return (
+                        <div
+                            key={key}
+                            className="absolute transition-all duration-300"
+                            style={{
+                                left: 96 + index * 92,
+                                top: 28,
+                                transform: isOpen ? 'translate(-50%, -50%) scale(0.86)' : 'translate(-50%, 35%) scale(0.6)',
+                            }}
+                        >
+                            <ToolBubble {...toolProps} className="h-[68px] w-[68px] text-[10px]" />
+                        </div>
+                    );
+                })}
+            </div>
 
-                {/* Mute Button */}
+            <div className="absolute left-1/2 top-[238px] -translate-x-1/2 -translate-y-1/2">
                 <button
-                    onClick={onToggleMute}
-                    disabled={!isConnected}
-                    className={`p-3 rounded-full border-2 transition-all duration-300 ${!isConnected
-                        ? 'border-gray-800 text-gray-800 cursor-not-allowed'
-                        : isMuted
-                            ? 'border-red-500 bg-red-500/10 text-red-500 hover:bg-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.3)]'
-                            : 'border-cyan-500 bg-cyan-500/10 text-cyan-500 hover:bg-cyan-500/20 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
-                        } `}
+                    type="button"
+                    onClick={() => setIsOpen(prev => !prev)}
+                    className="ada-glass-circle flex h-[76px] w-[76px] items-center justify-center text-blue-600 transition-all duration-300 hover:-translate-y-1 hover:scale-[1.03]"
+                    aria-label={isOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+                    title={isOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
                 >
-                    {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
-                </button>
-
-                {/* Video Button */}
-                <button
-                    onClick={onToggleVideo}
-                    className={`p-3 rounded-full border-2 transition-all duration-300 ${isVideoOn
-                        ? 'border-purple-500 bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.3)]'
-                        : 'border-cyan-900 text-cyan-700 hover:border-cyan-500 hover:text-cyan-500'
-                        } `}
-                >
-                    {isVideoOn ? <Video size={24} /> : <VideoOff size={24} />}
-                </button>
-
-                {/* Settings Button */}
-                <button
-                    onClick={onToggleSettings}
-                    className={`p-3 rounded-full border-2 transition-all ${showSettings ? 'border-cyan-400 text-cyan-400 bg-cyan-900/20' : 'border-cyan-900 text-cyan-700 hover:border-cyan-500 hover:text-cyan-500'
-                        } `}
-                >
-                    <Settings size={24} />
-                </button>
-
-                {/* Hand Tracking Toggle */}
-                <button
-                    onClick={onToggleHand}
-                    className={`p-3 rounded-full border-2 transition-all duration-300 ${isHandTrackingEnabled
-                        ? 'border-orange-500 bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 shadow-[0_0_15px_rgba(249,115,22,0.3)]'
-                        : 'border-cyan-900 text-cyan-700 hover:border-cyan-500 hover:text-cyan-500'
-                        } `}
-                >
-                    <Hand size={24} />
-                </button>
-
-                {/* Kasa Light Control */}
-                <button
-                    onClick={onToggleKasa}
-                    className={`p-3 rounded-full border-2 transition-all duration-300 ${showKasaWindow
-                        ? 'border-yellow-300 bg-yellow-300/10 text-yellow-300 hover:bg-yellow-300/20 shadow-[0_0_15px_rgba(253,224,71,0.3)]'
-                        : 'border-cyan-900 text-cyan-700 hover:border-cyan-500 hover:text-cyan-500'
-                        } `}
-                >
-                    <Lightbulb size={24} />
-                </button>
-
-                {/* 3D Printer Control */}
-                <button
-                    onClick={onTogglePrinter}
-                    className={`p-3 rounded-full border-2 transition-all duration-300 ${showPrinterWindow
-                        ? 'border-green-400 bg-green-400/10 text-green-400 hover:bg-green-400/20'
-                        : 'border-cyan-900 text-cyan-700 hover:border-green-500 hover:text-green-500'
-                        } `}
-                >
-                    <Printer size={24} />
-                </button>
-
-                {/* CAD Agent Toggle */}
-                <button
-                    onClick={onToggleCad}
-                    className={`p-3 rounded-full border-2 transition-all duration-300 ${showCadWindow
-                        ? 'border-cyan-400 bg-cyan-400/10 text-cyan-400 hover:bg-cyan-400/20 shadow-[0_0_15px_rgba(34,211,238,0.3)]'
-                        : 'border-cyan-900 text-cyan-700 hover:border-cyan-500 hover:text-cyan-500'
-                        } `}
-                >
-                    <Box size={24} />
-                </button>
-
-                {/* Screen Mode (Ada sees your screen) */}
-                <button
-                    onClick={onToggleScreenMode}
-                    title="Screen Mode — Ada sees your screen"
-                    className={`p-3 rounded-full border-2 transition-all duration-300 ${isScreenMode
-                        ? 'border-emerald-400 bg-emerald-400/10 text-emerald-400 hover:bg-emerald-400/20 shadow-[0_0_15px_rgba(52,211,153,0.3)]'
-                        : 'border-cyan-900 text-cyan-700 hover:border-emerald-500 hover:text-emerald-500'
-                        } `}
-                >
-                    <Monitor size={24} />
-                </button>
-
-                {/* Documents / RAG */}
-                <button
-                    onClick={onToggleDocuments}
-                    title="Base de connaissances"
-                    className="p-3 rounded-full border-2 border-cyan-900 text-cyan-700 hover:border-violet-500 hover:text-violet-400 transition-all duration-300"
-                >
-                    <BookOpen size={24} />
+                    <MenuIcon open={isOpen} />
                 </button>
             </div>
         </div>

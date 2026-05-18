@@ -1,16 +1,12 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { windowVariants, reduceMotionWindowVariants } from './lib/windowAnim';
 import io from 'socket.io-client';
 
 import Visualizer from './components/Visualizer';
-import PointCloudSphere, { POINTCLOUD_SPEAK_THRESHOLD } from './components/PointCloudSphere';
 import TopAudioBar from './components/TopAudioBar';
 import CadWindow from './components/CadWindow';
 import TerminalWindow from './components/TerminalWindow';
 import ChatModule from './components/ChatModule';
 import ToolsModule from './components/ToolsModule';
-import HamburgerMenu from './components/HamburgerMenu';
 import { Mic, MicOff, Settings, X, Minus, Power, Video, VideoOff, Layout, Hand, Printer, Clock } from 'lucide-react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 // MemoryPrompt removed - memory is now actively saved to project
@@ -49,7 +45,6 @@ const ipcRenderer = (() => {
 
 const isMobile = window.innerWidth < 768 || /iPhone|iPad|Android/i.test(navigator.userAgent);
 const isElectron = Boolean(window?.process?.versions?.electron);
-const effectiveWindowVariants = isElectron ? reduceMotionWindowVariants : windowVariants;
 
 function App() {
     const [status, setStatus] = useState('Disconnected');
@@ -279,50 +274,16 @@ function App() {
             const width = window.innerWidth;
             const height = window.innerHeight;
 
-            // Calculate available vertical space
-            // Tools is fixed at bottom ~100px space
-            const toolsY = height - 100;
-            // ToolsModule uses translate(-50%, -50%). So its Center Y.
-            // Let's reserve bottom 140px for tools to be safe and float it nicely.
-            const toolsCenterY = height - 100;
-
-            const gap = 20;
-
-            // Chat: Anchor is Top-Center (translate(-50%, 0)).
-            // We want Chat Bottom to be above Tools Top.
-            // Tools Top = toolsCenterY - (ToolsHeight/2) approx 40 = height - 140;
-            const chatBottomLimit = height - 140;
-
-            // Dynamic Height Calculation to fit screen
-            // Standard Heights
-            let vizH = 400;
-            let chatH = 250;
-            const topBarHeight = 60;
-
-            // Total needed: TopBar + Viz + Gap + Chat + Gap + Tools (140 reserved)
-            const totalNeeded = topBarHeight + vizH + gap + chatH + gap + 140;
-
-            if (height < totalNeeded) {
-                // Scale down
-                const available = height - topBarHeight - 140 - (gap * 2);
-                // Allocate 60% to Viz, 40% to Chat
-                vizH = available * 0.6;
-                chatH = available * 0.4;
-            }
-
-            // Positions
-            // Visualizer (Center Anchored)
-            // Top of Viz = TopBarHeight. Center = TopBarHeight + VizH/2
-            const vizY = topBarHeight + (vizH / 2); // Removed buffer
-
-            // Chat (Top Anchored)
-            // Top of Chat = TopBarHeight + VizH + Gap
-            const chatY = topBarHeight + vizH + gap;
+            const vizH = Math.min(620, Math.max(430, height * 0.58));
+            const vizY = Math.max(245, height * 0.38);
+            const toolsCenterY = height - 86;
+            const chatH = 150;
+            const chatY = height - 250;
 
             setElementSizes(prev => ({
                 ...prev,
-                visualizer: { w: Math.min(600, width * 0.8), h: vizH },
-                chat: { w: Math.min(600, width * 0.9), h: chatH }
+                visualizer: { w: Math.min(1180, width * 0.82), h: vizH },
+                chat: { w: Math.min(560, width * 0.82), h: chatH }
             }));
 
             setElementPositions(prev => ({
@@ -1953,13 +1914,7 @@ function App() {
     }
 
     return (
-        <div className={`h-screen w-screen bg-white text-slate-800 font-mono overflow-hidden flex flex-col relative selection:bg-blue-200 selection:text-blue-900 ${isElectron ? 'electron-performance' : ''}`}>
-
-            {/* --- PREMIUM UI LAYER --- */}
-
-            {/* --- PREMIUM UI LAYER --- */}
-
-            {/* --- PREMIUM UI LAYER --- */}
+        <div className={`ada-soft-shell h-screen w-screen text-[#10294d] font-mono overflow-hidden flex flex-col relative selection:bg-blue-100 selection:text-blue-900 ${isElectron ? 'electron-performance' : ''}`}>
 
             {/* Logic: Show AuthLock if we are NOT authenticated AND (Lock Screen is visible OR Auth is Enabled) 
                 Actually, simpler: isLockScreenVisible is the source of truth for visibility.
@@ -1974,67 +1929,63 @@ function App() {
                 />
             )}
 
-            {/* --- PREMIUM UI LAYER --- */}
-
-            {/* Background Grid/Effects - ALIVE BACKGROUND (Fixed: Static opacity) */}
+            {/* Background light field */}
             <div
-                className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-50 via-white to-white z-0 pointer-events-none"
-                style={{ opacity: 0.6 }}
+                className="absolute inset-0 z-0 pointer-events-none"
+                style={{
+                    backgroundImage: 'radial-gradient(circle at 50% 42%, rgba(60, 130, 246, 0.08), transparent 32%), radial-gradient(circle at 10% 20%, rgba(62, 139, 255, 0.08), transparent 18%)',
+                }}
             ></div>
 
-            {/* Ambient Glow (Fixed: Static) */}
             {!isElectron && (
                 <div
-                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-200/30 rounded-full blur-[120px] pointer-events-none"
+                    className="absolute top-[42%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[560px] bg-blue-200/20 blur-[90px] pointer-events-none"
                 />
             )}
 
             {/* Top Bar (Draggable) */}
-            <div className="z-50 flex items-center justify-between p-2 border-b border-blue-400/30 bg-white/70 backdrop-blur-md select-none sticky top-0" style={{ WebkitAppRegion: 'drag' }}>
+            <div className="z-50 flex items-center justify-between px-6 py-8 bg-transparent select-none sticky top-0" style={{ WebkitAppRegion: 'drag' }}>
                 <div className="flex items-center gap-4 pl-2">
-                    <h1 className="text-xl font-bold tracking-[0.2em] text-blue-600 drop-shadow-[0_0_10px_rgba(59,130,246,0.4)]">
-                        A.D.A
+                    <h1 className="text-2xl font-bold tracking-[0.02em] text-[#10294d]">
+                        ADA – REDESIGN
                     </h1>
-                    <div className="text-[10px] text-slate-500 border border-blue-200 px-1 rounded">
-                        V2.0.0
-                    </div>
                     {/* FPS Counter */}
                     {isVideoOn && (
-                        <div className="text-[10px] text-green-500 border border-green-900 px-1 rounded ml-2">
+                        <div className="hidden text-[10px] text-emerald-600 border border-emerald-200 bg-white/60 px-2 py-0.5 rounded-full ml-2">
                             FPS: {fps}
                         </div>
                     )}
                     {/* Connected Printers Count */}
                     {printerCount > 0 && (
-                        <div className="flex items-center gap-1.5 text-[10px] text-green-400 border border-green-500/30 bg-green-500/10 px-2 py-0.5 rounded ml-2">
-                            <Printer size={10} className="text-green-400" />
+                        <div className="hidden items-center gap-1.5 text-[10px] text-emerald-700 border border-emerald-200 bg-white/60 px-2 py-0.5 rounded-full ml-2">
+                            <Printer size={10} className="text-emerald-600" />
                             <span>{printerCount} Printer{printerCount !== 1 ? 's' : ''}</span>
                         </div>
                     )}
                     {/* Connected Smart Devices Count */}
                     {kasaDevices.length > 0 && (
-                        <div className="flex items-center gap-1.5 text-[10px] text-yellow-400 border border-yellow-500/30 bg-yellow-500/10 px-2 py-0.5 rounded ml-2">
-                            <span>💡</span>
+                        <div className="hidden items-center gap-1.5 text-[10px] text-amber-700 border border-amber-200 bg-white/60 px-2 py-0.5 rounded-full ml-2">
+                            <span>LIGHT</span>
                             <span>{kasaDevices.length} Device{kasaDevices.length !== 1 ? 's' : ''}</span>
                         </div>
                     )}
                 </div>
 
                 {/* Top Visualizer (User Mic) */}
-                <div className="flex-1 flex justify-center mx-4">
+                <div className="flex-1 flex justify-center mx-4 opacity-0 pointer-events-none">
                     <TopAudioBar audioData={micAudioData} audioDataRef={micAudioDataRef} />
                 </div>
 
                 <div className="flex items-center gap-2 pr-2" style={{ WebkitAppRegion: 'no-drag' }}>
                     {/* Live Clock */}
-                    <div className="flex items-center gap-1.5 text-[11px] text-slate-600 font-mono px-2">
-                        <Clock size={12} className="text-blue-500/70" />
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono px-2">
+                        <Clock size={12} className="text-blue-500/60" />
                         <span>{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                    <button onClick={handleMinimize} className="p-1 hover:bg-blue-100 rounded text-blue-600 transition-colors">
+                    <button onClick={handleMinimize} className="p-1 hover:bg-blue-50 rounded text-blue-600 transition-colors">
                         <Minus size={18} />
                     </button>
-                    <button onClick={handleMaximize} className="p-1 hover:bg-blue-100 rounded text-blue-600 transition-colors">
+                    <button onClick={handleMaximize} className="p-1 hover:bg-blue-50 rounded text-blue-600 transition-colors">
                         <div className="w-[14px] h-[14px] border-2 border-current rounded-[2px]" />
                     </button>
                     <button onClick={handleCloseRequest} className="p-1 hover:bg-red-900/50 rounded text-red-500 transition-colors">
@@ -2048,9 +1999,8 @@ function App() {
                 {/* Central Visualizer (AI Audio) */}
                 <div
                     id="visualizer"
-                    className={`absolute flex items-center justify-center transition-all duration-200
-                        backdrop-blur-xl bg-white/40 border border-blue-400/30 shadow-2xl overflow-visible
-                        ${isModularMode ? (activeDragElement === 'visualizer' ? 'ring-2 ring-green-500 bg-green-500/10' : 'ring-1 ring-yellow-500/30 bg-yellow-500/5') + ' rounded-2xl pointer-events-auto' : 'rounded-2xl pointer-events-none'}
+                    className={`absolute flex items-center justify-center transition-all duration-200 overflow-visible
+                        ${isModularMode ? (activeDragElement === 'visualizer' ? 'ring-2 ring-blue-400/40 bg-white/25' : 'ring-1 ring-blue-200/60 bg-white/10') + ' rounded-2xl pointer-events-auto' : 'pointer-events-none'}
                     `}
                     style={{
                         left: elementPositions.visualizer.x,
@@ -2061,54 +2011,49 @@ function App() {
                     }}
                     onMouseDown={(e) => handleMouseDown(e, 'visualizer')}
                 >
-                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay z-10"></div>
                     <div className="relative z-20">
-                        <PointCloudSphere
-                            isSpeaking={isConnected && !isMuted && !isElectron && (audioAmp || 0) > POINTCLOUD_SPEAK_THRESHOLD}
-                            intensity={isElectron ? 0 : (audioAmp || 0)}
+                        <Visualizer
+                            audioData={aiAudioData}
+                            audioDataRef={aiAudioDataRef}
+                            isListening={isConnected && !isMuted}
+                            intensity={isElectron ? null : audioAmp}
                             width={elementSizes.visualizer.w}
                             height={elementSizes.visualizer.h}
                             reduceMotion={isElectron}
                         />
                     </div>
-                    {isModularMode && <div className={`absolute top-2 right-2 text-xs font-bold tracking-widest z-20 ${activeDragElement === 'visualizer' ? 'text-green-500' : 'text-yellow-500/50'}`}>VISUALIZER</div>}
+                    {isModularMode && <div className={`absolute top-2 right-2 text-xs font-bold tracking-widest z-20 ${activeDragElement === 'visualizer' ? 'text-blue-600' : 'text-blue-400/60'}`}>VISUALIZER</div>}
                 </div>
 
                 {/* Video Feed Overlay */}
                 {/* Floating Project Label */}
-                <div className="absolute top-[70px] left-1/2 -translate-x-1/2 text-blue-700 text-xs font-mono tracking-widest pointer-events-none z-50 bg-white/70 px-2 py-1 rounded backdrop-blur-sm border border-blue-400/30">
+                <div className="absolute top-[86px] left-1/2 -translate-x-1/2 text-blue-700 text-xs font-mono tracking-widest pointer-events-none z-50 bg-white/55 px-3 py-1 rounded-full backdrop-blur-sm border border-white/80 shadow-[0_10px_30px_rgba(37,99,235,0.08)] opacity-0">
                     PROJECT: {currentProject?.toUpperCase()}
                 </div>
 
-                <motion.div
+                <div
                     id="video"
-                    animate={isVideoOn ? 'open' : 'closed'}
-                    variants={{
-                        open: {
-                            scale: 1,
-                            opacity: 1,
-                            transition: { type: 'spring', stiffness: 280, damping: 24 },
-                        },
-                        closed: {
-                            scale: 0.85,
-                            opacity: 0,
-                            transition: { duration: 0.18, ease: 'easeIn' },
-                        },
-                    }}
-                    className="fixed bottom-4 right-4 backdrop-blur-md bg-white/60 border border-blue-400/40 shadow-xl rounded-xl"
-                    style={{
-                        zIndex: 20,
-                        pointerEvents: isVideoOn ? 'auto' : 'none',
-                        transformOrigin: 'center bottom',
-                    }}
+                    className={`fixed bottom-10 right-14 transition-all duration-300 
+                        ${isVideoOn ? 'opacity-100' : 'opacity-0 pointer-events-none'} 
+                        ada-camera-window backdrop-blur-xl rounded-[18px] p-5
+                    `}
+                    style={{ zIndex: 20 }}
                 >
-                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none mix-blend-overlay"></div>
                     {/* Compact Display Container (1080p Source) */}
-                    <div className="relative border border-cyan-500/30 rounded-lg overflow-hidden shadow-[0_0_20px_rgba(6,182,212,0.1)] w-80 aspect-video bg-black/80">
+                    <div className="relative border border-white/60 rounded-[14px] overflow-hidden shadow-[0_18px_52px_rgba(37,99,235,0.20)] w-[480px] aspect-video bg-white/50">
                         {/* Hidden Video Element (Source) */}
                         <video ref={videoRef} autoPlay muted className="absolute inset-0 w-full h-full object-cover opacity-0" />
 
-                        <div className="absolute top-2 left-2 text-[10px] text-cyan-400 bg-black/60 backdrop-blur px-2 py-0.5 rounded border border-cyan-500/20 z-10 font-bold tracking-wider">CAM_01</div>
+                        <div className="absolute left-4 top-4 z-20 text-lg text-white drop-shadow-sm">Caméra</div>
+                        <button
+                            type="button"
+                            onClick={toggleVideo}
+                            className="absolute right-4 top-4 z-20 text-white/90 transition hover:text-white"
+                            aria-label="Fermer la caméra"
+                            title="Fermer la caméra"
+                        >
+                            <X size={22} strokeWidth={1.8} />
+                        </button>
 
                         {/* Canvas for Displaying Video + Skeleton (Ensures overlap) */}
                         <canvas
@@ -2128,147 +2073,133 @@ function App() {
                                 <div>DEAD: {handDebug.deadZone.toFixed(4)}</div>
                             </div>
                         )}
+                        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-5">
+                            <button
+                                type="button"
+                                onClick={toggleMute}
+                                className="ada-camera-control"
+                                aria-label={isMuted ? 'Activer le micro' : 'Couper le micro'}
+                                title={isMuted ? 'Activer le micro' : 'Couper le micro'}
+                            >
+                                {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={toggleVideo}
+                                className="ada-camera-control h-[58px] w-[58px]"
+                                aria-label="Caméra"
+                                title="Caméra"
+                            >
+                                <Video size={24} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowSettings(!showSettings)}
+                                className="ada-camera-control"
+                                aria-label="Paramètres caméra"
+                                title="Paramètres"
+                            >
+                                <Settings size={21} />
+                            </button>
+                        </div>
                     </div>
-                </motion.div>
+                </div>
 
                 {/* Settings Modal - Moved outside Video so it shows independently */}
-                <AnimatePresence>
-                    {showSettings && (
-                        <motion.div
-                            key="settings-wrap"
-                            variants={effectiveWindowVariants}
-                            initial="initial"
-                            animate="animate"
-                            exit="exit"
-                            style={{ transformOrigin: 'center bottom', position: 'absolute', inset: 0, pointerEvents: 'none' }}
-                        >
-                            <SettingsWindow
-                                socket={socket}
-                                micDevices={micDevices}
-                                speakerDevices={speakerDevices}
-                                webcamDevices={webcamDevices}
-                                selectedMicId={selectedMicId}
-                                setSelectedMicId={setSelectedMicId}
-                                selectedSpeakerId={selectedSpeakerId}
-                                setSelectedSpeakerId={setSelectedSpeakerId}
-                                selectedWebcamId={selectedWebcamId}
-                                setSelectedWebcamId={setSelectedWebcamId}
-                                cursorSensitivity={cursorSensitivity}
-                                setCursorSensitivity={setCursorSensitivity}
-                                isCameraFlipped={isCameraFlipped}
-                                setIsCameraFlipped={setIsCameraFlipped}
-                                handleFileUpload={handleFileUpload}
-                                onClose={() => setShowSettings(false)}
-                            />
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                {showSettings && (
+                    <SettingsWindow
+                        socket={socket}
+                        micDevices={micDevices}
+                        speakerDevices={speakerDevices}
+                        webcamDevices={webcamDevices}
+                        selectedMicId={selectedMicId}
+                        setSelectedMicId={setSelectedMicId}
+                        selectedSpeakerId={selectedSpeakerId}
+                        setSelectedSpeakerId={setSelectedSpeakerId}
+                        selectedWebcamId={selectedWebcamId}
+                        setSelectedWebcamId={setSelectedWebcamId}
+                        cursorSensitivity={cursorSensitivity}
+                        setCursorSensitivity={setCursorSensitivity}
+                        isCameraFlipped={isCameraFlipped}
+                        setIsCameraFlipped={setIsCameraFlipped}
+                        handleFileUpload={handleFileUpload}
+                        onClose={() => setShowSettings(false)}
+                    />
+                )}
 
-                {/* CAD Window Overlay */}
-                <AnimatePresence>
-                    {showCadWindow && (
+                {/* CAD Window Overlay - Moved outside of Video so it can show independently */}
+                {showCadWindow && (
+                    <div
+                        id="cad"
+                        className={`absolute flex flex-col transition-all duration-200 
+                        backdrop-blur-xl bg-black/40 border border-white/10 shadow-2xl overflow-hidden rounded-2xl
+                        ${activeDragElement === 'cad' ? 'ring-2 ring-green-500 bg-green-500/10' : ''}
+                    `}
+                        style={{
+                            left: elementPositions.cad?.x || window.innerWidth / 2,
+                            top: elementPositions.cad?.y || window.innerHeight / 2,
+                            transform: 'translate(-50%, -50%)',
+                            width: `${elementSizes.cad.w}px`,
+                            height: `${elementSizes.cad.h}px`,
+                            pointerEvents: 'auto',
+                            zIndex: getZIndex('cad')
+                        }}
+                        onMouseDown={(e) => handleMouseDown(e, 'cad')}
+                    >
+                        {/* Drag Handle Header */}
                         <div
-                            style={{
-                                position: 'absolute',
-                                left: elementPositions.cad?.x || window.innerWidth / 2,
-                                top: elementPositions.cad?.y || window.innerHeight / 2,
-                                transform: 'translate(-50%, -50%)',
-                                width: `${elementSizes.cad.w}px`,
-                                height: `${elementSizes.cad.h}px`,
-                                pointerEvents: 'auto',
-                                zIndex: getZIndex('cad'),
-                            }}
+                            data-drag-handle
+                            className="h-8 bg-gray-900/80 border-b border-cyan-500/20 flex items-center justify-between px-3 cursor-grab active:cursor-grabbing shrink-0"
                         >
-                            <motion.div
-                                id="cad"
-                                key="cad"
-                                variants={effectiveWindowVariants}
-                                initial="initial"
-                                animate="animate"
-                                exit="exit"
-                                onMouseDown={(e) => handleMouseDown(e, 'cad')}
-                                style={{
-                                    transformOrigin: 'center bottom',
-                                    width: '100%',
-                                    height: '100%',
-                                }}
-                                className={`flex flex-col
-                                backdrop-blur-xl bg-white/70 border border-blue-400/40 shadow-2xl overflow-hidden rounded-2xl
-                                ${activeDragElement === 'cad' ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''}
-                            `}
+                            <span className="text-xs font-bold tracking-widest text-cyan-500/70">CAD PROTOTYPE</span>
+                            <button
+                                onClick={() => setShowCadWindow(false)}
+                                className="text-gray-400 hover:text-red-400 hover:bg-red-500/20 p-1 rounded transition-colors"
                             >
-                                {/* Drag Handle Header */}
-                                <div
-                                    data-drag-handle
-                                    className="h-8 bg-white/60 border-b border-blue-400/30 flex items-center justify-between px-3 cursor-grab active:cursor-grabbing shrink-0"
-                                >
-                                    <span className="text-xs font-bold tracking-widest text-blue-700">CAD PROTOTYPE</span>
-                                    <button
-                                        onClick={() => setShowCadWindow(false)}
-                                        className="text-slate-500 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
-                                    >
-                                        ✕
-                                    </button>
-                                </div>
-                                <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay z-10"></div>
-                                <div className="relative z-20 flex-1 min-h-0">
-                                    <CadWindow
-                                        data={cadData}
-                                        thoughts={cadThoughts}
-                                        retryInfo={cadRetryInfo}
-                                        onClose={() => setShowCadWindow(false)}
-                                        socket={socket}
-                                    />
-                                </div>
-                            </motion.div>
+                                ✕
+                            </button>
                         </div>
-                    )}
-                </AnimatePresence>
+                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay z-10"></div>
+                        <div className="relative z-20 flex-1 min-h-0">
+                            <CadWindow
+                                data={cadData}
+                                thoughts={cadThoughts}
+                                retryInfo={cadRetryInfo}
+                                onClose={() => setShowCadWindow(false)}
+                                socket={socket}
+                            />
+                        </div>
+                    </div>
+                )}
 
 
                 {/* Terminal Window */}
-                <AnimatePresence>
-                    {showTerminalWindow && (
-                        <div
-                            style={{
-                                position: 'absolute',
-                                left: elementPositions.terminal?.x || window.innerWidth / 2 + 100,
-                                top: elementPositions.terminal?.y || window.innerHeight / 2 - 100,
-                                transform: 'translate(-50%, -50%)',
-                                width: '520px',
-                                height: '340px',
-                                pointerEvents: 'auto',
-                                zIndex: getZIndex('terminal'),
-                            }}
-                        >
-                            <motion.div
-                                id="terminal"
-                                key="terminal"
-                                variants={effectiveWindowVariants}
-                                initial="initial"
-                                animate="animate"
-                                exit="exit"
-                                onMouseDown={(e) => handleMouseDown(e, 'terminal')}
-                                style={{
-                                    transformOrigin: 'center bottom',
-                                    width: '100%',
-                                    height: '100%',
-                                }}
-                                className={`flex flex-col
-                                backdrop-blur-xl bg-white/70 border border-blue-400/40 shadow-2xl overflow-hidden rounded-lg
-                                ${activeDragElement === 'terminal' ? 'ring-2 ring-blue-500 bg-blue-500/10' : ''}
-                            `}
-                            >
-                                <div className="relative z-20 w-full h-full">
-                                    <TerminalWindow
-                                        entries={terminalEntries}
-                                        onClose={() => setShowTerminalWindow(false)}
-                                    />
-                                </div>
-                            </motion.div>
+                {showTerminalWindow && (
+                    <div
+                        id="terminal"
+                        className={`absolute flex flex-col transition-all duration-200
+                        backdrop-blur-xl bg-black/40 border border-white/10 shadow-2xl overflow-hidden rounded-lg
+                        ${activeDragElement === 'terminal' ? 'ring-2 ring-green-500 bg-green-500/10' : ''}
+                    `}
+                        style={{
+                            left: elementPositions.terminal?.x || window.innerWidth / 2 + 100,
+                            top: elementPositions.terminal?.y || window.innerHeight / 2 - 100,
+                            transform: 'translate(-50%, -50%)',
+                            width: '520px',
+                            height: '340px',
+                            pointerEvents: 'auto',
+                            zIndex: getZIndex('terminal')
+                        }}
+                        onMouseDown={(e) => handleMouseDown(e, 'terminal')}
+                    >
+                        <div className="relative z-20 w-full h-full">
+                            <TerminalWindow
+                                entries={terminalEntries}
+                                onClose={() => setShowTerminalWindow(false)}
+                            />
                         </div>
-                    )}
-                </AnimatePresence>
+                    </div>
+                )}
 
                 {/* Chat Module */}
                 <ChatModule
@@ -2281,12 +2212,13 @@ function App() {
                     position={elementPositions.chat}
                     width={elementSizes.chat.w}
                     height={elementSizes.chat.h}
+                    isVisualMinimal
                     onMouseDown={(e) => handleMouseDown(e, 'chat')}
                 />
 
                 {/* Footer Controls / Tools Module */}
                 <div className="z-20 flex justify-center pb-10 pointer-events-none">
-                    <HamburgerMenu
+                    <ToolsModule
                         isConnected={isConnected}
                         isMuted={isMuted}
                         isVideoOn={isVideoOn}
@@ -2318,75 +2250,44 @@ function App() {
                         isScreenMode={isScreenMode}
                         onToggleScreenMode={toggleScreenMode}
                         onToggleDocuments={() => setShowDocumentsWindow(true)}
+                        activeDragElement={activeDragElement}
+                        isModularMode={isModularMode}
                         position={elementPositions.tools}
                         onMouseDown={(e) => handleMouseDown(e, 'tools')}
                     />
                 </div>
 
                 {/* Kasa Window */}
-                <AnimatePresence>
-                    {showKasaWindow && (
-                        <motion.div
-                            key="kasa-wrap"
-                            variants={effectiveWindowVariants}
-                            initial="initial"
-                            animate="animate"
-                            exit="exit"
-                            style={{ transformOrigin: 'center bottom', position: 'absolute', inset: 0, pointerEvents: 'none' }}
-                        >
-                            <KasaWindow
-                                socket={socket}
-                                position={elementPositions.kasa}
-                                activeDragElement={activeDragElement}
-                                setActiveDragElement={setActiveDragElement}
-                                devices={kasaDevices}
-                                onClose={() => setShowKasaWindow(false)}
-                                onMouseDown={(e) => handleMouseDown(e, 'kasa')}
-                                zIndex={getZIndex('kasa')}
-                            />
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                {showKasaWindow && (
+                    <KasaWindow
+                        socket={socket}
+                        position={elementPositions.kasa}
+                        activeDragElement={activeDragElement}
+                        setActiveDragElement={setActiveDragElement}
+                        devices={kasaDevices}
+                        onClose={() => setShowKasaWindow(false)}
+                        onMouseDown={(e) => handleMouseDown(e, 'kasa')}
+                        zIndex={getZIndex('kasa')}
+                    />
+                )}
 
                 {/* Printer Window */}
-                <AnimatePresence>
-                    {showPrinterWindow && (
-                        <motion.div
-                            key="printer-wrap"
-                            variants={effectiveWindowVariants}
-                            initial="initial"
-                            animate="animate"
-                            exit="exit"
-                            style={{ transformOrigin: 'center bottom', position: 'absolute', inset: 0, pointerEvents: 'none' }}
-                        >
-                            <PrinterWindow
-                                socket={socket}
-                                onClose={() => setShowPrinterWindow(false)}
-                                position={elementPositions.printer}
-                                onMouseDown={(e) => handleMouseDown(e, 'printer')}
-                                activeDragElement={activeDragElement}
-                                setActiveDragElement={setActiveDragElement}
-                                zIndex={getZIndex('printer')}
-                            />
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                {showPrinterWindow && (
+                    <PrinterWindow
+                        socket={socket}
+                        onClose={() => setShowPrinterWindow(false)}
+                        position={elementPositions.printer}
+                        onMouseDown={(e) => handleMouseDown(e, 'printer')}
+                        activeDragElement={activeDragElement}
+                        setActiveDragElement={setActiveDragElement}
+                        zIndex={getZIndex('printer')}
+                    />
+                )}
 
                 {/* Documents / RAG Window */}
-                <AnimatePresence>
-                    {showDocumentsWindow && (
-                        <motion.div
-                            key="documents-wrap"
-                            variants={effectiveWindowVariants}
-                            initial="initial"
-                            animate="animate"
-                            exit="exit"
-                            style={{ transformOrigin: 'center bottom', position: 'absolute', inset: 0, pointerEvents: 'none' }}
-                        >
-                            <DocumentsWindow onClose={() => setShowDocumentsWindow(false)} />
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                {showDocumentsWindow && (
+                    <DocumentsWindow onClose={() => setShowDocumentsWindow(false)} />
+                )}
 
                 {/* Tool Confirmation Modal */}
                 <ConfirmationPopup

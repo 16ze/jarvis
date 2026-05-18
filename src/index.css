@@ -4,23 +4,23 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Design tokens — source of truth for the Ada palette. Tailwind arbitrary
-   values in components reference these RGBs directly today; a future cleanup
-   commit will rewire them as `var(--ada-...)` so the palette has one knob. */
-:root {
-  --ada-blue-accent: #3b82f6;
-  --ada-blue-strong: #2563eb;
-  --ada-blue-soft: #dbeafe;
-  --ada-glass-bg: rgba(255, 255, 255, 0.6);
-  --ada-glass-border: rgba(59, 130, 246, 0.4);
-  --ada-glass-glow: rgba(59, 130, 246, 0.15);
-}
-
 body {
   margin: 0;
-  background-color: #ffffff;
-  color: #1e293b;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(77, 143, 255, 0.12), transparent 34%),
+    linear-gradient(180deg, #f8fbff 0%, #ffffff 48%, #f3f7ff 100%);
+  color: #14284a;
   overflow: hidden;
+}
+
+:root {
+  --ada-blue: #0b66ff;
+  --ada-blue-soft: #6ea8ff;
+  --ada-ink: #10294d;
+  --ada-muted: #667085;
+  --ada-glass: rgba(255, 255, 255, 0.68);
+  --ada-glass-border: rgba(255, 255, 255, 0.92);
+  --ada-shadow: 0 26px 58px rgba(31, 96, 196, 0.18);
 }
 
 /* Custom Scrollbar Hide */
@@ -33,7 +33,7 @@ body {
 }
 
 .mask-image-gradient {
-  mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, rgb(0, 0, 0) 10%, rgb(0, 0, 0) 90%, transparent);
 }
 
 @keyframes fadeIn {
@@ -45,12 +45,74 @@ body {
   animation: fadeIn 0.3s ease-out forwards;
 }
 
-.glass-reflet {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 50%);
+.ada-soft-shell {
+  background:
+    radial-gradient(circle at 50% 45%, rgba(72, 141, 255, 0.10), transparent 36%),
+    radial-gradient(circle at 78% 16%, rgba(151, 195, 255, 0.18), transparent 28%),
+    linear-gradient(180deg, #f9fbff 0%, #ffffff 50%, #f4f8ff 100%);
 }
 
-.electron-performance .glass-reflet {
-  display: none;
+.ada-glass-circle {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(235, 244, 255, 0.54));
+  border: 1px solid rgba(255, 255, 255, 0.96);
+  border-radius: 9999px;
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.95),
+    inset 0 -8px 16px rgba(35, 112, 255, 0.10),
+    0 18px 34px rgba(40, 105, 205, 0.18),
+    0 3px 8px rgba(40, 105, 205, 0.10);
+}
+
+.ada-glass-panel {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(228, 240, 255, 0.42));
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  box-shadow:
+    0 28px 70px rgba(45, 105, 202, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+}
+
+.ada-camera-window {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.36), rgba(84, 155, 255, 0.22));
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 26px 62px rgba(37, 99, 235, 0.26),
+    0 0 0 1px rgba(96, 165, 250, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.74);
+}
+
+.ada-camera-window::before {
+  content: "";
+  position: absolute;
+  inset: -34px 54% -34px -160px;
+  background:
+    linear-gradient(90deg, rgba(37, 99, 235, 0), rgba(37, 99, 235, 0.18), rgba(37, 99, 235, 0));
+  filter: blur(18px);
+  pointer-events: none;
+}
+
+.ada-camera-control {
+  display: flex;
+  height: 48px;
+  width: 48px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(20, 35, 60, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 12px 24px rgba(15, 42, 90, 0.24);
+  backdrop-filter: blur(14px);
+  transition: transform 180ms ease, background-color 180ms ease;
+}
+
+.ada-camera-control:hover {
+  transform: translateY(-2px);
+  background: rgba(37, 99, 235, 0.34);
 }
 
 .electron-performance .backdrop-blur,
