@@ -17,6 +17,13 @@ import PrinterWindow from './components/PrinterWindow';
 import SettingsWindow from './components/SettingsWindow';
 import DocumentsWindow from './components/DocumentsWindow';
 import MobileApp from './components/MobileApp';
+import {
+    DEFAULT_HAND_CONTROL_CONFIG,
+    OneEuroFilter2D,
+    CursorEngine,
+    GestureStateMachine,
+    clampPointToInteractionBox,
+} from './lib/handTrackingControl';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 const socket = io(BACKEND_URL, {
@@ -168,6 +175,20 @@ function App() {
     const lastHandOsScrollYRef = useRef(null);
     const lastHandOsScrollSentRef = useRef(0);
     const lastHandOsNavAtRef = useRef(0);
+    const handPointFilterRef = useRef(new OneEuroFilter2D(DEFAULT_HAND_CONTROL_CONFIG.filter));
+    const cursorEngineRef = useRef(new CursorEngine(DEFAULT_HAND_CONTROL_CONFIG.cursor));
+    const gestureMachineRef = useRef(new GestureStateMachine(DEFAULT_HAND_CONTROL_CONFIG.gestures));
+    const lastHandDebugAtRef = useRef(0);
+    const [handDebug, setHandDebug] = useState({
+        state: 'IDLE',
+        pinchRatio: null,
+        confidence: 0,
+        clutch: false,
+        rawCursor: null,
+        filteredCursor: null,
+        interactionInside: false,
+        deadZone: DEFAULT_HAND_CONTROL_CONFIG.cursor.deadZone,
+    });
 
     // Web Audio Context for Mic Visualization
     const audioContextRef = useRef(null);
@@ -229,6 +250,15 @@ function App() {
         isCameraFlippedRef.current = isCameraFlipped;
         console.log("[Ref Sync] Camera flipped ref updated to:", isCameraFlipped);
     }, [isModularMode, elementPositions, isHandTrackingEnabled, cursorSensitivity, isCameraFlipped]);
+
+    useEffect(() => {
+        if (!isHandTrackingEnabled) {
+            handPointFilterRef.current.reset();
+            cursorEngineRef.current.reset({ width: window.innerWidth, height: window.innerHeight });
+            gestureMachineRef.current.reset();
+            setHandDebug(prev => ({ ...prev, state: 'IDLE', confidence: 0, clutch: false, interactionInside: false }));
+        }
+    }, [isHandTrackingEnabled]);
 
     // Live Clock Update
     useEffect(() => {
@@ -1045,6 +1075,9 @@ function App() {
         }
 
         ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+        if (isHandTrackingEnabledRef.current) {
+            drawHandDebugOverlay(ctx, canvasRef.current.width, canvasRef.current.height, handDebug);
+        }
 
         // 2. Send Frame to Backend (Throttled & Resized)
         // Only send if connected
@@ -1099,14 +1132,12 @@ function App() {
 
             if (results.landmarks && results.landmarks.length > 0) {
                 const landmarks = results.landmarks[0];
-
-
-
-                // Index Finger Tip (8)
                 const indexTip = landmarks[8];
-                // Thumb Tip (4)
                 const thumbTip = landmarks[4];
-                const indexMcp = landmarks[5];
+                const middleTip = landmarks[12];
+                const wrist = landmarks[0];
+                const viewport = { width: window.innerWidth, height: window.innerHeight };
+                const osControlActive = socket.connected;
 
                 const dist2d = (a, b) => Math.sqrt(
                     Math.pow(a.x - b.x, 2) +
@@ -1118,47 +1149,160 @@ function App() {
                     Math.pow((a.z || 0) - (b.z || 0), 2)
                 );
                 const isFingerExtendedByTip = (tipIdx, pipIdx) => landmarks[tipIdx].y < landmarks[pipIdx].y - 0.012;
-                const isFingerOpenByWrist = (tipIdx, mcpIdx) => {
-                    const wrist = landmarks[0];
-                    return dist2d(landmarks[tipIdx], wrist) > dist2d(landmarks[mcpIdx], wrist) * 1.22;
+                const isFingerOpenByWrist = (tipIdx, mcpIdx) => (
+                    dist2d(landmarks[tipIdx], wrist) > dist2d(landmarks[mcpIdx], wrist) * 1.22
+                );
+                const isFingerFolded = (tipIdx, pipIdx, mcpIdx) => {
+                    const tip = landmarks[tipIdx];
+                    const pip = landmarks[pipIdx];
+                    const mcp = landmarks[mcpIdx];
+                    return tip.y > pip.y + 0.01 || dist2d(tip, wrist) < dist2d(mcp, wrist) * 1.12;
                 };
+
                 const indexExtended = isFingerExtendedByTip(8, 6) && isFingerOpenByWrist(8, 5);
                 const middleExtended = isFingerExtendedByTip(12, 10) && isFingerOpenByWrist(12, 9);
                 const ringExtended = isFingerExtendedByTip(16, 14) && isFingerOpenByWrist(16, 13);
                 const pinkyExtended = isFingerExtendedByTip(20, 18) && isFingerOpenByWrist(20, 17);
+                const openPalm = indexExtended && middleExtended && ringExtended && pinkyExtended;
 
-                // Map to Screen Coords with Sensitivity Scaling
-                // Sensitivity: Map center 50% of camera to 100% of screen.
-                const SENSITIVITY = cursorSensitivityRef.current;
+                const rawIndexPoint = {
+                    x: isCameraFlippedRef.current ? (1 - indexTip.x) : indexTip.x,
+                    y: indexTip.y,
+                };
+                const boxedIndexPoint = clampPointToInteractionBox(
+                    rawIndexPoint,
+                    DEFAULT_HAND_CONTROL_CONFIG.interactionBox
+                );
+                const filteredPoint = handPointFilterRef.current.filter(
+                    { x: boxedIndexPoint.x, y: boxedIndexPoint.y },
+                    startTimeMs
+                );
+                const rawCursor = {
+                    x: boxedIndexPoint.x * viewport.width,
+                    y: boxedIndexPoint.y * viewport.height,
+                };
 
-                // Apply camera flip if enabled (horizontal mirror)
-                const rawX = isCameraFlippedRef.current ? (1 - indexTip.x) : indexTip.x;
+                const wristRawX = isCameraFlippedRef.current ? (1 - wrist.x) : wrist.x;
+                const wristBox = clampPointToInteractionBox(
+                    { x: wristRawX, y: wrist.y },
+                    DEFAULT_HAND_CONTROL_CONFIG.interactionBox
+                );
+                const wristScreenX = wristBox.x * viewport.width;
+                const wristScreenY = wristBox.y * viewport.height;
 
-                // 1. Normalize and Scale X
-                let normX = (rawX - 0.5) * SENSITIVITY + 0.5;
-                // Clamp to [0, 1]
-                normX = Math.max(0, Math.min(1, normX));
+                const palmSize = Math.max(
+                    dist2d(wrist, landmarks[5]),
+                    dist2d(wrist, landmarks[9]),
+                    0.001
+                );
+                const foldedCount = [
+                    isFingerFolded(8, 6, 5),
+                    isFingerFolded(12, 10, 9),
+                    isFingerFolded(16, 14, 13),
+                    isFingerFolded(20, 18, 17)
+                ].filter(Boolean).length;
+                const fistActive = foldedCount >= 4 && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended;
+                const pinchDistance = Math.min(dist2d(middleTip, thumbTip), dist3d(middleTip, thumbTip));
+                const pinchRatio = pinchDistance / palmSize;
+                const pinchClosed = (
+                    pinchRatio < DEFAULT_HAND_CONTROL_CONFIG.gestures.pinchStartRatio &&
+                    indexExtended &&
+                    !fistActive
+                );
+                const pinchReleased = (
+                    pinchRatio > DEFAULT_HAND_CONTROL_CONFIG.gestures.pinchEndRatio ||
+                    !indexExtended
+                );
+                const indexMiddleTipDistance = dist2d(indexTip, middleTip);
+                const scrollActive = (
+                    indexExtended &&
+                    middleExtended &&
+                    !ringExtended &&
+                    !pinkyExtended &&
+                    indexMiddleTipDistance > palmSize * 0.18 &&
+                    !pinchClosed
+                );
 
-                // 2. Normalize and Scale Y
-                let normY = (indexTip.y - 0.5) * SENSITIVITY + 0.5;
-                normY = Math.max(0, Math.min(1, normY));
+                const gestureSnapshot = gestureMachineRef.current.update({
+                    handPresent: true,
+                    clutch: openPalm && !pinchClosed,
+                    drag: fistActive,
+                    scroll: scrollActive,
+                    pinch: pinchClosed && !pinchReleased,
+                }, startTimeMs);
+                const activeState = gestureSnapshot.state;
+                const clutchActive = activeState === 'CLUTCH';
+                const isScroll = activeState === 'SCROLL';
+                const isFist = activeState === 'DRAG';
+                const isPinchCandidate = activeState === 'CLICK_CANDIDATE';
 
-                const targetX = normX * window.innerWidth;
-                const targetY = normY * window.innerHeight;
+                handOsGestureRef.current = activeState.toLowerCase();
 
-                // 1. Smoothing (Lerp)
-                // Factor 0.2 = smooth but responsive. Lower = smoother/slower.
-                const lerpFactor = 0.2;
-                smoothedCursorPosRef.current.x = smoothedCursorPosRef.current.x + (targetX - smoothedCursorPosRef.current.x) * lerpFactor;
-                smoothedCursorPosRef.current.y = smoothedCursorPosRef.current.y + (targetY - smoothedCursorPosRef.current.y) * lerpFactor;
+                if (socket.connected && openPalm && (activeState === 'CLUTCH' || activeState === 'TRACKING')) {
+                    const nowForSwitch = performance.now();
+                    const swipeStart = handOsSwipeStartRef.current;
+                    if (swipeStart.x === null || nowForSwitch - swipeStart.t > 650) {
+                        handOsSwipeStartRef.current = { x: wristScreenX, y: wristScreenY, t: nowForSwitch };
+                    } else {
+                        const dx = wristScreenX - swipeStart.x;
+                        const dy = wristScreenY - swipeStart.y;
+                        const horizontalEnough = Math.abs(dx) > viewport.width * 0.20;
+                        const verticalStable = Math.abs(dy) < viewport.height * 0.18;
+                        const cooldownDone = nowForSwitch - lastHandOsWindowSwitchAtRef.current > 950;
+                        if (horizontalEnough && verticalStable && cooldownDone) {
+                            lastHandOsWindowSwitchAtRef.current = nowForSwitch;
+                            socket.emit('hand_control_event', {
+                                type: 'window_switch',
+                                direction: dx > 0 ? 'next' : 'previous'
+                            });
+                            handOsSwipeStartRef.current = { x: null, y: null, t: 0 };
+                        }
+                    }
+                } else {
+                    handOsSwipeStartRef.current = { x: null, y: null, t: 0 };
+                }
 
-                let finalX = smoothedCursorPosRef.current.x;
-                let finalY = smoothedCursorPosRef.current.y;
-                const osControlActive = socket.connected;
+                if (gestureSnapshot.action === 'drag_start') {
+                    if (socket.connected && !isHandOsDraggingRef.current) {
+                        isHandOsDraggingRef.current = true;
+                        socket.emit('hand_control_event', { type: 'mouse_down' });
+                    }
+                    lastWristPosRef.current = { x: wristScreenX, y: wristScreenY };
+                } else if (gestureSnapshot.action === 'drag_end') {
+                    if (socket.connected && isHandOsDraggingRef.current) {
+                        socket.emit('hand_control_event', { type: 'mouse_up' });
+                        isHandOsDraggingRef.current = false;
+                    }
+                    activeDragElementRef.current = null;
+                } else if (gestureSnapshot.action === 'click') {
+                    cursorEngineRef.current.freeze(startTimeMs);
+                    if (socket.connected) {
+                        socket.emit('hand_control_event', { type: 'click' });
+                    } else {
+                        const el = document.elementFromPoint(lastCursorPosRef.current.x, lastCursorPosRef.current.y);
+                        if (el) {
+                            const clickable = el.closest('button, input, a, [role="button"]');
+                            if (clickable && typeof clickable.click === 'function') {
+                                clickable.click();
+                            } else if (typeof el.click === 'function') {
+                                el.click();
+                            }
+                        }
+                    }
+                }
 
-                // 2. Snap-to-Button Logic
-                const SNAP_THRESHOLD = 50; // Pixels to snap
-                const UNSNAP_THRESHOLD = 100; // Pixels to unsnap (Hysteresis)
+                const cursorUpdate = cursorEngineRef.current.update({
+                    point: filteredPoint,
+                    timestampMs: startTimeMs,
+                    viewport,
+                    sensitivity: cursorSensitivityRef.current,
+                    clutch: clutchActive || isScroll || isFist,
+                });
+
+                let finalX = cursorUpdate.x;
+                let finalY = cursorUpdate.y;
+                const SNAP_THRESHOLD = 50;
+                const UNSNAP_THRESHOLD = 100;
 
                 if (osControlActive && snapStateRef.current.isSnapped) {
                     if (snapStateRef.current.element) {
@@ -1171,30 +1315,24 @@ function App() {
                 }
 
                 if (!osControlActive && snapStateRef.current.isSnapped) {
-                    // Check if we should unsnap
                     const dist = Math.sqrt(
                         Math.pow(finalX - snapStateRef.current.snapPos.x, 2) +
                         Math.pow(finalY - snapStateRef.current.snapPos.y, 2)
                     );
 
                     if (dist > UNSNAP_THRESHOLD) {
-                        // REMOVE HIGHLIGHT
                         if (snapStateRef.current.element) {
                             snapStateRef.current.element.classList.remove('snap-highlight');
                             snapStateRef.current.element.style.boxShadow = '';
                             snapStateRef.current.element.style.backgroundColor = '';
                             snapStateRef.current.element.style.borderColor = '';
                         }
-
                         snapStateRef.current = { isSnapped: false, element: null, snapPos: { x: 0, y: 0 } };
                     } else {
-                        // Stay snapped
                         finalX = snapStateRef.current.snapPos.x;
                         finalY = snapStateRef.current.snapPos.y;
                     }
-                } else if (!osControlActive) {
-                    // Check if we should snap
-                    // Find all interactive elements
+                } else if (!osControlActive && !clutchActive && !isFist) {
                     const targets = Array.from(document.querySelectorAll('button, input, select, .draggable'));
                     let closest = null;
                     let minDist = Infinity;
@@ -1219,179 +1357,24 @@ function App() {
                         };
                         finalX = closest.centerX;
                         finalY = closest.centerY;
-
-                        // SNAP HIGHLIGHT Logic
                         closest.el.classList.add('snap-highlight');
-                        // Add some inline style for the glow if class isn't enough (using imperative for speed)
                         closest.el.style.boxShadow = '0 0 20px rgba(34, 211, 238, 0.6)';
                         closest.el.style.backgroundColor = 'rgba(6, 182, 212, 0.2)';
                         closest.el.style.borderColor = 'rgba(34, 211, 238, 1)';
                     }
                 }
 
-                // Update cursor via direct DOM — zero React re-renders
                 if (cursorElRef.current) {
                     cursorElRef.current.style.left = finalX + 'px';
                     cursorElRef.current.style.top = finalY + 'px';
-                }
-
-                // Trail Logic: Removed per user request
-
-                const wrist = landmarks[0];
-                const palmSize = Math.max(
-                    dist2d(wrist, landmarks[5]),
-                    dist2d(wrist, landmarks[9]),
-                    0.001
-                );
-                const wristRawX = isCameraFlippedRef.current ? (1 - wrist.x) : wrist.x;
-                const wristNormX = Math.max(0, Math.min(1, (wristRawX - 0.5) * SENSITIVITY + 0.5));
-                const wristNormY = Math.max(0, Math.min(1, (wrist.y - 0.5) * SENSITIVITY + 0.5));
-                const wristScreenX = wristNormX * window.innerWidth;
-                const wristScreenY = wristNormY * window.innerHeight;
-
-                // Fist Detection for OS dragging. This is intentionally strict to avoid random drags.
-                const isFingerFolded = (tipIdx, pipIdx, mcpIdx) => {
-                    const tip = landmarks[tipIdx];
-                    const pip = landmarks[pipIdx];
-                    const mcp = landmarks[mcpIdx];
-                    return tip.y > pip.y + 0.01 || dist2d(tip, wrist) < dist2d(mcp, wrist) * 1.12;
-                };
-
-                const foldedCount = [
-                    isFingerFolded(8, 6, 5),
-                    isFingerFolded(12, 10, 9),
-                    isFingerFolded(16, 14, 13),
-                    isFingerFolded(20, 18, 17)
-                ].filter(Boolean).length;
-                const fistStart = foldedCount >= 4 && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended;
-                const fistRelease = foldedCount <= 2 || indexExtended || middleExtended;
-
-                // Click is thumb + middle finger. The index remains free for pointer tracking.
-                const middleTip = landmarks[12];
-                const pinchDistance = Math.min(dist2d(middleTip, thumbTip), dist3d(middleTip, thumbTip));
-                const pinchRatio = pinchDistance / palmSize;
-                const pinchStart = pinchRatio < 0.46 && indexExtended && !fistStart;
-                const pinchRelease = pinchRatio > 0.68 || !indexExtended;
-
-                const indexMiddleTipDistance = dist2d(landmarks[8], landmarks[12]);
-                const scrollStart = (
-                    indexExtended &&
-                    middleExtended &&
-                    !ringExtended &&
-                    !pinkyExtended &&
-                    indexMiddleTipDistance > palmSize * 0.18 &&
-                    !pinchStart
-                );
-                const scrollRelease = !indexExtended || !middleExtended || ringExtended || pinkyExtended || fistStart || pinchStart;
-                const openPalm = indexExtended && middleExtended && ringExtended && pinkyExtended;
-
-                if (socket.connected && openPalm && handOsGestureRef.current === 'idle') {
-                    const nowForSwitch = performance.now();
-                    const swipeStart = handOsSwipeStartRef.current;
-                    if (swipeStart.x === null || nowForSwitch - swipeStart.t > 650) {
-                        handOsSwipeStartRef.current = { x: wristScreenX, y: wristScreenY, t: nowForSwitch };
-                    } else {
-                        const dx = wristScreenX - swipeStart.x;
-                        const dy = wristScreenY - swipeStart.y;
-                        const horizontalEnough = Math.abs(dx) > window.innerWidth * 0.20;
-                        const verticalStable = Math.abs(dy) < window.innerHeight * 0.18;
-                        const cooldownDone = nowForSwitch - lastHandOsWindowSwitchAtRef.current > 950;
-                        if (horizontalEnough && verticalStable && cooldownDone) {
-                            lastHandOsWindowSwitchAtRef.current = nowForSwitch;
-                            socket.emit('hand_control_event', {
-                                type: 'window_switch',
-                                direction: dx > 0 ? 'next' : 'previous'
-                            });
-                            handOsSwipeStartRef.current = { x: null, y: null, t: 0 };
-                        }
-                    }
-                } else {
-                    handOsSwipeStartRef.current = { x: null, y: null, t: 0 };
-                }
-
-                let gestureCandidate = 'idle';
-                if (fistStart) {
-                    gestureCandidate = 'fist';
-                } else if (scrollStart) {
-                    gestureCandidate = 'scroll';
-                } else if (pinchStart) {
-                    gestureCandidate = 'pinch';
-                }
-
-                if (gestureCandidate === handOsGestureCandidateRef.current) {
-                    handOsGestureFramesRef.current = Math.min(handOsGestureFramesRef.current + 1, 20);
-                } else {
-                    handOsGestureCandidateRef.current = gestureCandidate;
-                    handOsGestureFramesRef.current = 1;
-                }
-
-                const activeGesture = handOsGestureRef.current;
-                if (activeGesture === 'idle') {
-                    if (gestureCandidate === 'fist' && handOsGestureFramesRef.current >= 5) {
-                        handOsGestureRef.current = 'fist';
-                        handOsReleaseFramesRef.current = 0;
-                        if (socket.connected && !isHandOsDraggingRef.current) {
-                            isHandOsDraggingRef.current = true;
-                            socket.emit('hand_control_event', { type: 'mouse_down' });
-                        }
-                    } else if (gestureCandidate === 'scroll' && handOsGestureFramesRef.current >= 5) {
-                        handOsGestureRef.current = 'scroll';
-                        handOsReleaseFramesRef.current = 0;
-                        lastHandOsScrollYRef.current = finalY;
-                    } else if (gestureCandidate === 'pinch' && handOsGestureFramesRef.current >= 4) {
-                        handOsGestureRef.current = 'pinch';
-                        handOsReleaseFramesRef.current = 0;
-                    }
-                } else {
-                    const shouldRelease =
-                        (activeGesture === 'fist' && fistRelease) ||
-                        (activeGesture === 'scroll' && scrollRelease) ||
-                        (activeGesture === 'pinch' && pinchRelease);
-
-                    handOsReleaseFramesRef.current = shouldRelease
-                        ? Math.min(handOsReleaseFramesRef.current + 1, 10)
-                        : 0;
-
-                    if (handOsReleaseFramesRef.current >= 3) {
-                        if (activeGesture === 'fist' && isHandOsDraggingRef.current && socket.connected) {
-                            socket.emit('hand_control_event', { type: 'mouse_up' });
-                            isHandOsDraggingRef.current = false;
-                        } else if (activeGesture === 'pinch') {
-                            const nowForClick = performance.now();
-                            if (nowForClick - lastHandOsClickAtRef.current > 650) {
-                                lastHandOsClickAtRef.current = nowForClick;
-                                if (socket.connected) {
-                                    socket.emit('hand_control_event', { type: 'click' });
-                                } else {
-                                    const el = document.elementFromPoint(finalX, finalY);
-                                    if (el) {
-                                        const clickable = el.closest('button, input, a, [role="button"]');
-                                        if (clickable && typeof clickable.click === 'function') {
-                                            clickable.click();
-                                        } else if (typeof el.click === 'function') {
-                                            el.click();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        handOsGestureRef.current = 'idle';
-                        handOsGestureCandidateRef.current = 'idle';
-                        handOsGestureFramesRef.current = 0;
-                        handOsReleaseFramesRef.current = 0;
-                        lastHandOsScrollYRef.current = null;
-                    }
-                }
-
-                const isPinchNow = handOsGestureRef.current === 'pinch';
-                isPinchingRef.current = isPinchNow;
-                // Update cursor pinch appearance via direct DOM — no re-render
-                if (cursorElRef.current) {
-                    if (isPinchNow) {
+                    if (isPinchCandidate) {
                         cursorElRef.current.style.backgroundColor = 'rgba(34,211,238,1)';
                         cursorElRef.current.style.boxShadow = '0 0 15px rgba(34,211,238,0.8)';
                         cursorElRef.current.style.transform = 'translate(-50%,-50%) scale(0.75)';
+                    } else if (clutchActive) {
+                        cursorElRef.current.style.backgroundColor = 'rgba(250,204,21,0.9)';
+                        cursorElRef.current.style.boxShadow = '0 0 14px rgba(250,204,21,0.35)';
+                        cursorElRef.current.style.transform = 'translate(-50%,-50%) scale(0.9)';
                     } else {
                         cursorElRef.current.style.backgroundColor = '';
                         cursorElRef.current.style.boxShadow = '0 0 10px rgba(34,211,238,0.3)';
@@ -1399,19 +1382,16 @@ function App() {
                     }
                 }
 
-                const isFist = handOsGestureRef.current === 'fist';
-                const isScroll = handOsGestureRef.current === 'scroll';
+                isPinchingRef.current = isPinchCandidate;
 
-                // OS hand control: mirror the visual cursor to the system pointer.
-                // During scroll, keep the pointer stable and only emit wheel events.
-                if (socket.connected && !isScroll) {
+                if (socket.connected && !isScroll && !clutchActive) {
                     const nowForOs = performance.now();
                     if (nowForOs - lastHandOsMoveSentRef.current >= 45) {
                         lastHandOsMoveSentRef.current = nowForOs;
                         socket.emit('hand_control_event', {
                             type: 'move',
-                            x: finalX / window.innerWidth,
-                            y: finalY / window.innerHeight
+                            x: finalX / viewport.width,
+                            y: finalY / viewport.height
                         });
                     }
                 }
@@ -1421,7 +1401,10 @@ function App() {
                         lastHandOsScrollYRef.current = finalY;
                     } else {
                         const nowForScroll = performance.now();
-                        const scrollDelta = Math.round((lastHandOsScrollYRef.current - finalY) / 18);
+                        const scrollDelta = Math.round(
+                            (lastHandOsScrollYRef.current - finalY) /
+                            DEFAULT_HAND_CONTROL_CONFIG.gestures.scrollStepPx
+                        );
                         if (Math.abs(scrollDelta) >= 1 && nowForScroll - lastHandOsScrollSentRef.current >= 80) {
                             lastHandOsScrollSentRef.current = nowForScroll;
                             socket.emit('hand_control_event', {
@@ -1437,18 +1420,14 @@ function App() {
 
                 if (!osControlActive && isFist) {
                     if (!activeDragElementRef.current) {
-                        // Only check popup windows (draggable elements)
                         const draggableElements = ['cad', 'browser', 'kasa', 'printer'];
-
                         for (const id of draggableElements) {
                             const el = document.getElementById(id);
                             if (el) {
                                 const rect = el.getBoundingClientRect();
-                                // Use the cursor position from before fist was made for hit detection
                                 if (finalX >= rect.left && finalX <= rect.right && finalY >= rect.top && finalY <= rect.bottom) {
                                     activeDragElementRef.current = id;
                                     bringToFront(id);
-                                    // Lock the initial wrist position when starting drag
                                     lastWristPosRef.current = { x: wristScreenX, y: wristScreenY };
                                     break;
                                 }
@@ -1457,24 +1436,17 @@ function App() {
                     }
 
                     if (activeDragElementRef.current) {
-                        // Use WRIST movement (not index finger) for stable dragging
-                        // The wrist doesn't move when making a fist
                         const dx = wristScreenX - lastWristPosRef.current.x;
                         const dy = wristScreenY - lastWristPosRef.current.y;
-
-                        // Update position only if there's actual movement
                         if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
                             updateElementPosition(activeDragElementRef.current, dx, dy);
                         }
-
-                        // Update last wrist position
                         lastWristPosRef.current = { x: wristScreenX, y: wristScreenY };
                     }
-                } else {
+                } else if (!isFist) {
                     activeDragElementRef.current = null;
                 }
 
-                // Sync state for visual feedback (only on change)
                 if (activeDragElementRef.current !== lastActiveDragElementRef.current) {
                     setActiveDragElement(activeDragElementRef.current);
                     lastActiveDragElementRef.current = activeDragElementRef.current;
@@ -1482,7 +1454,20 @@ function App() {
 
                 lastCursorPosRef.current = { x: finalX, y: finalY };
 
-                // Draw Skeleton
+                if (startTimeMs - lastHandDebugAtRef.current >= 100) {
+                    lastHandDebugAtRef.current = startTimeMs;
+                    setHandDebug({
+                        state: activeState,
+                        pinchRatio,
+                        confidence: gestureSnapshot.confidence,
+                        clutch: clutchActive,
+                        rawCursor,
+                        filteredCursor: { x: finalX, y: finalY },
+                        interactionInside: boxedIndexPoint.inside,
+                        deadZone: DEFAULT_HAND_CONTROL_CONFIG.cursor.deadZone,
+                    });
+                }
+
                 drawSkeleton(ctx, landmarks);
             } else {
                 pinchFramesRef.current = 0;
@@ -1494,9 +1479,21 @@ function App() {
                 handOsGestureFramesRef.current = 0;
                 handOsReleaseFramesRef.current = 0;
                 handOsSwipeStartRef.current = { x: null, y: null, t: 0 };
+                gestureMachineRef.current.reset();
+                handPointFilterRef.current.reset();
+                cursorEngineRef.current.previousPoint = null;
                 if (isHandOsDraggingRef.current && socket.connected) {
                     isHandOsDraggingRef.current = false;
                     socket.emit('hand_control_event', { type: 'mouse_up' });
+                }
+                activeDragElementRef.current = null;
+                if (lastActiveDragElementRef.current !== null) {
+                    setActiveDragElement(null);
+                    lastActiveDragElementRef.current = null;
+                }
+                if (startTimeMs - lastHandDebugAtRef.current >= 100) {
+                    lastHandDebugAtRef.current = startTimeMs;
+                    setHandDebug(prev => ({ ...prev, state: 'IDLE', confidence: 0, clutch: false, interactionInside: false }));
                 }
             }
 
@@ -1532,6 +1529,48 @@ function App() {
         }
     };
 
+    const drawHandDebugOverlay = (ctx, canvasWidth, canvasHeight, debug) => {
+        const box = DEFAULT_HAND_CONTROL_CONFIG.interactionBox;
+        const left = box.left * canvasWidth;
+        const top = box.top * canvasHeight;
+        const width = (box.right - box.left) * canvasWidth;
+        const height = (box.bottom - box.top) * canvasHeight;
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(250, 204, 21, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 6]);
+        ctx.strokeRect(left, top, width, height);
+        ctx.setLineDash([]);
+
+        if (debug?.rawCursor) {
+            ctx.fillStyle = 'rgba(248, 113, 113, 0.95)';
+            ctx.beginPath();
+            ctx.arc(
+                (debug.rawCursor.x / window.innerWidth) * canvasWidth,
+                (debug.rawCursor.y / window.innerHeight) * canvasHeight,
+                5,
+                0,
+                Math.PI * 2
+            );
+            ctx.fill();
+        }
+
+        if (debug?.filteredCursor) {
+            ctx.fillStyle = 'rgba(34, 211, 238, 0.95)';
+            ctx.beginPath();
+            ctx.arc(
+                (debug.filteredCursor.x / window.innerWidth) * canvasWidth,
+                (debug.filteredCursor.y / window.innerHeight) * canvasHeight,
+                6,
+                0,
+                Math.PI * 2
+            );
+            ctx.fill();
+        }
+        ctx.restore();
+    };
+
     const stopVideo = () => {
         if (videoAnimationFrameRef.current) {
             cancelAnimationFrame(videoAnimationFrameRef.current);
@@ -1559,10 +1598,17 @@ function App() {
         handOsReleaseFramesRef.current = 0;
         handOsSwipeStartRef.current = { x: null, y: null, t: 0 };
         lastHandOsScrollYRef.current = null;
+        handPointFilterRef.current.reset();
+        cursorEngineRef.current.reset({ width: window.innerWidth, height: window.innerHeight });
+        gestureMachineRef.current.reset();
+        setHandDebug(prev => ({ ...prev, state: 'IDLE', confidence: 0, clutch: false, interactionInside: false }));
         if (isHandOsDraggingRef.current && socket.connected) {
             socket.emit('hand_control_event', { type: 'mouse_up' });
         }
         isHandOsDraggingRef.current = false;
+        activeDragElementRef.current = null;
+        lastActiveDragElementRef.current = null;
+        setActiveDragElement(null);
         videoBlobInFlightRef.current = false;
         lastVideoFrameSentRef.current = 0;
         lastVideoTimeRef.current = -1;
@@ -2053,6 +2099,18 @@ function App() {
                             className="absolute inset-0 w-full h-full opacity-80"
                             style={{ transform: isCameraFlipped ? 'scaleX(-1)' : 'none' }}
                         />
+
+                        {isHandTrackingEnabled && (
+                            <div className="absolute bottom-2 left-2 z-10 text-[10px] leading-4 text-cyan-100 bg-black/70 backdrop-blur px-2 py-1 rounded border border-cyan-500/20">
+                                <div>STATE: {handDebug.state}</div>
+                                <div>PINCH: {handDebug.pinchRatio === null ? '--' : handDebug.pinchRatio.toFixed(3)}</div>
+                                <div>CONF: {handDebug.confidence.toFixed(2)}</div>
+                                <div>BOX: {handDebug.interactionInside ? 'IN' : 'EDGE'}</div>
+                                <div>RAW: {handDebug.rawCursor ? `${Math.round(handDebug.rawCursor.x)},${Math.round(handDebug.rawCursor.y)}` : '--'}</div>
+                                <div>CURSOR: {handDebug.filteredCursor ? `${Math.round(handDebug.filteredCursor.x)},${Math.round(handDebug.filteredCursor.y)}` : '--'}</div>
+                                <div>DEAD: {handDebug.deadZone.toFixed(4)}</div>
+                            </div>
+                        )}
                     </div>
                 </div>
 

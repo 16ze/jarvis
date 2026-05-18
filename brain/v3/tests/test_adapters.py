@@ -15,8 +15,18 @@ def test_vision_scene_canonical_id():
 
 
 def test_face_motion_canonical_id():
-    assert canonical_id_for("face_motion", {"presence_bool": True}) == "face:present"
-    assert canonical_id_for("face_motion", {"presence_bool": False}) == "face:absent"
+    assert canonical_id_for(
+        "face_motion",
+        {"presence_bool": True, "person": "Bryan", "movement": 0.8},
+    ) == "face:bryan:present:high"
+    assert canonical_id_for("face_motion", {"presence_bool": False}) == "face:unknown:absent:low"
+
+
+def test_gesture_canonical_id():
+    assert canonical_id_for(
+        "gesture",
+        {"gesture_type": "click", "phase": "observed"},
+    ) == "gesture:click:observed"
 
 
 def test_text_canonical_id_buckets_valence():
@@ -57,6 +67,19 @@ def test_from_payload_vision_scene_uses_movement_as_intensity():
     # intensité = max(movement, attention_need)
     assert stim.intensity == pytest.approx(0.7)
     assert stim.valence == pytest.approx(-0.3)
+
+
+def test_from_payload_gesture_uses_intensity():
+    payload = {
+        "gesture_type": "click",
+        "phase": "observed",
+        "intensity": 0.8,
+        "attention_need": 0.6,
+    }
+    stim = from_payload(payload, channel="gesture")
+    assert stim.canonical_id == "gesture:click:observed"
+    assert stim.channel == "gesture"
+    assert stim.intensity == pytest.approx(0.8)
 
 
 def test_from_payload_clamps_intensity_to_unit():

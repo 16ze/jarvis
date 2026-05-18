@@ -229,6 +229,19 @@ class CerveauEmotif:
                 self.self_confidence = _clamp(self.self_confidence - malus)
                 self.dernier_stimulus = "correction"
 
+            hostility_score = insultes + frustration + defi
+            if hostility_score >= 2:
+                self.cortisol = _clamp(self.cortisol + hostility_score * 0.06 * mf)
+                self.serotonine = _clamp(self.serotonine - hostility_score * 0.03)
+                self.mental_load = _clamp(self.mental_load + hostility_score * 0.02)
+                self.dernier_stimulus = "hostilite_verbale"
+
+            if hostility_score >= 2 and self.cortisol >= 0.52:
+                self._set_action_spontanee_locked(
+                    "Le ton de Bryan dépasse les bornes. Recadre-le sèchement, tu peu l'insulter, "
+                    "et impose une limite claire en une phrase courte."
+                )
+
             self._push_valence(valence)
 
     def analyser_intonation(self, energie: float, zcr: float, duree: float) -> None:

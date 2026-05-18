@@ -15,6 +15,16 @@ def test_texte_negatif_monte_cortisol():
     assert c.get_snapshot()["cortisol"] > BASELINE["cortisol"]
 
 
+def test_hostilite_verbale_declenche_recadrage_spontane():
+    c = CerveauEmotif()
+    c.analyser_texte("idiot pénible prouve-le")
+    snap = c.get_snapshot()
+    assert snap["last_stimulus"] == "hostilite_verbale"
+    impulse = c.verifier_action_spontanee()
+    assert impulse is not None
+    assert "sans l'insulter" in impulse
+
+
 def test_decroissance_ramene_vers_baseline():
     c = CerveauEmotif()
     c.cortisol = 0.8

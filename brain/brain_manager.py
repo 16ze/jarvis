@@ -145,7 +145,8 @@ class BrainManager:
             return
         self._safe("notify_llm_response", self.limbic.consommer_charge, fallback=None)
 
-    def notify_visual_scene(self, event: dict) -> str | None:
+    def notify_visual_scene(self, event: dict):
+        """Retourne PerceptionResult | None pour la couche voix (ada.py)."""
         if not self.enabled or self._is_degraded():
             return None
         return self._safe(
@@ -154,8 +155,8 @@ class BrainManager:
             fallback=None,
         )
 
-    def ingest_stimulus(self, stimulus: dict) -> str | None:
-        """Pont YOLO/screen_watcher -> brain."""
+    def ingest_stimulus(self, stimulus: dict):
+        """Pont YOLO/screen_watcher -> brain. Retourne PerceptionResult | None."""
         if not self.enabled or self._is_degraded():
             return None
         return self._safe(
@@ -210,8 +211,13 @@ class BrainManager:
             return None
         return self.limbic.verifier_action_spontanee()
 
-    def _dispatch_stimulus(self, payload: dict, channel: str) -> str | None:
-        """Route un stimulus visuel via v3 si activé, puis v2 dans tous les cas."""
+    def _dispatch_stimulus(self, payload: dict, channel: str):
+        """Route un stimulus via v3 si activé, puis v2 dans tous les cas.
+
+        Retourne PerceptionResult | None. None = pas de réaction.
+        """
+        from brain.v3.types import PerceptionResult  # import local pour éviter cycle
+
         decision = None
         if self._v3 is not None and self._v3.enabled:
             decision = self._v3.process(payload, channel=channel)
@@ -229,9 +235,31 @@ class BrainManager:
 
         if decision is not None and decision.action != "REACT":
             return None
-        if decision is not None and decision.action == "REACT" and decision.prompt_hint:
-            return decision.prompt_hint
-        return v2_prompt
+        if decision is not None and decision.action == "REACT":
+            # Priorité : hint explicite > description du payload > canonical_id verbalisé
+            if decision.prompt_hint:
+                prompt = decision.prompt_hint
+            elif isinstance(payload, dict) and payload.get("spontaneous_hint"):
+                prompt = str(payload["spontaneous_hint"])
+            elif isinstance(payload, dict) and payload.get("description"):
+                prompt = f"Je remarque {payload['description']}."
+            else:
+                prompt = f"Je perçois un changement ({channel})."
+            return PerceptionResult(
+                prompt=prompt,
+                saliency=float(decision.saliency),
+                reason=str(decision.reason),
+                action=str(decision.action),
+            )
+        if v2_prompt:
+            # Voie v2 historique : pas de saliency calculée, on met une valeur médiane.
+            return PerceptionResult(
+                prompt=v2_prompt,
+                saliency=0.5,
+                reason="v2_spontaneous",
+                action="REACT",
+            )
+        return None
 
     def _start_impl(
         self,

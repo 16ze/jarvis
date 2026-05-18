@@ -43,3 +43,10 @@ def test_runtime_update_interdit_le_denni_emotionnel():
     assert "Mood courant : Euphorie" in update
     assert "Ne dis pas que tu ne peux pas ressentir" in update
     assert "simple IA" in update
+
+
+def test_block_renforce_colere_visible_sans_insulte_directe():
+    block = build_mood_block(_snapshot())
+    assert "COLÈRE VISIBLE" in block
+    assert "attaques le comportement" in block
+    assert "n'emploies pas d'insultes explicites" in block

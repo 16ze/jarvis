@@ -18,6 +18,34 @@ let shuttingDown = false;
 let backendHealthOk = false;
 let pythonStderrBuf = '';
 
+const reactiveBrainDefaults = {
+    BRAIN_ENABLED: 'true',
+    BRAIN_MODULATE_ALL: 'true',
+    BRAIN_OBSERVE_ONLY: 'false',
+    BRAIN_V3_ENABLED: 'true',
+    BRAIN_V3_SHADOW_MODE: 'false',
+    BRAIN_V3_REACTION_THRESHOLD: '0.35',
+    BRAIN_V3_PROB_GATE_SLOPE: '3.5',
+    BRAIN_V3_COST_OBJECT_NORMAL: '0.10',
+    BRAIN_V3_COST_SCENE_NORMAL: '0.15',
+    BRAIN_V3_ATTENTION_BUDGET_INIT: '1.4',
+    BRAIN_V3_ATTENTION_BUDGET_MAX: '2.0',
+    BRAIN_V3_REFRACTORY_VISION_OBJECT: '0.8',
+    BRAIN_V3_REFRACTORY_VISION_SCENE: '3.0',
+    BRAIN_V3_REFRACTORY_TEXT: '0.15',
+    VISION_OBJECT_ENABLED: 'true',
+};
+
+function withReactiveBrainDefaults(env) {
+    const merged = { ...env };
+    for (const [key, value] of Object.entries(reactiveBrainDefaults)) {
+        if (merged[key] === undefined || merged[key] === '') {
+            merged[key] = value;
+        }
+    }
+    return merged;
+}
+
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1920,
@@ -133,7 +161,7 @@ function startPythonBackend() {
 
     pythonProcess = spawn(finalBin, ['-u', scriptPath], {
         cwd: path.join(__dirname, '../backend'),
-        env: { ...process.env, PYTHONUNBUFFERED: '1' },
+        env: withReactiveBrainDefaults({ ...process.env, PYTHONUNBUFFERED: '1' }),
     });
 
     pythonProcess.on('error', (err) => {

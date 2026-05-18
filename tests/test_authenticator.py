@@ -7,12 +7,18 @@ import numpy as np
 
 # Try to import the authenticator, skip all tests if dependencies missing
 try:
-    from authenticator import FaceAuthenticator
+    from authenticator import (
+        FaceAuthenticator,
+        MultiUserFaceDetector,
+        _infer_emotion_from_blendshapes,
+    )
     HAS_AUTH = True
 except ImportError as e:
     HAS_AUTH = False
     IMPORT_ERROR = str(e)
     FaceAuthenticator = None
+    MultiUserFaceDetector = None
+    _infer_emotion_from_blendshapes = None
 
 pytestmark = pytest.mark.skipif(not HAS_AUTH, reason=f"Auth dependencies not installed: {IMPORT_ERROR if not HAS_AUTH else ''}")
 
@@ -58,6 +64,50 @@ class TestMediaPipeModel:
         """Test that model URL is defined."""
         assert hasattr(FaceAuthenticator, 'MODEL_URL')
         print(f"Model URL: {FaceAuthenticator.MODEL_URL}")
+
+    def test_fine_expression_support_is_disabled(self):
+        """Auth stays identity-only, while multi-user detector exposes expressions."""
+        assert FaceAuthenticator.SUPPORTS_FINE_FACIAL_EXPRESSIONS is False
+        assert MultiUserFaceDetector.SUPPORTS_FINE_FACIAL_EXPRESSIONS is True
+
+
+class TestBlendshapeEmotionInference:
+    """Test local emotion inference derived from MediaPipe blendshapes."""
+
+    def test_happy_expression_is_detected(self):
+        emotion, confidence = _infer_emotion_from_blendshapes(
+            {
+                "mouthSmileLeft": 0.82,
+                "mouthSmileRight": 0.79,
+                "eyeSquintLeft": 0.20,
+                "eyeSquintRight": 0.18,
+            }
+        )
+        assert emotion == "happy"
+        assert confidence >= 0.28
+
+    def test_angry_expression_is_detected(self):
+        emotion, confidence = _infer_emotion_from_blendshapes(
+            {
+                "browDownLeft": 0.74,
+                "browDownRight": 0.77,
+                "mouthPressLeft": 0.45,
+                "mouthPressRight": 0.42,
+            }
+        )
+        assert emotion == "angry"
+        assert confidence >= 0.28
+
+    def test_low_signal_becomes_neutral(self):
+        emotion, confidence = _infer_emotion_from_blendshapes(
+            {
+                "mouthSmileLeft": 0.05,
+                "mouthSmileRight": 0.04,
+                "browInnerUp": 0.03,
+            }
+        )
+        assert emotion == "neutral"
+        assert confidence < 0.28
     
     def test_ensure_model(self):
         """Test model download/verification."""

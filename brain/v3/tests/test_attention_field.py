@@ -34,8 +34,10 @@ def test_familiarity_reduces_effective_intensity():
 
 
 def test_modulation_threshold_gain_makes_easier_to_spike():
+    # Intensité entre seuil modulé (0.50 * 0.6 = 0.30) et seuil neutre (0.50)
+    # pour valider que la modulation cortisolique abaisse bien le seuil effectif.
     field = AttentionField()
-    s = _stim("vision_object", "obj:knife:appeared", intensity=0.7)
+    s = _stim("vision_object", "obj:knife:appeared", intensity=0.40)
     assert field.tick(s, ModulationVector.neutral(), HabituationTracker()) is False
     field2 = AttentionField()
     mod = ModulationVector(threshold_gain=0.6, decay_gain=1.0, budget_refill=0.0)

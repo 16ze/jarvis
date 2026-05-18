@@ -47,7 +47,16 @@ def canonical_id_for(channel: str, payload: dict) -> str:
         return f"scene:{person}:{human_emotion}"
 
     if channel == "face_motion":
-        return "face:present" if bool(payload.get("presence_bool")) else "face:absent"
+        person = _coerce_str(payload.get("person"))
+        motion = _clamp(payload.get("mouvement", payload.get("movement", 0.0)), 0.0, 1.0)
+        motion_bucket = "high" if motion >= 0.65 else ("medium" if motion >= 0.25 else "low")
+        state = "present" if bool(payload.get("presence_bool")) else "absent"
+        return f"face:{person}:{state}:{motion_bucket}"
+
+    if channel == "gesture":
+        gesture_type = _coerce_str(payload.get("gesture_type"), default="unknown")
+        phase = _coerce_str(payload.get("phase"), default="observed")
+        return f"gesture:{gesture_type}:{phase}"
 
     if channel == "audio":
         intensity_bucket = _coerce_str(payload.get("intensity_bucket"), default="normal")
@@ -76,6 +85,8 @@ def from_payload(payload: dict, channel: str) -> Stimulus:
         intensity_value = max(movement, attention_need)
     elif channel == "face_motion":
         intensity_value = payload.get("mouvement", payload.get("movement", 0.0))
+    elif channel == "gesture":
+        intensity_value = payload.get("intensity", payload.get("movement", 0.0))
     elif channel == "audio":
         intensity_value = payload.get("energie", payload.get("intensity", 0.0))
     elif channel == "text":

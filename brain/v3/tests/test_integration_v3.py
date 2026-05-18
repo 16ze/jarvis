@@ -32,7 +32,10 @@ def test_high_risk_stimulus_returns_react_prompt(monkeypatch):
                 "event_type": "appeared", "movement": 0.3, "risk": "high",
                 "attention_need": 0.95, "spontaneous_hint": "Du feu !"}
     result = brain.ingest_stimulus(stimulus)
-    assert result == "Du feu !"
+    assert result is not None
+    assert result.prompt == "Du feu !"
+    assert result.action == "REACT"
+    assert result.saliency > 0.0
     brain._v3.stop()
 
 

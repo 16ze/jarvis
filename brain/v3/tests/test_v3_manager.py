@@ -37,11 +37,11 @@ def test_manager_enabled_with_env(monkeypatch):
         manager.stop()
 
 
-def test_shadow_mode_default_true(monkeypatch):
+def test_shadow_mode_default_false(monkeypatch):
     monkeypatch.delenv("BRAIN_V3_SHADOW_MODE", raising=False)
     manager = V3Manager(MockLimbic())
     try:
-        assert manager.shadow_mode is True
+        assert manager.shadow_mode is False
     finally:
         manager.stop()
 

@@ -1,7 +1,7 @@
 """AttentionField — couche thalamique v3.
 
-Cinq neurones AdaptiveLIF spécialisés par canal (vision_object, vision_scene,
-face_motion, audio_user, text) avec une inhibition latérale soft : un spike
+Six neurones AdaptiveLIF spécialisés par canal (vision_object, vision_scene,
+face_motion, gesture, audio_user, text) avec une inhibition latérale soft : un spike
 sur un canal soustrait une fraction du potentiel des autres canaux à la
 tick suivante (pour éviter les doublons multi-canaux sur un même événement).
 """
@@ -19,10 +19,13 @@ class AttentionField:
     """Champ d'attention v3 avec inhibition latérale."""
 
     def __init__(self) -> None:
+        # Seuil de spike LIF par canal. Bas = neurone facile à déclencher
+        # (utile pour les événements one-shot type face/gesture/objet).
+        # Haut = il faut une accumulation temporelle (vision_scene, audio, texte).
         self._neurons: dict[str, AdaptiveLIF] = {
             "vision_object": AdaptiveLIF(
                 "vision_object",
-                seuil_base=1.0,
+                seuil_base=env_float("BRAIN_V3_SEUIL_VISION_OBJECT", 0.50),
                 periode_refractaire=env_float("BRAIN_V3_REFRACTORY_VISION_OBJECT", 2.0),
                 ahp_amplitude=env_float("BRAIN_V3_AHP_AMPLITUDE", 0.15),
                 ahp_decay=env_float("BRAIN_V3_AHP_DECAY", 0.92),
@@ -32,7 +35,7 @@ class AttentionField:
             ),
             "vision_scene": AdaptiveLIF(
                 "vision_scene",
-                seuil_base=1.0,
+                seuil_base=env_float("BRAIN_V3_SEUIL_VISION_SCENE", 0.85),
                 periode_refractaire=env_float("BRAIN_V3_REFRACTORY_VISION_SCENE", 8.0),
                 ahp_amplitude=env_float("BRAIN_V3_AHP_AMPLITUDE", 0.15),
                 ahp_decay=env_float("BRAIN_V3_AHP_DECAY", 0.92),
@@ -42,20 +45,27 @@ class AttentionField:
             ),
             "face_motion": AdaptiveLIF(
                 "face_motion",
-                seuil_base=1.0,
+                seuil_base=env_float("BRAIN_V3_SEUIL_FACE_MOTION", 0.45),
                 periode_refractaire=env_float("BRAIN_V3_REFRACTORY_FACE_MOTION", 1.0),
+                ahp_amplitude=env_float("BRAIN_V3_AHP_AMPLITUDE", 0.15),
+                threshold_drift_rate=env_float("BRAIN_V3_THRESHOLD_DRIFT", 0.005),
+            ),
+            "gesture": AdaptiveLIF(
+                "gesture",
+                seuil_base=env_float("BRAIN_V3_SEUIL_GESTURE", 0.45),
+                periode_refractaire=env_float("BRAIN_V3_REFRACTORY_GESTURE", 1.2),
                 ahp_amplitude=env_float("BRAIN_V3_AHP_AMPLITUDE", 0.15),
                 threshold_drift_rate=env_float("BRAIN_V3_THRESHOLD_DRIFT", 0.005),
             ),
             "audio_user": AdaptiveLIF(
                 "audio_user",
-                seuil_base=1.0,
+                seuil_base=env_float("BRAIN_V3_SEUIL_AUDIO", 0.80),
                 periode_refractaire=env_float("BRAIN_V3_REFRACTORY_AUDIO", 0.5),
                 threshold_drift_rate=env_float("BRAIN_V3_THRESHOLD_DRIFT", 0.005),
             ),
             "text": AdaptiveLIF(
                 "text",
-                seuil_base=1.0,
+                seuil_base=env_float("BRAIN_V3_SEUIL_TEXT", 0.80),
                 periode_refractaire=env_float("BRAIN_V3_REFRACTORY_TEXT", 0.3),
                 threshold_drift_rate=env_float("BRAIN_V3_THRESHOLD_DRIFT", 0.005),
             ),

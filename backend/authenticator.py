@@ -1,3 +1,14 @@
+"""
+Authentification et détection faciale locales via MediaPipe.
+
+Important:
+- Ce pipeline local sert à reconnaître des visages et à mesurer un mouvement
+  facial grossier entre frames.
+- `FaceAuthenticator` reste volontairement centré sur l'identité faciale.
+- `MultiUserFaceDetector` peut désormais extraire des face blendshapes pour
+  dériver un signal local d'expression fine en temps réel.
+"""
+
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
@@ -8,10 +19,75 @@ import base64
 import numpy as np
 import urllib.request
 
+
+def _blendshape_scores_to_dict(categories) -> dict[str, float]:
+    """Normalise les catégories MediaPipe en dict simple."""
+    scores: dict[str, float] = {}
+    for category in categories or []:
+        name = getattr(category, "category_name", None)
+        score = getattr(category, "score", None)
+        if not name:
+            continue
+        try:
+            scores[str(name)] = float(score)
+        except (TypeError, ValueError):
+            continue
+    return scores
+
+
+def _infer_emotion_from_blendshapes(scores: dict[str, float]) -> tuple[str, float]:
+    """
+    Dérive une émotion locale simple à partir des blendshapes MediaPipe.
+
+    Retourne `(human_emotion, confidence)`.
+    """
+    if not scores:
+        return "unknown", 0.0
+
+    smile = max(scores.get("mouthSmileLeft", 0.0), scores.get("mouthSmileRight", 0.0))
+    frown = max(scores.get("mouthFrownLeft", 0.0), scores.get("mouthFrownRight", 0.0))
+    brow_inner_up = scores.get("browInnerUp", 0.0)
+    brow_outer_up = max(scores.get("browOuterUpLeft", 0.0), scores.get("browOuterUpRight", 0.0))
+    brow_down = max(scores.get("browDownLeft", 0.0), scores.get("browDownRight", 0.0))
+    eye_wide = max(scores.get("eyeWideLeft", 0.0), scores.get("eyeWideRight", 0.0))
+    eye_squint = max(scores.get("eyeSquintLeft", 0.0), scores.get("eyeSquintRight", 0.0))
+    blink = max(scores.get("eyeBlinkLeft", 0.0), scores.get("eyeBlinkRight", 0.0))
+    eye_look_down = max(scores.get("eyeLookDownLeft", 0.0), scores.get("eyeLookDownRight", 0.0))
+    jaw_open = scores.get("jawOpen", 0.0)
+    mouth_open = scores.get("mouthOpen", 0.0)
+    mouth_lower_down = max(
+        scores.get("mouthLowerDownLeft", 0.0),
+        scores.get("mouthLowerDownRight", 0.0),
+    )
+    mouth_press = max(scores.get("mouthPressLeft", 0.0), scores.get("mouthPressRight", 0.0))
+    mouth_pucker = scores.get("mouthPucker", 0.0)
+
+    candidates = {
+        "happy": smile * 1.35 - frown * 0.35 - brow_down * 0.28 + eye_squint * 0.12,
+        "sad": frown * 0.85 + brow_inner_up * 0.72 + brow_outer_up * 0.18 + mouth_lower_down * 0.08 - smile * 0.45 - mouth_pucker * 0.10,
+        "angry": brow_down * 1.10 + mouth_press * 0.45 + eye_squint * 0.18 + jaw_open * 0.10 - smile * 0.55,
+        "stressed": eye_wide * 0.60 + jaw_open * 0.34 + mouth_open * 0.22 + mouth_lower_down * 0.16 + brow_down * 0.20 - brow_inner_up * 0.12,
+        "tired": blink * 0.42 + eye_look_down * 0.26 + brow_inner_up * 0.14 - eye_wide * 0.22,
+        "intimate": mouth_pucker * 0.78 + eye_squint * 0.12 - jaw_open * 0.15 - brow_inner_up * 0.18 - brow_outer_up * 0.12,
+    }
+    if smile < 0.55:
+        candidates["happy"] *= 0.45
+    if jaw_open >= 0.68 and mouth_lower_down >= 0.72 and brow_inner_up <= 0.56:
+        candidates["stressed"] += 0.10
+    if mouth_pucker < 0.50:
+        candidates["intimate"] = 0.0
+
+    best_emotion, best_score = max(candidates.items(), key=lambda item: item[1])
+    best_score = max(0.0, float(best_score))
+    if best_score < 0.28:
+        return "neutral", best_score
+    return best_emotion, min(1.0, best_score)
+
 class FaceAuthenticator:
     # MediaPipe Face Landmarker model URL
     MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
     MODEL_PATH = os.path.join(os.path.dirname(__file__), "face_landmarker.task")
+    SUPPORTS_FINE_FACIAL_EXPRESSIONS = False
     
     def __init__(self, reference_image_path="reference.jpg", on_status_change=None, on_frame=None):
         """
@@ -52,6 +128,8 @@ class FaceAuthenticator:
             base_options = mp_python.BaseOptions(model_asset_path=self.MODEL_PATH)
             options = vision.FaceLandmarkerOptions(
                 base_options=base_options,
+                # Blendshapes stay disabled here: this local authenticator only
+                # handles identity / geometry, not fine-grained expressions.
                 output_face_blendshapes=False,
                 output_facial_transformation_matrixes=False,
                 num_faces=1
@@ -228,9 +306,15 @@ class MultiUserFaceDetector:
     Détecte et identifie plusieurs utilisateurs dans un frame BGR.
     Charge les photos de référence depuis memory/face_refs/.
     Retourne une liste de {"user": str, "confidence": float, "location": Optional[str]}.
+
+    Note:
+    - Ce détecteur local expose le mouvement du visage via les landmarks.
+    - Il dérive aussi un signal local d'expression faciale à partir des
+      blendshapes MediaPipe pour les réactions fines temps réel.
     """
 
     CONFIDENCE_THRESHOLD = 0.85
+    SUPPORTS_FINE_FACIAL_EXPRESSIONS = True
 
     def __init__(self, camera_label: str = None):
         self.camera_label = camera_label
@@ -238,6 +322,9 @@ class MultiUserFaceDetector:
         # ═══ BRAIN INTEGRATION — début ═══
         self._last_landmarks: dict[str, np.ndarray] = {}
         self._last_motion: float = 0.0
+        self._last_expression_scores: dict[str, float] = {}
+        self._last_emotion: str = "unknown"
+        self._last_emotion_confidence: float = 0.0
         # ═══ BRAIN INTEGRATION — fin ═══
         # ═══ VISION OBJECT (YOLO) — partage de frame webcam ═══
         # Évite d'ouvrir une 2e capture webcam (incompatible macOS).
@@ -266,7 +353,7 @@ class MultiUserFaceDetector:
             base_options = mp_python.BaseOptions(model_asset_path=FaceAuthenticator.MODEL_PATH)
             options = vision.FaceLandmarkerOptions(
                 base_options=base_options,
-                output_face_blendshapes=False,
+                output_face_blendshapes=True,
                 output_facial_transformation_matrixes=False,
                 num_faces=4,
             )
@@ -274,16 +361,35 @@ class MultiUserFaceDetector:
         except Exception as e:
             print(f"[MFACE] Init failed: {e}")
 
-    def _extract_landmarks(self, image_rgb: np.ndarray) -> list[np.ndarray]:
+    def _extract_faces(self, image_rgb: np.ndarray) -> list[dict]:
         if self.landmarker is None:
             return []
         try:
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
             result = self.landmarker.detect(mp_image)
-            return [
-                np.array([[lm.x, lm.y, lm.z] for lm in face], dtype=np.float32).flatten()
-                for face in result.face_landmarks
-            ]
+            faces = []
+            all_landmarks = result.face_landmarks or []
+            all_blendshapes = result.face_blendshapes or []
+            for index, face in enumerate(all_landmarks):
+                landmarks = np.array(
+                    [[lm.x, lm.y, lm.z] for lm in face],
+                    dtype=np.float32,
+                ).flatten()
+                blendshape_scores = _blendshape_scores_to_dict(
+                    all_blendshapes[index] if index < len(all_blendshapes) else []
+                )
+                emotion, emotion_confidence = _infer_emotion_from_blendshapes(
+                    blendshape_scores
+                )
+                faces.append(
+                    {
+                        "landmarks": landmarks,
+                        "blendshape_scores": blendshape_scores,
+                        "human_emotion": emotion,
+                        "emotion_confidence": emotion_confidence,
+                    }
+                )
+            return faces
         except Exception:
             return []
 
@@ -304,9 +410,9 @@ class MultiUserFaceDetector:
             if img_bgr is None:
                 continue
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-            landmarks = self._extract_landmarks(img_rgb)
-            if landmarks:
-                self._reference_landmarks[user_id] = landmarks[0]
+            faces = self._extract_faces(img_rgb)
+            if faces:
+                self._reference_landmarks[user_id] = faces[0]["landmarks"]
                 print(f"[MFACE] Référence chargée : {user_id}")
 
     def reload_references(self):
@@ -327,11 +433,13 @@ class MultiUserFaceDetector:
         if not self._reference_landmarks:
             return []
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        detected_landmarks = self._extract_landmarks(frame_rgb)
+        detected_faces = self._extract_faces(frame_rgb)
         results = []
         # ═══ BRAIN INTEGRATION — début ═══
         motion_values = []
-        for face_lm in detected_landmarks:
+        emotion_values = []
+        for face_data in detected_faces:
+            face_lm = face_data["landmarks"]
             best_user = None
             best_score = -1.0
             for user_id, ref_lm in self._reference_landmarks.items():
@@ -344,13 +452,31 @@ class MultiUserFaceDetector:
                     motion_values.append(self._compute_motion(best_user, face_lm))
                 except Exception:
                     pass
+                emotion = str(face_data.get("human_emotion") or "unknown")
+                emotion_confidence = float(face_data.get("emotion_confidence") or 0.0)
+                blendshape_scores = dict(face_data.get("blendshape_scores") or {})
+                emotion_values.append((emotion, emotion_confidence, blendshape_scores))
                 results.append({
                     "user": best_user,
                     "confidence": best_score,
                     "location": self.camera_label,
+                    "human_emotion": emotion,
+                    "emotion_confidence": emotion_confidence,
+                    "expression_scores": blendshape_scores,
                 })
         if motion_values:
             self._last_motion = max(motion_values)
+        else:
+            self._last_motion = 0.0
+        if emotion_values:
+            self._last_emotion, self._last_emotion_confidence, self._last_expression_scores = max(
+                emotion_values,
+                key=lambda item: item[1],
+            )
+        else:
+            self._last_emotion = "unknown"
+            self._last_emotion_confidence = 0.0
+            self._last_expression_scores = {}
         # ═══ BRAIN INTEGRATION — fin ═══
         return results
 
@@ -377,6 +503,21 @@ class MultiUserFaceDetector:
     def last_motion(self) -> float:
         """Magnitude du dernier mouvement détecté [0.0-1.0]. Lu par le brain."""
         return self._last_motion
+
+    @property
+    def last_emotion(self) -> str:
+        """Dernière émotion locale inférée à partir des blendshapes."""
+        return self._last_emotion
+
+    @property
+    def last_emotion_confidence(self) -> float:
+        """Confiance de la dernière émotion locale inférée."""
+        return self._last_emotion_confidence
+
+    @property
+    def last_expression_scores(self) -> dict[str, float]:
+        """Scores blendshapes de la dernière émotion locale inférée."""
+        return dict(self._last_expression_scores)
     # ═══ BRAIN INTEGRATION — fin ═══
 
     # ═══ VISION OBJECT (YOLO) — partage de frame webcam ═══

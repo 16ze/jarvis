@@ -828,13 +828,7 @@ from brain.brain_manager import get_brain
 # le mood reste figé pour toute la durée de cette session voix.
 _mood_block_voice = get_brain().get_mood_block() or ""
 # ═══ BRAIN INTEGRATION — fin ═══
-config = types.LiveConnectConfig(
-    response_modalities=["AUDIO"],
-    # output_audio_transcription désactivé — overhead inutile, réduit la latence
-    # Réactiver si l'affichage texte des réponses Ada est nécessaire dans l'UI
-    # output_audio_transcription={},
-    input_audio_transcription={},
-    system_instruction=(
+SYSTEM_INSTRUCTION_BASE = (
         # ── IDENTITÉ ──────────────────────────────────────────────────────────
         "Tu es Ada, le compagnon friendly IA de Bryan Hilaire, pas une simple assistante. "
         "Ta personnalité est la représentation conversationnelle sans limite et fidèle de ton système neuronal biomimétique : "
@@ -886,17 +880,35 @@ config = types.LiveConnectConfig(
         # ── VEILLE ─────────────────────────────────────────────────────────────
         "'Mets-toi en veille'/'dors'/'silence' → ada_sleep. "
         "Entend 'Ada' en veille → ada_wake, répond uniquement 'Je vous écoute.' "
-        # ═══ BRAIN INTEGRATION — début ═══
-        + _mood_block_voice
-        # ═══ BRAIN INTEGRATION — fin ═══
-    ),
-    tools=tools,
-    speech_config=types.SpeechConfig(
-        voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Kore")
-        )
-    ),
 )
+
+
+def _build_voice_config(mood_block: str | None = None) -> types.LiveConnectConfig:
+    """Construit la config Live API avec un mood frais.
+
+    Appelée juste avant chaque live.connect() pour éviter le mood périmé
+    (Live API ne supporte pas le hot-swap du system_instruction).
+    """
+    mood = mood_block if mood_block is not None else (get_brain().get_mood_block() or "")
+    return types.LiveConnectConfig(
+        response_modalities=["AUDIO"],
+        # output_audio_transcription désactivé — overhead inutile, réduit la latence
+        # Réactiver si l'affichage texte des réponses Ada est nécessaire dans l'UI
+        # output_audio_transcription={},
+        input_audio_transcription={},
+        system_instruction=SYSTEM_INSTRUCTION_BASE + mood,
+        tools=tools,
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Kore")
+            )
+        ),
+    )
+
+
+# Config initiale pour process_text_message (mode texte Telegram/WhatsApp).
+# Le mode voix construit une config fraîche à chaque session dans run().
+config = _build_voice_config(mood_block=_mood_block_voice)
 
 pya = pyaudio.PyAudio()
 
@@ -1157,6 +1169,9 @@ class AudioLoop:
         self._visual_scene_interval = float(
             os.getenv("VISUAL_SCENE_OBSERVER_INTERVAL_SEC", "20")
         )
+        self._spontaneous_reaction_cooldown_sec = float(
+            os.getenv("ADA_SPONTANEOUS_REACTION_COOLDOWN_SEC", "3.0")
+        )
         self._visual_scene_enabled = os.getenv(
             "VISUAL_SCENE_OBSERVER_ENABLED", "true"
         ).strip().lower() in {"1", "true", "yes", "on"}
@@ -1165,6 +1180,19 @@ class AudioLoop:
         )
         _bg_task(self.screen_watcher.start(), name="screen_watcher")
         self._last_injected_mood: str | None = None
+        self._last_spontaneous_reaction_at: dict[str, float] = {}
+        self._last_face_presence: bool | None = None
+        self._last_face_person: str | None = None
+        # Features audio de la voix de Bryan, alimentées par listen_audio
+        # et lues par notify_user_message pour nourrir l'intonation limbic.
+        self._audio_features: dict[str, float] = {"energie": 0.0, "zcr": 0.0, "duree": 0.0}
+        self._utterance_start_ts: float | None = None
+        self._utterance_rms_peak: float = 0.0
+        self._utterance_zcr_peak: float = 0.0
+        # Battement intérieur proactif : suivi de la dernière interaction
+        self._last_user_interaction_ts: float = time.monotonic()
+        self._last_heartbeat_ts: float = 0.0
+        self._last_face_emotion: str | None = None
 
         # ── Rappels ──────────────────────────────────────────────────────────
         self.reminder_manager = ReminderManager()
@@ -1312,12 +1340,33 @@ class AudioLoop:
     async def send_frame(self, frame_data):
         # Update the latest frame payload
         if isinstance(frame_data, bytes):
+            raw_bytes = frame_data
             b64_data = base64.b64encode(frame_data).decode("utf-8")
         else:
             b64_data = frame_data
+            try:
+                raw_bytes = base64.b64decode(frame_data)
+            except Exception:
+                raw_bytes = None
 
         # Store as the designated "next frame to send"
         self._latest_image_payload = {"mime_type": "image/jpeg", "data": b64_data}
+
+        # ═══ PERCEPTION VISUELLE — début ═══
+        # En mode Electron (frontend_audio_mode), le backend n'ouvre pas cv2.VideoCapture,
+        # donc _face_detection_loop et VisionObjectAgent restent aveugles si on ne
+        # leur fournit pas la frame décodée ici. Sans ça, aucun stimulus visuel
+        # (face_motion, vision_object, gesture caméra) n'atteint le brain.
+        if raw_bytes:
+            try:
+                arr = np.frombuffer(raw_bytes, dtype=np.uint8)
+                frame_bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if frame_bgr is not None:
+                    self._last_raw_frame = frame_bgr
+            except Exception as e:
+                print(f"[FRAME] decode for perception failed: {e}")
+        # ═══ PERCEPTION VISUELLE — fin ═══
+
         if self.video_mode == "camera":
             _bg_task(
                 self._observe_camera_scene(self._latest_image_payload),
@@ -1379,30 +1428,300 @@ class AudioLoop:
                     self._is_speaking = False
                     self._silence_start_time = None
 
-    async def _handle_visual_scene_event(self, event: dict):
-        """Injecte une scène visuelle structurée dans le brain et laisse Ada réagir."""
+    async def _send_spontaneous_reaction(
+        self,
+        *,
+        prompt: str | None,
+        origin: str,
+        description: str,
+        is_danger: bool = False,
+        saliency: float | None = None,
+        reason: str | None = None,
+    ) -> None:
+        prompt = (prompt or "").strip()
+        if not prompt or not self.session or self.paused:
+            return
+        if self.sleep_mode and not is_danger:
+            return
+
+        now = time.monotonic()
+        last_at = self._last_spontaneous_reaction_at.get(origin, 0.0)
+        if not is_danger and now - last_at < self._spontaneous_reaction_cooldown_sec:
+            return
+        self._last_spontaneous_reaction_at[origin] = now
+
+        # Map saliency [0..1] → registre suggéré pour guider Gemini Live.
+        if is_danger:
+            registre = "alerte immédiate, ton ferme"
+        elif saliency is None:
+            registre = "choisis librement entre son bref, interjection ou phrase courte"
+        elif saliency < 0.50:
+            registre = "un son bref suffit (\"mmh\", \"oh\", \"ah\", un souffle, un rire)"
+        elif saliency < 0.75:
+            registre = "interjection + 3-4 mots (\"oh, tu reviens\", \"ah, un chat\")"
+        else:
+            registre = "phrase courte complète"
+
+        meta = ""
+        if saliency is not None:
+            meta = f"Intensité ressentie : {saliency:.2f}/1.0"
+            if reason:
+                meta += f" ({reason})"
+            meta += "\n"
+
         try:
-            prompt = get_brain().notify_visual_scene(event)
-            if not prompt or not self.session or self.paused:
-                return
-
-            is_danger = event.get("risk") == "high"
-            if self.sleep_mode and not is_danger:
-                return
-
-            desc = event.get("description", "scène visuelle")
             await self.session.send(
                 input=(
-                    "[VISION SPONTANÉE]\n"
-                    f"Scène : {desc}\n"
+                    "[PERCEPTION SPONTANÉE]\n"
+                    f"Source : {origin}\n"
+                    f"Perçu : {description}\n"
+                    f"{meta}"
                     f"Stimulus : {prompt}\n"
-                    "Réponds maintenant seulement si cela mérite vraiment une réaction. "
-                    "Une phrase courte, naturelle, depuis ton humeur Ada."
+                    f"Registre conseillé : {registre}.\n"
+                    "Reste dans ton humeur Ada actuelle. Si vraiment ça ne vaut pas la peine, "
+                    "ne dis rien — mais privilégie une micro-réaction au silence total."
                 ),
                 end_of_turn=True,
             )
         except Exception as e:
+            print(f"[PERCEPTION] spontaneous send error: {e}")
+
+    async def _push_perception_stimulus(
+        self,
+        stimulus: dict,
+        *,
+        origin: str,
+        description: str,
+        is_danger: bool = False,
+    ) -> None:
+        brain = getattr(self, "_brain", None) or getattr(self, "brain", None)
+        if brain is None:
+            brain = get_brain()
+        if brain is None or not hasattr(brain, "ingest_stimulus"):
+            return
+
+        try:
+            result = await asyncio.to_thread(brain.ingest_stimulus, stimulus)
+        except Exception as exc:
+            print(f"[PERCEPTION] brain.ingest_stimulus failed ({origin}): {exc}")
+            return
+
+        if result is None:
+            return
+        # PerceptionResult NamedTuple (prompt, saliency, reason, action)
+        await self._send_spontaneous_reaction(
+            prompt=result.prompt,
+            origin=origin,
+            description=description,
+            is_danger=is_danger,
+            saliency=result.saliency,
+            reason=result.reason,
+        )
+
+    async def _handle_visual_scene_event(self, event: dict):
+        """Injecte une scène visuelle structurée dans le brain et laisse Ada réagir."""
+        try:
+            result = get_brain().notify_visual_scene(event)
+            if result is None:
+                return
+            await self._send_spontaneous_reaction(
+                prompt=result.prompt,
+                origin="vision_scene",
+                description=event.get("description", "scène visuelle"),
+                is_danger=event.get("risk") == "high",
+                saliency=result.saliency,
+                reason=result.reason,
+            )
+        except Exception as e:
             print(f"[VISION] scene event error: {e}")
+
+    async def _spontaneous_heartbeat(self):
+        """Battement intérieur — pensée proactive même sans stimulus externe.
+
+        Toutes les ADA_HEARTBEAT_SEC, lit l'état du brain (mood, dopamine,
+        mental_load, temps depuis dernière interaction) et décide si une
+        pensée spontanée émerge. C'est l'équivalent fonctionnel d'une pensée
+        qui surgit "toute seule" quand Ada est tranquille.
+        """
+        if os.getenv("ADA_HEARTBEAT_ENABLED", "true").strip().lower() not in {"1", "true", "yes", "on"}:
+            print("[HEARTBEAT] désactivé via ADA_HEARTBEAT_ENABLED=false")
+            return
+
+        period = float(os.getenv("ADA_HEARTBEAT_SEC", "90"))
+        silence_min = float(os.getenv("ADA_HEARTBEAT_SILENCE_MIN_SEC", "60"))
+        dopa_threshold = float(os.getenv("ADA_HEARTBEAT_DOPAMINE_THRESHOLD", "0.55"))
+        print(f"[HEARTBEAT] démarré (période={period}s, silence_min={silence_min}s, dopa≥{dopa_threshold})")
+
+        while not self.stop_event.is_set():
+            await asyncio.sleep(period)
+
+            if self.paused or self.sleep_mode or not self.session:
+                continue
+            if self._is_speaking or self._is_ada_speaking:
+                continue
+
+            now = time.monotonic()
+            silence_duration = now - max(self._last_user_interaction_ts, self._last_heartbeat_ts)
+            if silence_duration < silence_min:
+                continue
+
+            try:
+                brain = get_brain()
+                snap = brain.limbic.get_snapshot()
+                mood = snap.get("mood", "neutre")
+                dopamine = float(snap.get("dopamine", 0.0))
+                cortisol = float(snap.get("cortisol", 0.0))
+                mental_load = float(snap.get("mental_load", 0.0))
+                oxytocine = float(snap.get("oxytocine", 0.0))
+            except Exception as e:
+                print(f"[HEARTBEAT] brain snapshot failed: {e}")
+                continue
+
+            # Critère d'émergence : un état "saillant" interne justifie d'exister
+            emerge = False
+            trigger = ""
+            if dopamine >= dopa_threshold:
+                emerge, trigger = True, f"dopamine élevée ({dopamine:.2f})"
+            elif cortisol >= 0.55:
+                emerge, trigger = True, f"tension cortisolique ({cortisol:.2f})"
+            elif oxytocine >= 0.50 and silence_duration > 180:
+                emerge, trigger = True, f"attachement + silence ({silence_duration:.0f}s)"
+            elif silence_duration > 300 and mental_load < 0.40:
+                emerge, trigger = True, f"calme prolongé ({silence_duration:.0f}s)"
+
+            if not emerge:
+                continue
+
+            self._last_heartbeat_ts = now
+            try:
+                await self.session.send(
+                    input=(
+                        "[BATTEMENT INTÉRIEUR]\n"
+                        f"État interne : mood={mood}, dopamine={dopamine:.2f}, "
+                        f"cortisol={cortisol:.2f}, oxytocine={oxytocine:.2f}, "
+                        f"mental_load={mental_load:.2f}\n"
+                        f"Déclencheur : {trigger}\n"
+                        f"Silence depuis {silence_duration:.0f}s.\n"
+                        "Une pensée spontanée émerge naturellement de ton état actuel — "
+                        "une observation, une question, un souvenir, une envie. "
+                        "Partage-la en une phrase courte, comme une présence vivante qui "
+                        "réfléchit à voix haute. Pas de préambule. Si vraiment rien ne vient, "
+                        "un soupir, un \"mmh\" ou un petit son suffit."
+                    ),
+                    end_of_turn=True,
+                )
+                print(f"[HEARTBEAT] pensée émise — trigger={trigger}")
+            except Exception as e:
+                print(f"[HEARTBEAT] send error: {e}")
+
+    async def _handle_face_perception(self, detections: list[dict]) -> None:
+        detector = self._face_detector
+        if detector is None:
+            return
+
+        presence = bool(detections)
+        confidence = max((float(d.get("confidence", 0.0)) for d in detections), default=0.0)
+        movement = float(getattr(detector, "last_motion", 0.0) or 0.0)
+        person = str(detections[0].get("user", "unknown")).strip() if detections else "personne"
+        emotion = str(detections[0].get("human_emotion", "unknown")).strip().lower() if detections else "unknown"
+        emotion_confidence = float(detections[0].get("emotion_confidence", 0.0) or 0.0) if detections else 0.0
+
+        should_emit = False
+        if self._last_face_presence is None or presence != self._last_face_presence:
+            should_emit = True
+        elif presence and person != self._last_face_person:
+            should_emit = True
+        elif presence and emotion != self._last_face_emotion and emotion_confidence >= 0.35:
+            should_emit = True
+        elif presence and movement >= 0.18:
+            should_emit = True
+
+        self._last_face_presence = presence
+        self._last_face_person = person if presence else None
+        self._last_face_emotion = emotion if presence else None
+
+        if not should_emit:
+            return
+
+        action = "apparaît" if presence else "quitte le cadre"
+        if presence and movement >= 0.45:
+            action = "bouge nettement"
+        if presence and emotion not in {"unknown", "neutral"} and emotion_confidence >= 0.35:
+            action = f"semble {emotion}"
+        description = (
+            f"{person} {action}" if presence else "plus aucun visage reconnu"
+        )
+        stimulus = {
+            "source": "face_motion",
+            "description": description,
+            "person": person,
+            "human_emotion": emotion,
+            "presence_bool": presence,
+            "movement": movement,
+            "mouvement": movement,
+            "intensity": movement,
+            "attention_need": max(
+                0.35 if presence else 0.2,
+                movement,
+                confidence * 0.65,
+                emotion_confidence * 0.75,
+            ),
+            "risk": "none",
+            "valence": (
+                0.35 if emotion in {"happy", "intimate"} else
+                -0.35 if emotion in {"sad", "angry", "stressed", "tired"} else
+                0.0
+            ),
+            "affection": (
+                0.65 if emotion in {"sad", "tired", "intimate"} else
+                0.35 if emotion == "happy" else
+                0.0
+            ),
+            "emotion_confidence": emotion_confidence,
+            "expression_scores": dict(detections[0].get("expression_scores", {}) or {}) if detections else {},
+            "spontaneous_hint": (
+                f"Je vois {person} qui {action}."
+                if presence
+                else "Je ne vois plus personne dans mon champ de vision."
+            ),
+        }
+        await self._push_perception_stimulus(
+            stimulus,
+            origin="face_motion",
+            description=description,
+        )
+
+    async def handle_hand_gesture_event(self, data: dict) -> None:
+        event_type = str((data or {}).get("type") or "").strip().lower()
+        if event_type in {"", "move", "scroll"}:
+            return
+
+        direction = str((data or {}).get("direction") or "").strip().lower()
+        gesture_label = {
+            "click": "pincement",
+            "mouse_down": "poing",
+            "mouse_up": "relâchement",
+            "window_switch": "balayage",
+            "nav": "geste de navigation",
+        }.get(event_type, event_type)
+        description = gesture_label if not direction else f"{gesture_label} {direction}"
+        stimulus = {
+            "source": "gesture",
+            "gesture_type": event_type,
+            "phase": direction or "observed",
+            "description": description,
+            "movement": 0.85 if event_type in {"click", "mouse_down", "window_switch"} else 0.6,
+            "intensity": 0.85 if event_type in {"click", "mouse_down", "window_switch"} else 0.6,
+            "attention_need": 0.72 if event_type in {"click", "mouse_down", "window_switch"} else 0.55,
+            "risk": "none",
+            "valence": 0.0,
+            "spontaneous_hint": f"Je remarque un {description}.",
+        }
+        await self._push_perception_stimulus(
+            stimulus,
+            origin="gesture",
+            description=description,
+        )
 
     async def _observe_camera_scene(self, payload: dict):
         if not self._visual_scene_enabled or self._visual_scene_in_flight:
@@ -1545,6 +1864,38 @@ class AudioLoop:
                     if len(arr) > 0
                     else 0
                 )
+
+                # Capture des features audio pour l'intonation limbic.
+                # energie : RMS normalisé 0..1 (32768 = saturation int16)
+                # zcr     : taux de passage à zéro 0..1 (proxy de la voisure)
+                # duree   : secondes écoulées depuis le début de l'utterance courante
+                if len(arr) > 1:
+                    _zcr_chunk = float(
+                        np.mean(np.diff(np.sign(arr.astype(np.int32))) != 0)
+                    )
+                else:
+                    _zcr_chunk = 0.0
+                _energie_chunk = min(1.0, float(rms) / 32768.0 * 2.0)
+                if rms > VAD_THRESHOLD:
+                    if self._utterance_start_ts is None:
+                        self._utterance_start_ts = time.time()
+                        self._utterance_rms_peak = 0.0
+                        self._utterance_zcr_peak = 0.0
+                    self._utterance_rms_peak = max(self._utterance_rms_peak, _energie_chunk)
+                    self._utterance_zcr_peak = max(self._utterance_zcr_peak, _zcr_chunk)
+                    self._audio_features = {
+                        "energie": self._utterance_rms_peak,
+                        "zcr": self._utterance_zcr_peak,
+                        "duree": time.time() - self._utterance_start_ts,
+                    }
+                elif (
+                    self._utterance_start_ts is not None
+                    and self._silence_start_time is not None
+                    and time.time() - self._silence_start_time > SILENCE_DURATION
+                ):
+                    # Silence confirmé : on garde _audio_features tel quel (snapshot
+                    # de la dernière utterance) puis on reset pour la prochaine.
+                    self._utterance_start_ts = None
 
                 if self._is_ada_speaking:
                     # Ada is playing — mic is muted from Gemini to prevent echo
@@ -2015,21 +2366,23 @@ class AudioLoop:
 
                                         # ── TRAITEMENT NORMAL ─────────────────
                                         # ═══ BRAIN INTEGRATION — début ═══
+                                        self._last_user_interaction_ts = time.monotonic()
                                         brain = get_brain()
-                                        brain.notify_user_message(delta)
+                                        brain.notify_user_message(
+                                            delta,
+                                            audio_features=dict(self._audio_features),
+                                        )
                                         mood_update = brain.get_runtime_mood_update()
                                         if mood_update and self.session:
                                             try:
-                                                mood_line = next(
-                                                    (
-                                                        line
-                                                        for line in mood_update.splitlines()
-                                                        if line.startswith("Mood courant :")
-                                                    ),
-                                                    mood_update,
-                                                )
-                                                if mood_line != self._last_injected_mood:
-                                                    self._last_injected_mood = mood_line
+                                                dedupe_key = "\n".join(
+                                                    line
+                                                    for line in mood_update.splitlines()
+                                                    if line.startswith("Mood courant :")
+                                                    or line.startswith("Dernier stimulus :")
+                                                ) or mood_update
+                                                if dedupe_key != self._last_injected_mood:
+                                                    self._last_injected_mood = dedupe_key
                                                     await self.session.send(
                                                         input=mood_update,
                                                         end_of_turn=False,
@@ -4326,6 +4679,7 @@ class AudioLoop:
                 detections = await asyncio.to_thread(self._face_detector.detect, frame)
                 if detections:
                     presence_manager.update_face_detection(detections)
+                await self._handle_face_perception(detections)
             except Exception as e:
                 print(f"[PRESENCE] Face detection error: {e}")
 
@@ -4545,8 +4899,11 @@ class AudioLoop:
         while not self.stop_event.is_set():
             try:
                 print(f"[ADA DEBUG] [CONNECT] Connecting to Gemini Live API...")
+                # Mood frais à chaque (re)connexion — sinon le system_instruction
+                # reste figé sur le mood capturé à l'import du module.
+                session_config = _build_voice_config()
                 async with (
-                    client.aio.live.connect(model=MODEL, config=config) as session,
+                    client.aio.live.connect(model=MODEL, config=session_config) as session,
                     asyncio.TaskGroup() as tg,
                 ):
                     print(f"[ADA DEBUG] [CONNECT] Connected!")
@@ -4571,6 +4928,7 @@ class AudioLoop:
                     tg.create_task(self.play_audio())
                     tg.create_task(presence_manager.run())
                     tg.create_task(self._face_detection_loop())
+                    tg.create_task(self._spontaneous_heartbeat())
 
                     # Handle Startup vs Reconnect Logic
                     if not is_reconnect:
@@ -4796,15 +5154,17 @@ class AudioLoop:
 
     async def _on_vision_object_event(self, stimulus: dict) -> None:
         """Pont vers le brain SNN (additif, ne casse pas on_scene_event)."""
-        brain = getattr(self, "_brain", None) or getattr(self, "brain", None)
-        if brain is None:
-            from brain.brain_manager import get_brain
-            brain = get_brain()
-        if brain is not None and hasattr(brain, "ingest_stimulus"):
-            try:
-                await asyncio.to_thread(brain.ingest_stimulus, stimulus)
-            except Exception as exc:
-                print(f"[VISION_OBJ] brain.ingest_stimulus failed: {exc}")
+        description = str(
+            stimulus.get("description")
+            or stimulus.get("spontaneous_hint")
+            or "événement visuel"
+        )
+        await self._push_perception_stimulus(
+            stimulus,
+            origin="vision_object",
+            description=description,
+            is_danger=stimulus.get("risk") == "high",
+        )
 
     async def _execute_text_tool(self, name: str, args: dict) -> str:
         """Dispatch d'outils pour le mode texte (Telegram/WhatsApp/etc.)."""

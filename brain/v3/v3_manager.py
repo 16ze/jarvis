@@ -41,7 +41,7 @@ class V3Manager:
 
     @property
     def shadow_mode(self) -> bool:
-        return env_bool("BRAIN_V3_SHADOW_MODE", True)
+        return env_bool("BRAIN_V3_SHADOW_MODE", False)
 
     def process(self, payload: dict, channel: str) -> ReactionDecision | None:
         try:
