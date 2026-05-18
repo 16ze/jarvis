@@ -4,9 +4,22 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens — source of truth for the Ada palette. Tailwind arbitrary
+   values in components reference these RGBs directly today; a future cleanup
+   commit will rewire them as `var(--ada-...)` so the palette has one knob. */
+:root {
+  --ada-blue-accent: #3b82f6;
+  --ada-blue-strong: #2563eb;
+  --ada-blue-soft: #dbeafe;
+  --ada-glass-bg: rgba(255, 255, 255, 0.6);
+  --ada-glass-border: rgba(59, 130, 246, 0.4);
+  --ada-glass-glow: rgba(59, 130, 246, 0.15);
+}
+
 body {
   margin: 0;
-  background-color: #000;
+  background-color: #ffffff;
+  color: #1e293b;
   overflow: hidden;
 }
 
@@ -30,6 +43,14 @@ body {
 
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out forwards;
+}
+
+.glass-reflet {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 50%);
+}
+
+.electron-performance .glass-reflet {
+  display: none;
 }
 
 .electron-performance .backdrop-blur,

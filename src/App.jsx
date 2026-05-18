@@ -8,6 +8,7 @@ import CadWindow from './components/CadWindow';
 import TerminalWindow from './components/TerminalWindow';
 import ChatModule from './components/ChatModule';
 import ToolsModule from './components/ToolsModule';
+import HamburgerMenu from './components/HamburgerMenu';
 import { Mic, MicOff, Settings, X, Minus, Power, Video, VideoOff, Layout, Hand, Printer, Clock } from 'lucide-react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 // MemoryPrompt removed - memory is now actively saved to project
@@ -1949,7 +1950,7 @@ function App() {
     }
 
     return (
-        <div className={`h-screen w-screen bg-black text-cyan-100 font-mono overflow-hidden flex flex-col relative selection:bg-cyan-900 selection:text-white ${isElectron ? 'electron-performance' : ''}`}>
+        <div className={`h-screen w-screen bg-white text-slate-800 font-mono overflow-hidden flex flex-col relative selection:bg-blue-200 selection:text-blue-900 ${isElectron ? 'electron-performance' : ''}`}>
 
             {/* --- PREMIUM UI LAYER --- */}
 
@@ -1974,24 +1975,24 @@ function App() {
 
             {/* Background Grid/Effects - ALIVE BACKGROUND (Fixed: Static opacity) */}
             <div
-                className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-900 via-black to-black z-0 pointer-events-none"
+                className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-50 via-white to-white z-0 pointer-events-none"
                 style={{ opacity: 0.6 }}
             ></div>
 
             {/* Ambient Glow (Fixed: Static) */}
             {!isElectron && (
                 <div
-                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-cyan-900/10 rounded-full blur-[120px] pointer-events-none"
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-blue-200/30 rounded-full blur-[120px] pointer-events-none"
                 />
             )}
 
             {/* Top Bar (Draggable) */}
-            <div className="z-50 flex items-center justify-between p-2 border-b border-cyan-500/20 bg-black/40 backdrop-blur-md select-none sticky top-0" style={{ WebkitAppRegion: 'drag' }}>
+            <div className="z-50 flex items-center justify-between p-2 border-b border-blue-400/30 bg-white/70 backdrop-blur-md select-none sticky top-0" style={{ WebkitAppRegion: 'drag' }}>
                 <div className="flex items-center gap-4 pl-2">
-                    <h1 className="text-xl font-bold tracking-[0.2em] text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]">
+                    <h1 className="text-xl font-bold tracking-[0.2em] text-blue-600 drop-shadow-[0_0_10px_rgba(59,130,246,0.4)]">
                         A.D.A
                     </h1>
-                    <div className="text-[10px] text-cyan-700 border border-cyan-900 px-1 rounded">
+                    <div className="text-[10px] text-slate-500 border border-blue-200 px-1 rounded">
                         V2.0.0
                     </div>
                     {/* FPS Counter */}
@@ -2023,14 +2024,14 @@ function App() {
 
                 <div className="flex items-center gap-2 pr-2" style={{ WebkitAppRegion: 'no-drag' }}>
                     {/* Live Clock */}
-                    <div className="flex items-center gap-1.5 text-[11px] text-cyan-300/70 font-mono px-2">
-                        <Clock size={12} className="text-cyan-500/50" />
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-600 font-mono px-2">
+                        <Clock size={12} className="text-blue-500/70" />
                         <span>{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                    <button onClick={handleMinimize} className="p-1 hover:bg-cyan-900/50 rounded text-cyan-500 transition-colors">
+                    <button onClick={handleMinimize} className="p-1 hover:bg-blue-100 rounded text-blue-600 transition-colors">
                         <Minus size={18} />
                     </button>
-                    <button onClick={handleMaximize} className="p-1 hover:bg-cyan-900/50 rounded text-cyan-500 transition-colors">
+                    <button onClick={handleMaximize} className="p-1 hover:bg-blue-100 rounded text-blue-600 transition-colors">
                         <div className="w-[14px] h-[14px] border-2 border-current rounded-[2px]" />
                     </button>
                     <button onClick={handleCloseRequest} className="p-1 hover:bg-red-900/50 rounded text-red-500 transition-colors">
@@ -2044,8 +2045,8 @@ function App() {
                 {/* Central Visualizer (AI Audio) */}
                 <div
                     id="visualizer"
-                    className={`absolute flex items-center justify-center transition-all duration-200 
-                        backdrop-blur-xl bg-black/30 border border-white/10 shadow-2xl overflow-visible
+                    className={`absolute flex items-center justify-center transition-all duration-200
+                        backdrop-blur-xl bg-white/40 border border-blue-400/30 shadow-2xl overflow-visible
                         ${isModularMode ? (activeDragElement === 'visualizer' ? 'ring-2 ring-green-500 bg-green-500/10' : 'ring-1 ring-yellow-500/30 bg-yellow-500/5') + ' rounded-2xl pointer-events-auto' : 'rounded-2xl pointer-events-none'}
                     `}
                     style={{
@@ -2072,7 +2073,7 @@ function App() {
 
                 {/* Video Feed Overlay */}
                 {/* Floating Project Label */}
-                <div className="absolute top-[70px] left-1/2 -translate-x-1/2 text-cyan-500 text-xs font-mono tracking-widest pointer-events-none z-50 bg-black/50 px-2 py-1 rounded backdrop-blur-sm border border-cyan-500/20">
+                <div className="absolute top-[70px] left-1/2 -translate-x-1/2 text-blue-700 text-xs font-mono tracking-widest pointer-events-none z-50 bg-white/70 px-2 py-1 rounded backdrop-blur-sm border border-blue-400/30">
                     PROJECT: {currentProject?.toUpperCase()}
                 </div>
 
@@ -2225,7 +2226,7 @@ function App() {
 
                 {/* Footer Controls / Tools Module */}
                 <div className="z-20 flex justify-center pb-10 pointer-events-none">
-                    <ToolsModule
+                    <HamburgerMenu
                         isConnected={isConnected}
                         isMuted={isMuted}
                         isVideoOn={isVideoOn}
@@ -2257,7 +2258,6 @@ function App() {
                         isScreenMode={isScreenMode}
                         onToggleScreenMode={toggleScreenMode}
                         onToggleDocuments={() => setShowDocumentsWindow(true)}
-                        activeDragElement={activeDragElement}
                         position={elementPositions.tools}
                         onMouseDown={(e) => handleMouseDown(e, 'tools')}
                     />
