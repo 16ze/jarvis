@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import io from 'socket.io-client';
 
 import Visualizer from './components/Visualizer';
+import PointCloudSphere, { POINTCLOUD_SPEAK_THRESHOLD } from './components/PointCloudSphere';
 import TopAudioBar from './components/TopAudioBar';
 import CadWindow from './components/CadWindow';
 import TerminalWindow from './components/TerminalWindow';
@@ -2058,11 +2059,9 @@ function App() {
                 >
                     <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay z-10"></div>
                     <div className="relative z-20">
-                        <Visualizer
-                            audioData={aiAudioData}
-                            audioDataRef={aiAudioDataRef}
-                            isListening={isConnected && !isMuted}
-                            intensity={isElectron ? null : audioAmp}
+                        <PointCloudSphere
+                            isSpeaking={isConnected && !isMuted && !isElectron && (audioAmp || 0) > POINTCLOUD_SPEAK_THRESHOLD}
+                            intensity={isElectron ? 0 : (audioAmp || 0)}
                             width={elementSizes.visualizer.w}
                             height={elementSizes.visualizer.h}
                             reduceMotion={isElectron}
