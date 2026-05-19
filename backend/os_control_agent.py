@@ -571,10 +571,21 @@ end tell'''
         escaped_body = _osascript_escape(note_html)
         escaped_title = _osascript_escape(title.strip())
 
+        # Préférer iCloud si présent (compte habituellement visible dans l'UI),
+        # sinon retomber sur le premier compte disponible.
         script = f'''
 tell application "Notes"
     activate
-    set targetAccount to first account
+    set targetAccount to missing value
+    repeat with a in accounts
+        if (name of a) is "iCloud" then
+            set targetAccount to a
+            exit repeat
+        end if
+    end repeat
+    if targetAccount is missing value then
+        set targetAccount to first account
+    end if
     set targetFolder to first folder of targetAccount
     if "{escaped_title}" is not "" then
         make new note at targetFolder with properties {{name:"{escaped_title}", body:"{escaped_body}"}}
