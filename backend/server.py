@@ -7,6 +7,7 @@ if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 import socketio
+import engineio.payload
 import uvicorn
 from fastapi import FastAPI, UploadFile, File, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,12 +28,14 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import ada
 import external_bridge
+from os_control_agent import OsControlAgent, is_local_first_task
 from dotenv import load_dotenv
 load_dotenv()
 from authenticator import FaceAuthenticator
 from tuya_agent import TuyaAgent
 from web_agent import WebAgent
 from chromecast_agent import CastAgent
+from hand_gesture_os_controller import HandGestureOsController
 
 # ─── API AUTH ─────────────────────────────────────────────────────────────────
 _bearer = HTTPBearer(auto_error=False)
@@ -47,6 +50,20 @@ def require_token(creds: HTTPAuthorizationCredentials = Security(_bearer)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token invalide ou manquant")
 
 # ─── SOCKETIO + APP ───────────────────────────────────────────────────────────
+# Audio chunks can arrive in bursts while the browser is still on polling.
+# The default Engine.IO limit is 16 packets per payload, too low for mic audio.
+engineio.payload.Payload.max_decode_packets = int(
+    os.getenv("ENGINEIO_MAX_DECODE_PACKETS", "200")
+)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # Create a Socket.IO server
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 app = FastAPI()
@@ -79,6 +96,8 @@ authenticator = None
 tuya_agent = TuyaAgent()
 standalone_web_agent = WebAgent()
 cast_agent = CastAgent()
+hand_gesture_os_controller = HandGestureOsController()
+standalone_os_control_agent = OsControlAgent()
 SETTINGS_FILE = "settings.json"
 
 DEFAULT_SETTINGS = {
@@ -257,10 +276,31 @@ async def startup_event():
     print("[SERVER] Startup: Démarrage du bridge Telegram/WhatsApp...")
     external_bridge.start_bridge()
 
+    # ── Vision objet (YOLO) — singleton env-gated ─────────────────────────────
+    if os.getenv("VISION_OBJECT_ENABLED", "false").lower() == "true":
+        try:
+            from vision_object_agent import VisionObjectAgent
+            VisionObjectAgent.get_or_create_singleton(memory_manager=None)
+            print("[SERVER] VisionObjectAgent singleton initialized")
+        except Exception as exc:
+            print(f"[SERVER] VisionObjectAgent init failed: {exc}")
+
     # ── Health report initial ─────────────────────────────────────────────────
     global _health_report
     _health_report = await build_health_report()
     await sio.emit("health_report", _health_report)
+
+
+@app.on_event("shutdown")
+async def shutdown_vision_object_agent():
+    """Stoppe proprement le VisionObjectAgent (cancel boucles caméra + cleanup)."""
+    try:
+        from vision_object_agent import VisionObjectAgent
+        agent = VisionObjectAgent.peek_singleton()
+        if agent is not None:
+            await agent.stop()
+    except Exception as exc:
+        print(f"[SERVER] VisionObjectAgent shutdown failed: {exc}")
 
 
 @app.get("/health")
@@ -275,6 +315,29 @@ async def health_endpoint():
 @app.get("/status")
 async def status():
     return {"status": "running", "service": "A.D.A Backend"}
+
+
+@app.get("/brain/v3/traces")
+async def brain_v3_traces(n: int = 50):
+    """Retourne les N dernières décisions du brain v3 pour calibration shadow."""
+    try:
+        from brain.brain_manager import get_brain
+        brain = get_brain()
+        v3 = getattr(brain, "_v3", None)
+        if v3 is None:
+            return {"enabled": False, "decisions": []}
+        state = v3.get_debug_state()
+        limit = max(1, min(int(n), 500))
+        return {
+            "enabled": state["enabled"],
+            "shadow_mode": state["shadow_mode"],
+            "degraded": state["degraded"],
+            "budget": state["budget"],
+            "habituation_size": state["habituation_size"],
+            "decisions": state["recent_decisions"][:limit],
+        }
+    except Exception as exc:
+        return {"error": str(exc), "decisions": []}
 
 
 # ─── SPOTIFY OAuth ────────────────────────────────────────────────────────────
@@ -402,6 +465,8 @@ async def connect(sid, environ):
     async def on_auth_status(is_auth):
         print(f"[SERVER] Auth status change: {is_auth}")
         await sio.emit('auth_status', {'authenticated': is_auth})
+        if is_auth and _env_bool("AUTO_START_AUDIO_ON_AUTH", True):
+            asyncio.create_task(start_audio(sid, {"muted": False}))
 
     # Callback for Auth Camera Frames
     async def on_auth_frame(frame_b64):
@@ -430,6 +495,8 @@ async def connect(sid, environ):
             # We don't change authenticator state to true to avoid confusion if re-enabled? 
             # Or we should just tell client it's auth'd.
             await sio.emit('auth_status', {'authenticated': True})
+            if _env_bool("AUTO_START_AUDIO_ON_AUTH", True):
+                asyncio.create_task(start_audio(sid, {"muted": False}))
 
 @sio.event
 async def disconnect(sid):
@@ -748,13 +815,49 @@ async def shutdown(sid, data=None):
 async def user_input(sid, data):
     text = data.get('text')
     print(f"[SERVER DEBUG] User input received: '{text}'")
-    
+
+    if text and is_local_first_task(text):
+        print(f"[SERVER DEBUG] Local-first Mac task intercepted: '{text}'")
+        os_agent = getattr(audio_loop, "os_control_agent", None) if audio_loop else None
+        os_agent = os_agent or standalone_os_control_agent
+        if not os_agent:
+            await sio.emit('terminal_output', {
+                "command": "[PC]",
+                "output": "OsControlAgent non disponible pour exécuter cette tâche locale."
+            }, room=sid)
+            return
+
+        await sio.emit('terminal_output', {
+            "command": "[PC]",
+            "output": f"Mode local prioritaire : {text[:120]}"
+        }, room=sid)
+
+        async def _pc_update(data: dict):
+            log = data.get("log", "")
+            if log:
+                await sio.emit('terminal_output', {"command": "[PC]", "output": log}, room=sid)
+
+        result = await os_agent.run(text, step_callback=_pc_update)
+        await sio.emit('terminal_output', {
+            "command": "[PC]",
+            "output": f"Résultat local : {result}"
+        }, room=sid)
+        return
+
     if not audio_loop:
         print("[SERVER DEBUG] [Error] Audio loop is None. Cannot send text.")
+        await sio.emit('terminal_output', {
+            "command": "[CHAT]",
+            "output": "Ada Live n'est pas démarrée. Les tâches locales Mac peuvent fonctionner sans API, mais les demandes générales nécessitent de démarrer Ada."
+        }, room=sid)
         return
 
     if not audio_loop.session:
         print("[SERVER DEBUG] [Error] Session is None. Cannot send text.")
+        await sio.emit('terminal_output', {
+            "command": "[CHAT]",
+            "output": "La session Ada Live n'est pas encore prête. Réessaie dans quelques secondes ou démarre Ada."
+        }, room=sid)
         return
 
     if text:
@@ -1225,6 +1328,30 @@ async def control_kasa(sid, data):
 @sio.event
 async def get_settings(sid):
     await sio.emit('settings', SETTINGS)
+
+@sio.event
+async def hand_control_toggle(sid, data):
+    enabled = bool((data or {}).get("enabled"))
+    status = hand_gesture_os_controller.set_enabled(enabled)
+    print(f"[HandOS] toggle enabled={status.enabled} ok={status.ok} msg={status.message}")
+    await sio.emit('hand_control_status', {
+        'enabled': status.enabled,
+        'ok': status.ok,
+        'message': status.message,
+    }, to=sid)
+
+@sio.event
+async def hand_control_event(sid, data):
+    try:
+        hand_gesture_os_controller.handle_event(data or {})
+    except Exception as e:
+        print(f"[HandOS] event error: {e}")
+        hand_gesture_os_controller.set_enabled(False)
+        await sio.emit('hand_control_status', {
+            'enabled': False,
+            'ok': False,
+            'message': f"Hand OS control error: {e}",
+        }, to=sid)
 
 @sio.event
 async def update_settings(sid, data):

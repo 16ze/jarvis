@@ -4,7 +4,6 @@ import io from 'socket.io-client';
 import Visualizer from './components/Visualizer';
 import TopAudioBar from './components/TopAudioBar';
 import CadWindow from './components/CadWindow';
-import BrowserWindow from './components/BrowserWindow';
 import TerminalWindow from './components/TerminalWindow';
 import ChatModule from './components/ChatModule';
 import ToolsModule from './components/ToolsModule';
@@ -18,9 +17,19 @@ import PrinterWindow from './components/PrinterWindow';
 import SettingsWindow from './components/SettingsWindow';
 import DocumentsWindow from './components/DocumentsWindow';
 import MobileApp from './components/MobileApp';
+import {
+    DEFAULT_HAND_CONTROL_CONFIG,
+    OneEuroFilter2D,
+    CursorEngine,
+    GestureStateMachine,
+    clampPointToInteractionBox,
+} from './lib/handTrackingControl';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-const socket = io(BACKEND_URL);
+const socket = io(BACKEND_URL, {
+    transports: ['websocket'],
+    upgrade: false,
+});
 const ipcRenderer = (() => {
     try {
         return window.require('electron').ipcRenderer;
@@ -35,6 +44,7 @@ const ipcRenderer = (() => {
 })();
 
 const isMobile = window.innerWidth < 768 || /iPhone|iPad|Android/i.test(navigator.userAgent);
+const isElectron = Boolean(window?.process?.versions?.electron);
 
 function App() {
     const [status, setStatus] = useState('Disconnected');
@@ -60,7 +70,7 @@ function App() {
 
 
     const [isConnected, setIsConnected] = useState(true); // Power state DEFAULT ON
-    const [isMuted, setIsMuted] = useState(true); // Mic state DEFAULT MUTED
+    const [isMuted, setIsMuted] = useState(false); // Mic state DEFAULT ON
     const [isVideoOn, setIsVideoOn] = useState(false); // Video state
     const [isScreenMode, setIsScreenMode] = useState(false); // Ada sees screen
     const [messages, setMessages] = useState([]);
@@ -68,7 +78,6 @@ function App() {
     const [cadData, setCadData] = useState(null);
     const [cadThoughts, setCadThoughts] = useState(''); // Streaming AI thoughts
     const [cadRetryInfo, setCadRetryInfo] = useState({ attempt: 1, maxAttempts: 3, error: null }); // Retry status
-    const [browserData, setBrowserData] = useState({ image: null, logs: [] });
     // showMemoryPrompt removed - memory is now actively saved to project
     const [confirmationRequest, setConfirmationRequest] = useState(null); // { id, tool, args }
     const [kasaDevices, setKasaDevices] = useState([]);
@@ -76,8 +85,9 @@ function App() {
     const [showPrinterWindow, setShowPrinterWindow] = useState(false);
     const [showDocumentsWindow, setShowDocumentsWindow] = useState(false);
     const [showCadWindow, setShowCadWindow] = useState(false);
-    const [showBrowserWindow, setShowBrowserWindow] = useState(false);
+
     const [showTerminalWindow, setShowTerminalWindow] = useState(false);
+    const [showChatWindow, setShowChatWindow] = useState(false);
     const [terminalEntries, setTerminalEntries] = useState([]);
 
     // Printing workflow status (for top toolbar display)
@@ -90,6 +100,8 @@ function App() {
     // RESTORED STATE
     const [aiAudioData, setAiAudioData] = useState(new Array(64).fill(0));
     const [micAudioData, setMicAudioData] = useState(new Array(32).fill(0));
+    const aiAudioDataRef = useRef(new Array(64).fill(0));
+    const micAudioDataRef = useRef(new Array(32).fill(0));
     const [fps, setFps] = useState(0);
 
     // Device states - microphones, speakers, webcams
@@ -114,15 +126,15 @@ function App() {
         browser: { x: window.innerWidth / 2 - 300, y: window.innerHeight / 2 },
         kasa: { x: window.innerWidth / 2 + 350, y: window.innerHeight / 2 - 100 },
         printer: { x: window.innerWidth / 2 - 350, y: window.innerHeight / 2 - 100 },
-        tools: { x: window.innerWidth / 2, y: window.innerHeight - 100 } // Fixed bottom OFFSET
+        tools: { x: window.innerWidth / 2, y: window.innerHeight - 132 } // Fixed bottom OFFSET
     });
 
     const [elementSizes, setElementSizes] = useState({
         visualizer: { w: 550, h: 350 },
-        chat: { w: 550, h: 220 },
+        chat: { w: 560, h: 320 },
         tools: { w: 500, h: 80 }, // Approx
         cad: { w: 400, h: 400 },
-        browser: { w: 550, h: 380 },
+
         video: { w: 320, h: 180 },
         kasa: { w: 300, h: 380 }, // Approx
         printer: { w: 380, h: 380 } // Approx
@@ -139,6 +151,16 @@ function App() {
     // Cursor uses refs + direct DOM — no state to avoid 60fps re-renders
     const cursorElRef = useRef(null);
     const isPinchingRef = useRef(false);
+    const pinchFramesRef = useRef(0);
+    const fistFramesRef = useRef(0);
+    const isHandOsDraggingRef = useRef(false);
+    const handOsGestureRef = useRef('idle');
+    const handOsGestureCandidateRef = useRef('idle');
+    const handOsGestureFramesRef = useRef(0);
+    const handOsReleaseFramesRef = useRef(0);
+    const lastHandOsClickAtRef = useRef(0);
+    const lastHandOsWindowSwitchAtRef = useRef(0);
+    const handOsSwipeStartRef = useRef({ x: null, y: null, t: 0 });
     const [cursorSensitivity, setCursorSensitivity] = useState(2.0);
     const [isCameraFlipped, setIsCameraFlipped] = useState(false); // Gesture control camera flip
 
@@ -147,19 +169,41 @@ function App() {
     const cursorSensitivityRef = useRef(2.0);
     const isCameraFlippedRef = useRef(false);
     const handLandmarkerRef = useRef(null);
+    const handLandmarkerInitPromiseRef = useRef(null);
     const cursorTrailRef = useRef([]); // Stores last N positions for trail
     const [ripples, setRipples] = useState([]); // Visual ripples on click
+    const lastHandOsMoveSentRef = useRef(0);
+    const lastHandOsScrollYRef = useRef(null);
+    const lastHandOsScrollSentRef = useRef(0);
+    const lastHandOsNavAtRef = useRef(0);
+    const handPointFilterRef = useRef(new OneEuroFilter2D(DEFAULT_HAND_CONTROL_CONFIG.filter));
+    const cursorEngineRef = useRef(new CursorEngine(DEFAULT_HAND_CONTROL_CONFIG.cursor));
+    const gestureMachineRef = useRef(new GestureStateMachine(DEFAULT_HAND_CONTROL_CONFIG.gestures));
+    const lastHandDebugAtRef = useRef(0);
+    const [handDebug, setHandDebug] = useState({
+        state: 'IDLE',
+        pinchRatio: null,
+        confidence: 0,
+        clutch: false,
+        rawCursor: null,
+        filteredCursor: null,
+        interactionInside: false,
+        deadZone: DEFAULT_HAND_CONTROL_CONFIG.cursor.deadZone,
+    });
 
     // Web Audio Context for Mic Visualization
     const audioContextRef = useRef(null);
     const analyserRef = useRef(null);
     const sourceRef = useRef(null);
     const animationFrameRef = useRef(null);
+    const micVisualizerStreamRef = useRef(null);
+    const lastAiAudioUpdateRef = useRef(0);
 
     // Frontend mic capture with AEC (replaces PyAudio on the backend)
     const aecStreamRef = useRef(null);
     const aecAudioCtxRef = useRef(null);
     const aecProcessorRef = useRef(null);
+    const aecDeviceIdRef = useRef(null);
 
     // Web Audio playback for Ada (enables browser AEC — browser knows what it's playing)
     const playbackCtxRef = useRef(null);
@@ -171,9 +215,15 @@ function App() {
     const canvasRef = useRef(null);
     const transmissionCanvasRef = useRef(null); // Dedicated canvas for resizing payload
     const videoIntervalRef = useRef(null);
+    const videoAnimationFrameRef = useRef(null);
+    const videoStreamRef = useRef(null);
+    const isVideoStartingRef = useRef(false);
     const lastFrameTimeRef = useRef(0);
     const frameCountRef = useRef(0);
     const lastVideoTimeRef = useRef(-1);
+    const lastHandDetectionRef = useRef(0);
+    const lastVideoFrameSentRef = useRef(0);
+    const videoBlobInFlightRef = useRef(false);
 
     // Ref to track video state for the loop (avoids closure staleness)
     const isVideoOnRef = useRef(false);
@@ -202,6 +252,15 @@ function App() {
         console.log("[Ref Sync] Camera flipped ref updated to:", isCameraFlipped);
     }, [isModularMode, elementPositions, isHandTrackingEnabled, cursorSensitivity, isCameraFlipped]);
 
+    useEffect(() => {
+        if (!isHandTrackingEnabled) {
+            handPointFilterRef.current.reset();
+            cursorEngineRef.current.reset({ width: window.innerWidth, height: window.innerHeight });
+            gestureMachineRef.current.reset();
+            setHandDebug(prev => ({ ...prev, state: 'IDLE', confidence: 0, clutch: false, interactionInside: false }));
+        }
+    }, [isHandTrackingEnabled]);
+
     // Live Clock Update
     useEffect(() => {
         const timer = setInterval(() => {
@@ -216,50 +275,16 @@ function App() {
             const width = window.innerWidth;
             const height = window.innerHeight;
 
-            // Calculate available vertical space
-            // Tools is fixed at bottom ~100px space
-            const toolsY = height - 100;
-            // ToolsModule uses translate(-50%, -50%). So its Center Y.
-            // Let's reserve bottom 140px for tools to be safe and float it nicely.
-            const toolsCenterY = height - 100;
-
-            const gap = 20;
-
-            // Chat: Anchor is Top-Center (translate(-50%, 0)).
-            // We want Chat Bottom to be above Tools Top.
-            // Tools Top = toolsCenterY - (ToolsHeight/2) approx 40 = height - 140;
-            const chatBottomLimit = height - 140;
-
-            // Dynamic Height Calculation to fit screen
-            // Standard Heights
-            let vizH = 400;
-            let chatH = 250;
-            const topBarHeight = 60;
-
-            // Total needed: TopBar + Viz + Gap + Chat + Gap + Tools (140 reserved)
-            const totalNeeded = topBarHeight + vizH + gap + chatH + gap + 140;
-
-            if (height < totalNeeded) {
-                // Scale down
-                const available = height - topBarHeight - 140 - (gap * 2);
-                // Allocate 60% to Viz, 40% to Chat
-                vizH = available * 0.6;
-                chatH = available * 0.4;
-            }
-
-            // Positions
-            // Visualizer (Center Anchored)
-            // Top of Viz = TopBarHeight. Center = TopBarHeight + VizH/2
-            const vizY = topBarHeight + (vizH / 2); // Removed buffer
-
-            // Chat (Top Anchored)
-            // Top of Chat = TopBarHeight + VizH + Gap
-            const chatY = topBarHeight + vizH + gap;
+            const vizH = Math.min(620, Math.max(430, height * 0.58));
+            const vizY = Math.max(245, height * 0.38);
+            const toolsCenterY = height - 132;
+            const chatH = Math.min(360, Math.max(280, height * 0.34));
+            const chatY = Math.max(96, height - chatH - 126);
 
             setElementSizes(prev => ({
                 ...prev,
-                visualizer: { w: Math.min(600, width * 0.8), h: vizH },
-                chat: { w: Math.min(600, width * 0.9), h: chatH }
+                visualizer: { w: Math.min(1180, width * 0.82), h: vizH },
+                chat: { w: Math.min(560, width * 0.82), h: chatH }
             }));
 
             setElementPositions(prev => ({
@@ -315,6 +340,74 @@ function App() {
         });
     };
 
+    const ensureHandLandmarker = async () => {
+        if (isMobile || handLandmarkerRef.current) return handLandmarkerRef.current;
+        if (handLandmarkerInitPromiseRef.current) return handLandmarkerInitPromiseRef.current;
+
+        handLandmarkerInitPromiseRef.current = (async () => {
+            try {
+                console.log("Initializing HandLandmarker...");
+
+                const modelUrl = new URL('/hand_landmarker.task', window.location.href);
+                modelUrl.searchParams.set('v', '20260516-fixed');
+
+                const response = await fetch(modelUrl.href, { cache: 'no-store' });
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch model: ${response.status} ${response.statusText}`);
+                }
+
+                const modelAssetBuffer = new Uint8Array(await response.arrayBuffer());
+                const hasZipHeader =
+                    modelAssetBuffer.length >= 4 &&
+                    ((modelAssetBuffer[0] === 0x50 && modelAssetBuffer[1] === 0x4b) ||
+                        (modelAssetBuffer[0] === 0x00 &&
+                            modelAssetBuffer[1] === 0x00 &&
+                            modelAssetBuffer[2] === 0x50 &&
+                            modelAssetBuffer[3] === 0x4b));
+
+                if (!hasZipHeader) {
+                    const preview = new TextDecoder()
+                        .decode(modelAssetBuffer.slice(0, 80))
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                    throw new Error(`Invalid hand model asset. Expected MediaPipe task bundle, got: ${preview || 'binary data'}`);
+                }
+
+                let vision;
+                if (isElectron && typeof window.require === 'function') {
+                    const path = window.require('path');
+                    const appRoot = window.process?.cwd?.() || process.cwd();
+                    const wasmDir = path.join(appRoot, 'public', 'mediapipe', 'wasm');
+                    vision = {
+                        wasmLoaderPath: path.join(wasmDir, 'vision_wasm_internal.js'),
+                        wasmBinaryPath: path.join(wasmDir, 'vision_wasm_internal.wasm'),
+                    };
+                } else {
+                    const wasmRoot = new URL('/mediapipe/wasm/', window.location.href).href;
+                    vision = await FilesetResolver.forVisionTasks(wasmRoot);
+                }
+
+                handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetBuffer,
+                        delegate: "CPU"
+                    },
+                    runningMode: "VIDEO",
+                    numHands: 1
+                });
+                addMessage('System', 'Hand Tracking Ready');
+                return handLandmarkerRef.current;
+            } catch (error) {
+                console.error("Failed to initialize HandLandmarker:", error);
+                addMessage('System', `Hand Tracking Error: ${error.message}`);
+                handLandmarkerInitPromiseRef.current = null;
+                return null;
+            }
+        })();
+
+        return handLandmarkerInitPromiseRef.current;
+    };
+
     // Ref to track if model has been auto-connected (prevents duplicate connections)
     const hasAutoConnectedRef = useRef(false);
 
@@ -368,14 +461,21 @@ function App() {
             }
         });
         socket.on('audio_data', (data) => {
+            aiAudioDataRef.current = data.data;
+            if (!isMobile) return;
+
+            const now = performance.now();
+            if (now - lastAiAudioUpdateRef.current < 50) return;
+            lastAiAudioUpdateRef.current = now;
             setAiAudioData(data.data);
         });
 
         // Interrupt: stop all scheduled audio sources immediately
         socket.on('clear_audio', () => {
-            playbackSourcesRef.current.forEach(s => { try { s.stop(); } catch (_) {} });
+            const toStop = [...playbackSourcesRef.current];
             playbackSourcesRef.current = [];
             playbackNextTimeRef.current = 0;
+            toStop.forEach(s => { try { s.stop(); } catch (_) {} });
         });
 
         // Raw PCM16 from Ada — play via Web Audio API so browser AEC can cancel echo from mic
@@ -403,17 +503,21 @@ function App() {
                 const source = ctx.createBufferSource();
                 source.buffer = buffer;
                 source.connect(ctx.destination);
+                // Unique ID to safely target this source on interrupt
+                const sourceId = crypto.randomUUID();
+                source._id = sourceId;
 
                 // Schedule gaplessly: start at next available slot
+                // 10ms buffer (was 50ms) — reduced to minimize barge-in latency
                 const now = ctx.currentTime;
-                const startAt = Math.max(now + 0.05, playbackNextTimeRef.current);
+                const startAt = Math.max(now + 0.01, playbackNextTimeRef.current);
                 source.start(startAt);
                 playbackNextTimeRef.current = startAt + buffer.duration;
 
                 // Track source so we can stop it on interrupt
                 playbackSourcesRef.current.push(source);
                 source.onended = () => {
-                    playbackSourcesRef.current = playbackSourcesRef.current.filter(s => s !== source);
+                    playbackSourcesRef.current = playbackSourcesRef.current.filter(s => s._id !== sourceId);
                 };
             } catch (err) {
                 console.error('[Audio] Playback error:', err);
@@ -502,26 +606,15 @@ function App() {
             // Append streaming thought text
             setCadThoughts(prev => prev + data.text);
         });
-        socket.on('browser_frame', (data) => {
-            setBrowserData(prev => ({
-                image: data.image ?? prev.image, // keep last image if new frame has none
-                logs: [...prev.logs, data.log].filter(l => l).slice(-50)
-            }));
-            setShowBrowserWindow(true);
-            // Auto-show browser window if hidden, clamped to viewport
-            if (!elementPositions.browser) {
-                const size = { w: 550, h: 380 };
-                const clamped = clampToViewport({ x: window.innerWidth / 2 - 200, y: window.innerHeight / 2 }, size);
-                setElementPositions(prev => ({
-                    ...prev,
-                    browser: clamped
-                }));
-            }
-        });
+        // browser_frame supprimé — le web agent Playwright a été retiré
+        // Les logs execute_pc_task arrivent via terminal_output
 
         socket.on('terminal_output', (data) => {
             setTerminalEntries(prev => [...prev, { command: data.command, output: data.output }].slice(-100));
             setShowTerminalWindow(true);
+            if (data.command === '[PC]' || data.command === '[CHAT]') {
+                addMessage('System', data.output);
+            }
         });
 
         // Handle streaming transcription
@@ -676,56 +769,13 @@ function App() {
         socket.on('vision_mode', (data) => {
             setIsScreenMode(data.mode === 'screen');
         });
-
-        // Initialize Hand Landmarker
-        const initHandLandmarker = async () => {
-            try {
-                console.log("Initializing HandLandmarker...");
-
-                // 1. Verify Model File
-                console.log("Fetching model file...");
-                const response = await fetch('/hand_landmarker.task');
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch model: ${response.status} ${response.statusText}`);
-                }
-                console.log("Model file found:", response.headers.get('content-type'), response.headers.get('content-length'));
-
-                // 2. Initialize Vision
-                // Electron: process.versions.node est writable:false mais configurable:true.
-                // L'assignation directe échoue silencieusement → utiliser Object.defineProperty.
-                // Masquer temporairement pour forcer Emscripten en mode browser (WebGL + fetch).
-                console.log("Initializing FilesetResolver...");
-                const savedDescriptor = Object.getOwnPropertyDescriptor(process.versions, 'node');
-                Object.defineProperty(process.versions, 'node', {
-                    value: undefined, writable: false, enumerable: true, configurable: true
-                });
-                let vision;
-                try {
-                    vision = await FilesetResolver.forVisionTasks('');
-                } finally {
-                    Object.defineProperty(process.versions, 'node', savedDescriptor);
-                }
-                console.log("FilesetResolver initialized.");
-
-                // 3. Create Landmarker
-                console.log("Creating HandLandmarker (CPU)...");
-                handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: `/hand_landmarker.task`,
-                        delegate: "CPU"
-                    },
-                    runningMode: "VIDEO",
-                    numHands: 1
-                });
-                console.log("HandLandmarker initialized successfully!");
-                addMessage('System', 'Hand Tracking Ready');
-
-            } catch (error) {
-                console.error("Failed to initialize HandLandmarker:", error);
-                addMessage('System', `Hand Tracking Error: ${error.message}`);
+        socket.on('hand_control_status', (data) => {
+            if (!data) return;
+            if (typeof data.enabled === 'boolean') {
+                setIsHandTrackingEnabled(data.enabled);
             }
-        };
-        if (!isMobile) initHandLandmarker();
+            addMessage('System', data.message || (data.enabled ? 'Hand OS control enabled' : 'Hand OS control disabled'));
+        });
 
         return () => {
             socket.off('connect');
@@ -737,7 +787,7 @@ function App() {
             socket.off('cad_data');
             socket.off('cad_thought');
             socket.off('cad_status');
-            socket.off('browser_frame');
+
             socket.off('transcription');
             socket.off('tool_confirmation_request');
             socket.off('kasa_devices');
@@ -746,6 +796,7 @@ function App() {
             socket.off('print_status_update');
             socket.off('error');
             socket.off('vision_mode');
+            socket.off('hand_control_status');
 
             stopMicVisualizer();
             stopVideo();
@@ -767,6 +818,19 @@ function App() {
             console.log('[Settings] Saved microphone:', selectedMicId);
         }
     }, [selectedMicId]);
+
+    useEffect(() => {
+        if (
+            isConnected &&
+            socketConnected &&
+            selectedMicId &&
+            aecStreamRef.current &&
+            aecDeviceIdRef.current !== selectedMicId
+        ) {
+            console.log('[AEC] Microphone changed while connected, restarting capture.');
+            startFrontendMic(selectedMicId);
+        }
+    }, [isConnected, socketConnected, selectedMicId]);
 
     useEffect(() => {
         if (selectedSpeakerId) {
@@ -798,6 +862,7 @@ function App() {
         if (aecProcessorRef.current) { aecProcessorRef.current.disconnect(); aecProcessorRef.current = null; }
         if (aecAudioCtxRef.current) { aecAudioCtxRef.current.close(); aecAudioCtxRef.current = null; }
         if (aecStreamRef.current) { aecStreamRef.current.getTracks().forEach(t => t.stop()); aecStreamRef.current = null; }
+        aecDeviceIdRef.current = null;
         if (playbackCtxRef.current) { playbackCtxRef.current.close(); playbackCtxRef.current = null; }
         playbackNextTimeRef.current = 0;
     };
@@ -816,14 +881,15 @@ function App() {
             };
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             aecStreamRef.current = stream;
+            aecDeviceIdRef.current = deviceId || null;
 
             // AudioContext at 16kHz — browser resamples from device native rate
             const ctx = new AudioContext({ sampleRate: 16000 });
             aecAudioCtxRef.current = ctx;
 
             const source = ctx.createMediaStreamSource(stream);
-            // ScriptProcessorNode: 4096 samples @ 16kHz = 256ms per chunk
-            const processor = ctx.createScriptProcessor(4096, 1, 1);
+            // ScriptProcessorNode: 2048 samples @ 16kHz = 128ms per chunk
+            const processor = ctx.createScriptProcessor(2048, 1, 1);
             aecProcessorRef.current = processor;
 
             processor.onaudioprocess = (e) => {
@@ -845,7 +911,7 @@ function App() {
 
             source.connect(processor);
             processor.connect(silentGain);
-            console.log('[AEC] Frontend mic capture started with echoCancellation: true');
+            console.log('[AEC] Frontend mic capture started with echoCancellation: true, sampleRate:', ctx.sampleRate);
         } catch (err) {
             console.error('[AEC] Failed to start frontend mic capture:', err);
         }
@@ -857,6 +923,7 @@ function App() {
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: { deviceId: { exact: deviceId } }
             });
+            micVisualizerStreamRef.current = stream;
 
             audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
             analyserRef.current = audioContextRef.current.createAnalyser();
@@ -872,7 +939,11 @@ function App() {
                 if (micFrameCount % 3 === 0) { // throttle to ~20fps instead of 60fps
                     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
                     analyserRef.current.getByteFrequencyData(dataArray);
-                    setMicAudioData(Array.from(dataArray));
+                    const values = Array.from(dataArray);
+                    micAudioDataRef.current = values;
+                    if (isMobile) {
+                        setMicAudioData(values);
+                    }
                 }
                 animationFrameRef.current = requestAnimationFrame(updateMicData);
             };
@@ -887,15 +958,29 @@ function App() {
         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
         if (sourceRef.current) sourceRef.current.disconnect();
         if (audioContextRef.current) audioContextRef.current.close();
+        if (micVisualizerStreamRef.current) {
+            micVisualizerStreamRef.current.getTracks().forEach(track => track.stop());
+            micVisualizerStreamRef.current = null;
+        }
+        animationFrameRef.current = null;
+        sourceRef.current = null;
+        audioContextRef.current = null;
+        analyserRef.current = null;
     };
 
     const startVideo = async () => {
+        if (isVideoStartingRef.current || isVideoOnRef.current) {
+            return;
+        }
+
+        isVideoStartingRef.current = true;
         try {
-            // Request 1080p resolution with selected webcam
+            // 720p/30fps is enough for hand tracking and avoids saturating Electron.
             const constraints = {
                 video: {
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30, max: 30 },
                     aspectRatio: 16 / 9
                 }
             };
@@ -906,9 +991,10 @@ function App() {
             }
 
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            videoStreamRef.current = stream;
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
-                videoRef.current.play();
+                await videoRef.current.play();
             }
 
             // Initialize the transmission canvas
@@ -923,11 +1009,17 @@ function App() {
             isVideoOnRef.current = true; // Update ref for loop
 
             console.log("Starting video loop with webcam:", selectedWebcamId || "default");
-            requestAnimationFrame(predictWebcam);
+            if (videoAnimationFrameRef.current) {
+                cancelAnimationFrame(videoAnimationFrameRef.current);
+            }
+            videoAnimationFrameRef.current = requestAnimationFrame(predictWebcam);
 
         } catch (err) {
             console.error("Error accessing camera:", err);
             addMessage('System', 'Error accessing camera');
+            stopVideo();
+        } finally {
+            isVideoStartingRef.current = false;
         }
     };
 
@@ -939,7 +1031,7 @@ function App() {
 
         // Check if video has valid dimensions to prevent MediaPipe crash
         if (videoRef.current.readyState < 2 || videoRef.current.videoWidth === 0 || videoRef.current.videoHeight === 0) {
-            requestAnimationFrame(predictWebcam);
+            videoAnimationFrameRef.current = requestAnimationFrame(predictWebcam);
             return;
         }
 
@@ -953,26 +1045,31 @@ function App() {
         }
 
         ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+        if (isHandTrackingEnabledRef.current) {
+            drawHandDebugOverlay(ctx, canvasRef.current.width, canvasRef.current.height, handDebug);
+        }
 
         // 2. Send Frame to Backend (Throttled & Resized)
         // Only send if connected
         if (isConnected) {
-            // Simple throttle: every 5th frame roughly
-            if (frameCountRef.current % 5 === 0) {
-
-                // Use dedicated transmission canvas for resizing
+            const now = performance.now();
+            const frameSendIntervalMs = isHandTrackingEnabledRef.current ? 1000 : 500;
+            const shouldSendFrame = now - lastVideoFrameSentRef.current >= frameSendIntervalMs;
+            if (shouldSendFrame && !videoBlobInFlightRef.current) {
                 const transCanvas = transmissionCanvasRef.current;
                 if (transCanvas) {
+                    videoBlobInFlightRef.current = true;
+                    lastVideoFrameSentRef.current = now;
+
                     const transCtx = transCanvas.getContext('2d');
-                    // Draw resized image
                     transCtx.drawImage(videoRef.current, 0, 0, transCanvas.width, transCanvas.height);
 
-                    // Convert resized image to blob
                     transCanvas.toBlob((blob) => {
-                        if (blob) {
+                        videoBlobInFlightRef.current = false;
+                        if (blob && isVideoOnRef.current && socket.connected) {
                             socket.emit('video_frame', { image: blob });
                         }
-                    }, 'image/jpeg', 0.6); // Slightly higher compression for speed
+                    }, 'image/jpeg', 0.45);
                 }
             }
         }
@@ -981,14 +1078,20 @@ function App() {
         // 3. Hand Tracking
         let startTimeMs = performance.now();
         // Use Ref for toggle check
-        if (isHandTrackingEnabledRef.current && handLandmarkerRef.current && videoRef.current.currentTime !== lastVideoTimeRef.current) {
+        if (
+            isHandTrackingEnabledRef.current &&
+            handLandmarkerRef.current &&
+            videoRef.current.currentTime !== lastVideoTimeRef.current &&
+            startTimeMs - lastHandDetectionRef.current >= 66
+        ) {
+            lastHandDetectionRef.current = startTimeMs;
             lastVideoTimeRef.current = videoRef.current.currentTime;
             let results;
             try {
                 results = handLandmarkerRef.current.detectForVideo(videoRef.current, startTimeMs);
             } catch (err) {
                 console.error("[HandTracking] detectForVideo error:", err);
-                requestAnimationFrame(predictWebcam);
+                videoAnimationFrameRef.current = requestAnimationFrame(predictWebcam);
                 return;
             }
 
@@ -999,71 +1102,207 @@ function App() {
 
             if (results.landmarks && results.landmarks.length > 0) {
                 const landmarks = results.landmarks[0];
-
-
-
-                // Index Finger Tip (8)
                 const indexTip = landmarks[8];
-                // Thumb Tip (4)
                 const thumbTip = landmarks[4];
+                const middleTip = landmarks[12];
+                const wrist = landmarks[0];
+                const viewport = { width: window.innerWidth, height: window.innerHeight };
+                const osControlActive = socket.connected;
 
-                // Map to Screen Coords with Sensitivity Scaling
-                // Sensitivity: Map center 50% of camera to 100% of screen.
-                const SENSITIVITY = cursorSensitivityRef.current;
+                const dist2d = (a, b) => Math.sqrt(
+                    Math.pow(a.x - b.x, 2) +
+                    Math.pow(a.y - b.y, 2)
+                );
+                const dist3d = (a, b) => Math.sqrt(
+                    Math.pow(a.x - b.x, 2) +
+                    Math.pow(a.y - b.y, 2) +
+                    Math.pow((a.z || 0) - (b.z || 0), 2)
+                );
+                const isFingerExtendedByTip = (tipIdx, pipIdx) => landmarks[tipIdx].y < landmarks[pipIdx].y - 0.012;
+                const isFingerOpenByWrist = (tipIdx, mcpIdx) => (
+                    dist2d(landmarks[tipIdx], wrist) > dist2d(landmarks[mcpIdx], wrist) * 1.22
+                );
+                const isFingerFolded = (tipIdx, pipIdx, mcpIdx) => {
+                    const tip = landmarks[tipIdx];
+                    const pip = landmarks[pipIdx];
+                    const mcp = landmarks[mcpIdx];
+                    return tip.y > pip.y + 0.01 || dist2d(tip, wrist) < dist2d(mcp, wrist) * 1.12;
+                };
 
-                // Apply camera flip if enabled (horizontal mirror)
-                const rawX = isCameraFlippedRef.current ? (1 - indexTip.x) : indexTip.x;
+                const indexExtended = isFingerExtendedByTip(8, 6) && isFingerOpenByWrist(8, 5);
+                const middleExtended = isFingerExtendedByTip(12, 10) && isFingerOpenByWrist(12, 9);
+                const ringExtended = isFingerExtendedByTip(16, 14) && isFingerOpenByWrist(16, 13);
+                const pinkyExtended = isFingerExtendedByTip(20, 18) && isFingerOpenByWrist(20, 17);
+                const openPalm = indexExtended && middleExtended && ringExtended && pinkyExtended;
 
-                // 1. Normalize and Scale X
-                let normX = (rawX - 0.5) * SENSITIVITY + 0.5;
-                // Clamp to [0, 1]
-                normX = Math.max(0, Math.min(1, normX));
+                const rawIndexPoint = {
+                    x: isCameraFlippedRef.current ? (1 - indexTip.x) : indexTip.x,
+                    y: indexTip.y,
+                };
+                const boxedIndexPoint = clampPointToInteractionBox(
+                    rawIndexPoint,
+                    DEFAULT_HAND_CONTROL_CONFIG.interactionBox
+                );
+                const filteredPoint = handPointFilterRef.current.filter(
+                    { x: boxedIndexPoint.x, y: boxedIndexPoint.y },
+                    startTimeMs
+                );
+                const rawCursor = {
+                    x: boxedIndexPoint.x * viewport.width,
+                    y: boxedIndexPoint.y * viewport.height,
+                };
 
-                // 2. Normalize and Scale Y
-                let normY = (indexTip.y - 0.5) * SENSITIVITY + 0.5;
-                normY = Math.max(0, Math.min(1, normY));
+                const wristRawX = isCameraFlippedRef.current ? (1 - wrist.x) : wrist.x;
+                const wristBox = clampPointToInteractionBox(
+                    { x: wristRawX, y: wrist.y },
+                    DEFAULT_HAND_CONTROL_CONFIG.interactionBox
+                );
+                const wristScreenX = wristBox.x * viewport.width;
+                const wristScreenY = wristBox.y * viewport.height;
 
-                const targetX = normX * window.innerWidth;
-                const targetY = normY * window.innerHeight;
+                const palmSize = Math.max(
+                    dist2d(wrist, landmarks[5]),
+                    dist2d(wrist, landmarks[9]),
+                    0.001
+                );
+                const foldedCount = [
+                    isFingerFolded(8, 6, 5),
+                    isFingerFolded(12, 10, 9),
+                    isFingerFolded(16, 14, 13),
+                    isFingerFolded(20, 18, 17)
+                ].filter(Boolean).length;
+                const fistActive = foldedCount >= 4 && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended;
+                const pinchDistance = Math.min(dist2d(middleTip, thumbTip), dist3d(middleTip, thumbTip));
+                const pinchRatio = pinchDistance / palmSize;
+                const pinchClosed = (
+                    pinchRatio < DEFAULT_HAND_CONTROL_CONFIG.gestures.pinchStartRatio &&
+                    indexExtended &&
+                    !fistActive
+                );
+                const pinchReleased = (
+                    pinchRatio > DEFAULT_HAND_CONTROL_CONFIG.gestures.pinchEndRatio ||
+                    !indexExtended
+                );
+                const indexMiddleTipDistance = dist2d(indexTip, middleTip);
+                const scrollActive = (
+                    indexExtended &&
+                    middleExtended &&
+                    !ringExtended &&
+                    !pinkyExtended &&
+                    indexMiddleTipDistance > palmSize * 0.18 &&
+                    !pinchClosed
+                );
 
-                // 1. Smoothing (Lerp)
-                // Factor 0.2 = smooth but responsive. Lower = smoother/slower.
-                const lerpFactor = 0.2;
-                smoothedCursorPosRef.current.x = smoothedCursorPosRef.current.x + (targetX - smoothedCursorPosRef.current.x) * lerpFactor;
-                smoothedCursorPosRef.current.y = smoothedCursorPosRef.current.y + (targetY - smoothedCursorPosRef.current.y) * lerpFactor;
+                const gestureSnapshot = gestureMachineRef.current.update({
+                    handPresent: true,
+                    clutch: openPalm && !pinchClosed,
+                    drag: fistActive,
+                    scroll: scrollActive,
+                    pinch: pinchClosed && !pinchReleased,
+                }, startTimeMs);
+                const activeState = gestureSnapshot.state;
+                const clutchActive = activeState === 'CLUTCH';
+                const isScroll = activeState === 'SCROLL';
+                const isFist = activeState === 'DRAG';
+                const isPinchCandidate = activeState === 'CLICK_CANDIDATE';
 
-                let finalX = smoothedCursorPosRef.current.x;
-                let finalY = smoothedCursorPosRef.current.y;
+                handOsGestureRef.current = activeState.toLowerCase();
 
-                // 2. Snap-to-Button Logic
-                const SNAP_THRESHOLD = 50; // Pixels to snap
-                const UNSNAP_THRESHOLD = 100; // Pixels to unsnap (Hysteresis)
+                if (socket.connected && openPalm && (activeState === 'CLUTCH' || activeState === 'TRACKING')) {
+                    const nowForSwitch = performance.now();
+                    const swipeStart = handOsSwipeStartRef.current;
+                    if (swipeStart.x === null || nowForSwitch - swipeStart.t > 650) {
+                        handOsSwipeStartRef.current = { x: wristScreenX, y: wristScreenY, t: nowForSwitch };
+                    } else {
+                        const dx = wristScreenX - swipeStart.x;
+                        const dy = wristScreenY - swipeStart.y;
+                        const horizontalEnough = Math.abs(dx) > viewport.width * 0.20;
+                        const verticalStable = Math.abs(dy) < viewport.height * 0.18;
+                        const cooldownDone = nowForSwitch - lastHandOsWindowSwitchAtRef.current > 950;
+                        if (horizontalEnough && verticalStable && cooldownDone) {
+                            lastHandOsWindowSwitchAtRef.current = nowForSwitch;
+                            socket.emit('hand_control_event', {
+                                type: 'window_switch',
+                                direction: dx > 0 ? 'next' : 'previous'
+                            });
+                            handOsSwipeStartRef.current = { x: null, y: null, t: 0 };
+                        }
+                    }
+                } else {
+                    handOsSwipeStartRef.current = { x: null, y: null, t: 0 };
+                }
 
-                if (snapStateRef.current.isSnapped) {
-                    // Check if we should unsnap
+                if (gestureSnapshot.action === 'drag_start') {
+                    if (socket.connected && !isHandOsDraggingRef.current) {
+                        isHandOsDraggingRef.current = true;
+                        socket.emit('hand_control_event', { type: 'mouse_down' });
+                    }
+                    lastWristPosRef.current = { x: wristScreenX, y: wristScreenY };
+                } else if (gestureSnapshot.action === 'drag_end') {
+                    if (socket.connected && isHandOsDraggingRef.current) {
+                        socket.emit('hand_control_event', { type: 'mouse_up' });
+                        isHandOsDraggingRef.current = false;
+                    }
+                    activeDragElementRef.current = null;
+                } else if (gestureSnapshot.action === 'click') {
+                    cursorEngineRef.current.freeze(startTimeMs);
+                    if (socket.connected) {
+                        socket.emit('hand_control_event', { type: 'click' });
+                    } else {
+                        const el = document.elementFromPoint(lastCursorPosRef.current.x, lastCursorPosRef.current.y);
+                        if (el) {
+                            const clickable = el.closest('button, input, a, [role="button"]');
+                            if (clickable && typeof clickable.click === 'function') {
+                                clickable.click();
+                            } else if (typeof el.click === 'function') {
+                                el.click();
+                            }
+                        }
+                    }
+                }
+
+                const cursorUpdate = cursorEngineRef.current.update({
+                    point: filteredPoint,
+                    timestampMs: startTimeMs,
+                    viewport,
+                    sensitivity: cursorSensitivityRef.current,
+                    clutch: clutchActive || isScroll || isFist,
+                });
+
+                let finalX = cursorUpdate.x;
+                let finalY = cursorUpdate.y;
+                const SNAP_THRESHOLD = 50;
+                const UNSNAP_THRESHOLD = 100;
+
+                if (osControlActive && snapStateRef.current.isSnapped) {
+                    if (snapStateRef.current.element) {
+                        snapStateRef.current.element.classList.remove('snap-highlight');
+                        snapStateRef.current.element.style.boxShadow = '';
+                        snapStateRef.current.element.style.backgroundColor = '';
+                        snapStateRef.current.element.style.borderColor = '';
+                    }
+                    snapStateRef.current = { isSnapped: false, element: null, snapPos: { x: 0, y: 0 } };
+                }
+
+                if (!osControlActive && snapStateRef.current.isSnapped) {
                     const dist = Math.sqrt(
                         Math.pow(finalX - snapStateRef.current.snapPos.x, 2) +
                         Math.pow(finalY - snapStateRef.current.snapPos.y, 2)
                     );
 
                     if (dist > UNSNAP_THRESHOLD) {
-                        // REMOVE HIGHLIGHT
                         if (snapStateRef.current.element) {
                             snapStateRef.current.element.classList.remove('snap-highlight');
                             snapStateRef.current.element.style.boxShadow = '';
                             snapStateRef.current.element.style.backgroundColor = '';
                             snapStateRef.current.element.style.borderColor = '';
                         }
-
                         snapStateRef.current = { isSnapped: false, element: null, snapPos: { x: 0, y: 0 } };
                     } else {
-                        // Stay snapped
                         finalX = snapStateRef.current.snapPos.x;
                         finalY = snapStateRef.current.snapPos.y;
                     }
-                } else {
-                    // Check if we should snap
-                    // Find all interactive elements
+                } else if (!osControlActive && !clutchActive && !isFist) {
                     const targets = Array.from(document.querySelectorAll('button, input, select, .draggable'));
                     let closest = null;
                     let minDist = Infinity;
@@ -1088,49 +1327,24 @@ function App() {
                         };
                         finalX = closest.centerX;
                         finalY = closest.centerY;
-
-                        // SNAP HIGHLIGHT Logic
                         closest.el.classList.add('snap-highlight');
-                        // Add some inline style for the glow if class isn't enough (using imperative for speed)
                         closest.el.style.boxShadow = '0 0 20px rgba(34, 211, 238, 0.6)';
                         closest.el.style.backgroundColor = 'rgba(6, 182, 212, 0.2)';
                         closest.el.style.borderColor = 'rgba(34, 211, 238, 1)';
                     }
                 }
 
-                // Update cursor via direct DOM — zero React re-renders
                 if (cursorElRef.current) {
                     cursorElRef.current.style.left = finalX + 'px';
                     cursorElRef.current.style.top = finalY + 'px';
-                }
-
-                // Trail Logic: Removed per user request
-
-                // Pinch Detection (Distance between Index and Thumb)
-                const distance = Math.sqrt(
-                    Math.pow(indexTip.x - thumbTip.x, 2) + Math.pow(indexTip.y - thumbTip.y, 2)
-                );
-
-                const isPinchNow = distance < 0.05; // Threshold
-                if (isPinchNow && !isPinchingRef.current) {
-                    // Click Triggered
-                    const el = document.elementFromPoint(finalX, finalY);
-                    if (el) {
-                        const clickable = el.closest('button, input, a, [role="button"]');
-                        if (clickable && typeof clickable.click === 'function') {
-                            clickable.click();
-                        } else if (typeof el.click === 'function') {
-                            el.click();
-                        }
-                    }
-                }
-                isPinchingRef.current = isPinchNow;
-                // Update cursor pinch appearance via direct DOM — no re-render
-                if (cursorElRef.current) {
-                    if (isPinchNow) {
+                    if (isPinchCandidate) {
                         cursorElRef.current.style.backgroundColor = 'rgba(34,211,238,1)';
                         cursorElRef.current.style.boxShadow = '0 0 15px rgba(34,211,238,0.8)';
                         cursorElRef.current.style.transform = 'translate(-50%,-50%) scale(0.75)';
+                    } else if (clutchActive) {
+                        cursorElRef.current.style.backgroundColor = 'rgba(250,204,21,0.9)';
+                        cursorElRef.current.style.boxShadow = '0 0 14px rgba(250,204,21,0.35)';
+                        cursorElRef.current.style.transform = 'translate(-50%,-50%) scale(0.9)';
                     } else {
                         cursorElRef.current.style.backgroundColor = '';
                         cursorElRef.current.style.boxShadow = '0 0 10px rgba(34,211,238,0.3)';
@@ -1138,41 +1352,52 @@ function App() {
                     }
                 }
 
-                // Fist Detection for Gesture-Based Dragging (Popup Windows Only)
-                // Detects if all fingers are folded (tips closer to wrist than MCPs)
-                const isFingerFolded = (tipIdx, mcpIdx) => {
-                    const tip = landmarks[tipIdx];
-                    const mcp = landmarks[mcpIdx];
-                    const wrist = landmarks[0];
-                    const distTip = Math.sqrt(Math.pow(tip.x - wrist.x, 2) + Math.pow(tip.y - wrist.y, 2));
-                    const distMcp = Math.sqrt(Math.pow(mcp.x - wrist.x, 2) + Math.pow(mcp.y - wrist.y, 2));
-                    return distTip < distMcp; // Folded if tip is closer
-                };
+                isPinchingRef.current = isPinchCandidate;
 
-                const isFist = isFingerFolded(8, 5) && isFingerFolded(12, 9) && isFingerFolded(16, 13) && isFingerFolded(20, 17);
+                if (socket.connected && !isScroll && !clutchActive) {
+                    const nowForOs = performance.now();
+                    if (nowForOs - lastHandOsMoveSentRef.current >= 45) {
+                        lastHandOsMoveSentRef.current = nowForOs;
+                        socket.emit('hand_control_event', {
+                            type: 'move',
+                            x: finalX / viewport.width,
+                            y: finalY / viewport.height
+                        });
+                    }
+                }
 
-                // Get wrist position in screen coordinates (stable reference for fist gesture)
-                const wrist = landmarks[0];
-                const wristRawX = isCameraFlippedRef.current ? (1 - wrist.x) : wrist.x;
-                const wristNormX = Math.max(0, Math.min(1, (wristRawX - 0.5) * SENSITIVITY + 0.5));
-                const wristNormY = Math.max(0, Math.min(1, (wrist.y - 0.5) * SENSITIVITY + 0.5));
-                const wristScreenX = wristNormX * window.innerWidth;
-                const wristScreenY = wristNormY * window.innerHeight;
+                if (isScroll && socket.connected) {
+                    if (lastHandOsScrollYRef.current === null) {
+                        lastHandOsScrollYRef.current = finalY;
+                    } else {
+                        const nowForScroll = performance.now();
+                        const scrollDelta = Math.round(
+                            (lastHandOsScrollYRef.current - finalY) /
+                            DEFAULT_HAND_CONTROL_CONFIG.gestures.scrollStepPx
+                        );
+                        if (Math.abs(scrollDelta) >= 1 && nowForScroll - lastHandOsScrollSentRef.current >= 80) {
+                            lastHandOsScrollSentRef.current = nowForScroll;
+                            socket.emit('hand_control_event', {
+                                type: 'scroll',
+                                dy: Math.max(-10, Math.min(10, scrollDelta))
+                            });
+                            lastHandOsScrollYRef.current = finalY;
+                        }
+                    }
+                } else {
+                    lastHandOsScrollYRef.current = null;
+                }
 
-                if (isFist) {
+                if (!osControlActive && isFist) {
                     if (!activeDragElementRef.current) {
-                        // Only check popup windows (draggable elements)
                         const draggableElements = ['cad', 'browser', 'kasa', 'printer'];
-
                         for (const id of draggableElements) {
                             const el = document.getElementById(id);
                             if (el) {
                                 const rect = el.getBoundingClientRect();
-                                // Use the cursor position from before fist was made for hit detection
                                 if (finalX >= rect.left && finalX <= rect.right && finalY >= rect.top && finalY <= rect.bottom) {
                                     activeDragElementRef.current = id;
                                     bringToFront(id);
-                                    // Lock the initial wrist position when starting drag
                                     lastWristPosRef.current = { x: wristScreenX, y: wristScreenY };
                                     break;
                                 }
@@ -1181,24 +1406,17 @@ function App() {
                     }
 
                     if (activeDragElementRef.current) {
-                        // Use WRIST movement (not index finger) for stable dragging
-                        // The wrist doesn't move when making a fist
                         const dx = wristScreenX - lastWristPosRef.current.x;
                         const dy = wristScreenY - lastWristPosRef.current.y;
-
-                        // Update position only if there's actual movement
                         if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
                             updateElementPosition(activeDragElementRef.current, dx, dy);
                         }
-
-                        // Update last wrist position
                         lastWristPosRef.current = { x: wristScreenX, y: wristScreenY };
                     }
-                } else {
+                } else if (!isFist) {
                     activeDragElementRef.current = null;
                 }
 
-                // Sync state for visual feedback (only on change)
                 if (activeDragElementRef.current !== lastActiveDragElementRef.current) {
                     setActiveDragElement(activeDragElementRef.current);
                     lastActiveDragElementRef.current = activeDragElementRef.current;
@@ -1206,8 +1424,47 @@ function App() {
 
                 lastCursorPosRef.current = { x: finalX, y: finalY };
 
-                // Draw Skeleton
+                if (startTimeMs - lastHandDebugAtRef.current >= 100) {
+                    lastHandDebugAtRef.current = startTimeMs;
+                    setHandDebug({
+                        state: activeState,
+                        pinchRatio,
+                        confidence: gestureSnapshot.confidence,
+                        clutch: clutchActive,
+                        rawCursor,
+                        filteredCursor: { x: finalX, y: finalY },
+                        interactionInside: boxedIndexPoint.inside,
+                        deadZone: DEFAULT_HAND_CONTROL_CONFIG.cursor.deadZone,
+                    });
+                }
+
                 drawSkeleton(ctx, landmarks);
+            } else {
+                pinchFramesRef.current = 0;
+                fistFramesRef.current = 0;
+                isPinchingRef.current = false;
+                lastHandOsScrollYRef.current = null;
+                handOsGestureRef.current = 'idle';
+                handOsGestureCandidateRef.current = 'idle';
+                handOsGestureFramesRef.current = 0;
+                handOsReleaseFramesRef.current = 0;
+                handOsSwipeStartRef.current = { x: null, y: null, t: 0 };
+                gestureMachineRef.current.reset();
+                handPointFilterRef.current.reset();
+                cursorEngineRef.current.previousPoint = null;
+                if (isHandOsDraggingRef.current && socket.connected) {
+                    isHandOsDraggingRef.current = false;
+                    socket.emit('hand_control_event', { type: 'mouse_up' });
+                }
+                activeDragElementRef.current = null;
+                if (lastActiveDragElementRef.current !== null) {
+                    setActiveDragElement(null);
+                    lastActiveDragElementRef.current = null;
+                }
+                if (startTimeMs - lastHandDebugAtRef.current >= 100) {
+                    lastHandDebugAtRef.current = startTimeMs;
+                    setHandDebug(prev => ({ ...prev, state: 'IDLE', confidence: 0, clutch: false, interactionInside: false }));
+                }
             }
 
         }
@@ -1222,7 +1479,7 @@ function App() {
         }
 
         if (isVideoOnRef.current) {
-            requestAnimationFrame(predictWebcam);
+            videoAnimationFrameRef.current = requestAnimationFrame(predictWebcam);
         }
     };
 
@@ -1242,27 +1499,129 @@ function App() {
         }
     };
 
+    const drawHandDebugOverlay = (ctx, canvasWidth, canvasHeight, debug) => {
+        const box = DEFAULT_HAND_CONTROL_CONFIG.interactionBox;
+        const left = box.left * canvasWidth;
+        const top = box.top * canvasHeight;
+        const width = (box.right - box.left) * canvasWidth;
+        const height = (box.bottom - box.top) * canvasHeight;
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(250, 204, 21, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 6]);
+        ctx.strokeRect(left, top, width, height);
+        ctx.setLineDash([]);
+
+        if (debug?.rawCursor) {
+            ctx.fillStyle = 'rgba(248, 113, 113, 0.95)';
+            ctx.beginPath();
+            ctx.arc(
+                (debug.rawCursor.x / window.innerWidth) * canvasWidth,
+                (debug.rawCursor.y / window.innerHeight) * canvasHeight,
+                5,
+                0,
+                Math.PI * 2
+            );
+            ctx.fill();
+        }
+
+        if (debug?.filteredCursor) {
+            ctx.fillStyle = 'rgba(34, 211, 238, 0.95)';
+            ctx.beginPath();
+            ctx.arc(
+                (debug.filteredCursor.x / window.innerWidth) * canvasWidth,
+                (debug.filteredCursor.y / window.innerHeight) * canvasHeight,
+                6,
+                0,
+                Math.PI * 2
+            );
+            ctx.fill();
+        }
+        ctx.restore();
+    };
+
     const stopVideo = () => {
+        if (videoAnimationFrameRef.current) {
+            cancelAnimationFrame(videoAnimationFrameRef.current);
+            videoAnimationFrameRef.current = null;
+        }
+
+        if (videoStreamRef.current) {
+            videoStreamRef.current.getTracks().forEach(track => track.stop());
+            videoStreamRef.current = null;
+        }
+
         if (videoRef.current && videoRef.current.srcObject) {
             videoRef.current.srcObject.getTracks().forEach(track => track.stop());
             videoRef.current.srcObject = null;
         }
         setIsVideoOn(false);
         isVideoOnRef.current = false; // Update ref
+        isVideoStartingRef.current = false;
+        pinchFramesRef.current = 0;
+        fistFramesRef.current = 0;
+        isPinchingRef.current = false;
+        handOsGestureRef.current = 'idle';
+        handOsGestureCandidateRef.current = 'idle';
+        handOsGestureFramesRef.current = 0;
+        handOsReleaseFramesRef.current = 0;
+        handOsSwipeStartRef.current = { x: null, y: null, t: 0 };
+        lastHandOsScrollYRef.current = null;
+        handPointFilterRef.current.reset();
+        cursorEngineRef.current.reset({ width: window.innerWidth, height: window.innerHeight });
+        gestureMachineRef.current.reset();
+        setHandDebug(prev => ({ ...prev, state: 'IDLE', confidence: 0, clutch: false, interactionInside: false }));
+        if (isHandOsDraggingRef.current && socket.connected) {
+            socket.emit('hand_control_event', { type: 'mouse_up' });
+        }
+        isHandOsDraggingRef.current = false;
+        activeDragElementRef.current = null;
+        lastActiveDragElementRef.current = null;
+        setActiveDragElement(null);
+        videoBlobInFlightRef.current = false;
+        lastVideoFrameSentRef.current = 0;
+        lastVideoTimeRef.current = -1;
         setFps(0);
     };
 
     const toggleVideo = () => {
         if (isVideoOn) {
             stopVideo();
+            if (socket) {
+                socket.emit('set_vision_mode', { mode: 'none' });
+            }
         } else {
+            if (isScreenMode) {
+                setIsScreenMode(false);
+            }
             startVideo();
+            if (socket) {
+                socket.emit('set_vision_mode', { mode: 'camera' });
+            }
+        }
+    };
+
+    const toggleHandTracking = () => {
+        const enabling = !isHandTrackingEnabled;
+        setIsHandTrackingEnabled(enabling);
+        if (socket.connected) {
+            socket.emit('hand_control_toggle', { enabled: enabling });
+        }
+        if (enabling && !isVideoOn) {
+            startVideo();
+        }
+        if (enabling) {
+            ensureHandLandmarker();
         }
     };
 
     const toggleScreenMode = () => {
         const newMode = !isScreenMode;
         setIsScreenMode(newMode);
+        if (newMode && isVideoOn) {
+            stopVideo();
+        }
         if (socket) {
             socket.emit('set_vision_mode', { mode: newMode ? 'screen' : 'none' });
         }
@@ -1281,7 +1640,14 @@ function App() {
             setIsMuted(false); // Reset mute state
         } else {
             const index = micDevices.findIndex(d => d.deviceId === selectedMicId);
-            socket.emit('start_audio', { device_index: index >= 0 ? index : null });
+            const queryDevice = micDevices.find(d => d.deviceId === selectedMicId);
+            const deviceName = queryDevice ? queryDevice.label : null;
+            startFrontendMic(selectedMicId);
+            socket.emit('start_audio', {
+                device_index: index >= 0 ? index : null,
+                device_name: deviceName,
+                muted: false
+            });
             setIsConnected(true);
             setIsMuted(false); // Start unmuted
         }
@@ -1545,6 +1911,14 @@ function App() {
         setShowPrinterWindow(!showPrinterWindow);
     };
 
+    const toggleChatWindow = () => {
+        setShowChatWindow(prev => {
+            const nextValue = !prev;
+            if (nextValue) bringToFront('chat');
+            return nextValue;
+        });
+    };
+
 
 
     if (isMobile) {
@@ -1566,13 +1940,7 @@ function App() {
     }
 
     return (
-        <div className="h-screen w-screen bg-black text-cyan-100 font-mono overflow-hidden flex flex-col relative selection:bg-cyan-900 selection:text-white">
-
-            {/* --- PREMIUM UI LAYER --- */}
-
-            {/* --- PREMIUM UI LAYER --- */}
-
-            {/* --- PREMIUM UI LAYER --- */}
+        <div className={`ada-soft-shell h-screen w-screen text-[#10294d] font-mono overflow-hidden flex flex-col relative selection:bg-blue-100 selection:text-blue-900 ${isElectron ? 'electron-performance' : ''}`}>
 
             {/* Logic: Show AuthLock if we are NOT authenticated AND (Lock Screen is visible OR Auth is Enabled) 
                 Actually, simpler: isLockScreenVisible is the source of truth for visibility.
@@ -1587,76 +1955,63 @@ function App() {
                 />
             )}
 
-            {/* --- PREMIUM UI LAYER --- */}
-
-            {/* Hand Cursor - Only show if tracking is enabled */}
-            {isVideoOn && isHandTrackingEnabled && (
-                <div
-                    ref={cursorElRef}
-                    className="fixed w-6 h-6 border-2 border-cyan-400 rounded-full pointer-events-none z-[100]"
-                    style={{ left: 0, top: 0, transform: 'translate(-50%,-50%)', boxShadow: '0 0 10px rgba(34,211,238,0.3)' }}
-                >
-                    <div className="absolute top-1/2 left-1/2 w-1 h-1 bg-white rounded-full -translate-x-1/2 -translate-y-1/2" />
-                </div>
-            )}
-
-            {/* Background Grid/Effects - ALIVE BACKGROUND (Fixed: Static opacity) */}
+            {/* Background light field */}
             <div
-                className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-900 via-black to-black z-0 pointer-events-none"
-                style={{ opacity: 0.6 }}
+                className="absolute inset-0 z-0 pointer-events-none"
+                style={{
+                    backgroundImage: 'radial-gradient(circle at 50% 42%, rgba(60, 130, 246, 0.08), transparent 32%), radial-gradient(circle at 10% 20%, rgba(62, 139, 255, 0.08), transparent 18%)',
+                }}
             ></div>
 
-            {/* Ambient Glow (Fixed: Static) */}
-            <div
-                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-cyan-900/10 rounded-full blur-[120px] pointer-events-none"
-            />
+            {!isElectron && (
+                <div
+                    className="absolute top-[42%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[560px] bg-blue-200/20 blur-[90px] pointer-events-none"
+                />
+            )}
 
             {/* Top Bar (Draggable) */}
-            <div className="z-50 flex items-center justify-between p-2 border-b border-cyan-500/20 bg-black/40 backdrop-blur-md select-none sticky top-0" style={{ WebkitAppRegion: 'drag' }}>
+            <div className="z-50 flex items-center justify-between px-6 py-8 bg-transparent select-none sticky top-0" style={{ WebkitAppRegion: 'drag' }}>
                 <div className="flex items-center gap-4 pl-2">
-                    <h1 className="text-xl font-bold tracking-[0.2em] text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]">
-                        A.D.A
+                    <h1 className="hidden text-2xl font-bold tracking-[0.02em] text-[#10294d]">
+                        ADA – REDESIGN
                     </h1>
-                    <div className="text-[10px] text-cyan-700 border border-cyan-900 px-1 rounded">
-                        V2.0.0
-                    </div>
                     {/* FPS Counter */}
                     {isVideoOn && (
-                        <div className="text-[10px] text-green-500 border border-green-900 px-1 rounded ml-2">
+                        <div className="hidden text-[10px] text-emerald-600 border border-emerald-200 bg-white/60 px-2 py-0.5 rounded-full ml-2">
                             FPS: {fps}
                         </div>
                     )}
                     {/* Connected Printers Count */}
                     {printerCount > 0 && (
-                        <div className="flex items-center gap-1.5 text-[10px] text-green-400 border border-green-500/30 bg-green-500/10 px-2 py-0.5 rounded ml-2">
-                            <Printer size={10} className="text-green-400" />
+                        <div className="hidden items-center gap-1.5 text-[10px] text-emerald-700 border border-emerald-200 bg-white/60 px-2 py-0.5 rounded-full ml-2">
+                            <Printer size={10} className="text-emerald-600" />
                             <span>{printerCount} Printer{printerCount !== 1 ? 's' : ''}</span>
                         </div>
                     )}
                     {/* Connected Smart Devices Count */}
                     {kasaDevices.length > 0 && (
-                        <div className="flex items-center gap-1.5 text-[10px] text-yellow-400 border border-yellow-500/30 bg-yellow-500/10 px-2 py-0.5 rounded ml-2">
-                            <span>💡</span>
+                        <div className="hidden items-center gap-1.5 text-[10px] text-amber-700 border border-amber-200 bg-white/60 px-2 py-0.5 rounded-full ml-2">
+                            <span>LIGHT</span>
                             <span>{kasaDevices.length} Device{kasaDevices.length !== 1 ? 's' : ''}</span>
                         </div>
                     )}
                 </div>
 
                 {/* Top Visualizer (User Mic) */}
-                <div className="flex-1 flex justify-center mx-4">
-                    <TopAudioBar audioData={micAudioData} />
+                <div className="flex-1 flex justify-center mx-4 opacity-0 pointer-events-none">
+                    <TopAudioBar audioData={micAudioData} audioDataRef={micAudioDataRef} />
                 </div>
 
                 <div className="flex items-center gap-2 pr-2" style={{ WebkitAppRegion: 'no-drag' }}>
                     {/* Live Clock */}
-                    <div className="flex items-center gap-1.5 text-[11px] text-cyan-300/70 font-mono px-2">
-                        <Clock size={12} className="text-cyan-500/50" />
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono px-2">
+                        <Clock size={12} className="text-blue-500/60" />
                         <span>{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                    <button onClick={handleMinimize} className="p-1 hover:bg-cyan-900/50 rounded text-cyan-500 transition-colors">
+                    <button onClick={handleMinimize} className="p-1 hover:bg-blue-50 rounded text-blue-600 transition-colors">
                         <Minus size={18} />
                     </button>
-                    <button onClick={handleMaximize} className="p-1 hover:bg-cyan-900/50 rounded text-cyan-500 transition-colors">
+                    <button onClick={handleMaximize} className="p-1 hover:bg-blue-50 rounded text-blue-600 transition-colors">
                         <div className="w-[14px] h-[14px] border-2 border-current rounded-[2px]" />
                     </button>
                     <button onClick={handleCloseRequest} className="p-1 hover:bg-red-900/50 rounded text-red-500 transition-colors">
@@ -1670,9 +2025,8 @@ function App() {
                 {/* Central Visualizer (AI Audio) */}
                 <div
                     id="visualizer"
-                    className={`absolute flex items-center justify-center transition-all duration-200 
-                        backdrop-blur-xl bg-black/30 border border-white/10 shadow-2xl overflow-visible
-                        ${isModularMode ? (activeDragElement === 'visualizer' ? 'ring-2 ring-green-500 bg-green-500/10' : 'ring-1 ring-yellow-500/30 bg-yellow-500/5') + ' rounded-2xl pointer-events-auto' : 'rounded-2xl pointer-events-none'}
+                    className={`absolute flex items-center justify-center transition-all duration-200 overflow-visible
+                        ${isModularMode ? (activeDragElement === 'visualizer' ? 'ring-2 ring-blue-400/40 bg-white/25' : 'ring-1 ring-blue-200/60 bg-white/10') + ' rounded-2xl pointer-events-auto' : 'pointer-events-none'}
                     `}
                     style={{
                         left: elementPositions.visualizer.x,
@@ -1683,40 +2037,49 @@ function App() {
                     }}
                     onMouseDown={(e) => handleMouseDown(e, 'visualizer')}
                 >
-                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay z-10"></div>
                     <div className="relative z-20">
                         <Visualizer
                             audioData={aiAudioData}
+                            audioDataRef={aiAudioDataRef}
                             isListening={isConnected && !isMuted}
-                            intensity={audioAmp}
+                            intensity={isElectron ? null : audioAmp}
                             width={elementSizes.visualizer.w}
                             height={elementSizes.visualizer.h}
+                            reduceMotion={isElectron}
                         />
                     </div>
-                    {isModularMode && <div className={`absolute top-2 right-2 text-xs font-bold tracking-widest z-20 ${activeDragElement === 'visualizer' ? 'text-green-500' : 'text-yellow-500/50'}`}>VISUALIZER</div>}
+                    {isModularMode && <div className={`absolute top-2 right-2 text-xs font-bold tracking-widest z-20 ${activeDragElement === 'visualizer' ? 'text-blue-600' : 'text-blue-400/60'}`}>VISUALIZER</div>}
                 </div>
 
                 {/* Video Feed Overlay */}
                 {/* Floating Project Label */}
-                <div className="absolute top-[70px] left-1/2 -translate-x-1/2 text-cyan-500 text-xs font-mono tracking-widest pointer-events-none z-50 bg-black/50 px-2 py-1 rounded backdrop-blur-sm border border-cyan-500/20">
+                <div className="absolute top-[86px] left-1/2 -translate-x-1/2 text-blue-700 text-xs font-mono tracking-widest pointer-events-none z-50 bg-white/55 px-3 py-1 rounded-full backdrop-blur-sm border border-white/80 shadow-[0_10px_30px_rgba(37,99,235,0.08)] opacity-0">
                     PROJECT: {currentProject?.toUpperCase()}
                 </div>
 
                 <div
                     id="video"
-                    className={`fixed bottom-4 right-4 transition-all duration-200 
+                    className={`fixed bottom-10 right-14 transition-all duration-300 
                         ${isVideoOn ? 'opacity-100' : 'opacity-0 pointer-events-none'} 
-                        backdrop-blur-md bg-black/40 border border-white/10 shadow-xl rounded-xl
+                        ada-camera-window backdrop-blur-xl rounded-[18px] p-5
                     `}
                     style={{ zIndex: 20 }}
                 >
-                    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-5 pointer-events-none mix-blend-overlay"></div>
                     {/* Compact Display Container (1080p Source) */}
-                    <div className="relative border border-cyan-500/30 rounded-lg overflow-hidden shadow-[0_0_20px_rgba(6,182,212,0.1)] w-80 aspect-video bg-black/80">
+                    <div className="relative border border-white/60 rounded-[14px] overflow-hidden shadow-[0_18px_52px_rgba(37,99,235,0.20)] w-[480px] aspect-video bg-white/50">
                         {/* Hidden Video Element (Source) */}
                         <video ref={videoRef} autoPlay muted className="absolute inset-0 w-full h-full object-cover opacity-0" />
 
-                        <div className="absolute top-2 left-2 text-[10px] text-cyan-400 bg-black/60 backdrop-blur px-2 py-0.5 rounded border border-cyan-500/20 z-10 font-bold tracking-wider">CAM_01</div>
+                        <div className="absolute left-4 top-4 z-20 text-lg text-white drop-shadow-sm">Caméra</div>
+                        <button
+                            type="button"
+                            onClick={toggleVideo}
+                            className="absolute right-4 top-4 z-20 text-white/90 transition hover:text-white"
+                            aria-label="Fermer la caméra"
+                            title="Fermer la caméra"
+                        >
+                            <X size={22} strokeWidth={1.8} />
+                        </button>
 
                         {/* Canvas for Displaying Video + Skeleton (Ensures overlap) */}
                         <canvas
@@ -1724,6 +2087,57 @@ function App() {
                             className="absolute inset-0 w-full h-full opacity-80"
                             style={{ transform: isCameraFlipped ? 'scaleX(-1)' : 'none' }}
                         />
+
+                        {isHandTrackingEnabled && (
+                            <div className="absolute bottom-2 left-2 z-10 text-[10px] leading-4 text-cyan-100 bg-black/70 backdrop-blur px-2 py-1 rounded border border-cyan-500/20">
+                                <div>STATE: {handDebug.state}</div>
+                                <div>PINCH: {handDebug.pinchRatio === null ? '--' : handDebug.pinchRatio.toFixed(3)}</div>
+                                <div>CONF: {handDebug.confidence.toFixed(2)}</div>
+                                <div>BOX: {handDebug.interactionInside ? 'IN' : 'EDGE'}</div>
+                                <div>RAW: {handDebug.rawCursor ? `${Math.round(handDebug.rawCursor.x)},${Math.round(handDebug.rawCursor.y)}` : '--'}</div>
+                                <div>CURSOR: {handDebug.filteredCursor ? `${Math.round(handDebug.filteredCursor.x)},${Math.round(handDebug.filteredCursor.y)}` : '--'}</div>
+                                <div>DEAD: {handDebug.deadZone.toFixed(4)}</div>
+                            </div>
+                        )}
+                        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-5">
+                            <button
+                                type="button"
+                                onClick={toggleMute}
+                                className="ada-camera-control"
+                                aria-label={isMuted ? 'Activer le micro' : 'Couper le micro'}
+                                title={isMuted ? 'Activer le micro' : 'Couper le micro'}
+                            >
+                                {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={toggleVideo}
+                                className="ada-camera-control h-[58px] w-[58px]"
+                                aria-label="Caméra"
+                                title="Caméra"
+                            >
+                                <Video size={24} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={toggleHandTracking}
+                                className={`ada-camera-control ${isHandTrackingEnabled ? 'is-active' : ''}`}
+                                aria-label={isHandTrackingEnabled ? 'Désactiver le contrôle gestuel' : 'Activer le contrôle gestuel'}
+                                title={isHandTrackingEnabled ? 'Désactiver le contrôle gestuel' : 'Activer le contrôle gestuel'}
+                                aria-pressed={isHandTrackingEnabled}
+                            >
+                                <Hand size={21} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setShowSettings(!showSettings)}
+                                className="ada-camera-control"
+                                aria-label="Paramètres caméra"
+                                title="Paramètres"
+                            >
+                                <Settings size={21} />
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -1795,38 +2209,6 @@ function App() {
                 )}
 
 
-                {/* Browser Window Overlay */}
-                {showBrowserWindow && (
-                    <div
-                        id="browser"
-                        className={`absolute flex flex-col transition-all duration-200 
-                        backdrop-blur-xl bg-black/40 border border-white/10 shadow-2xl overflow-hidden rounded-lg
-                        ${activeDragElement === 'browser' ? 'ring-2 ring-green-500 bg-green-500/10' : ''}
-                    `}
-                        style={{
-                            left: elementPositions.browser?.x || window.innerWidth / 2 - 200,
-                            top: elementPositions.browser?.y || window.innerHeight / 2,
-                            transform: 'translate(-50%, -50%)',
-                            width: `${elementSizes.browser.w}px`,
-                            height: `${elementSizes.browser.h}px`,
-                            pointerEvents: 'auto',
-                            zIndex: getZIndex('browser')
-                        }}
-                        onMouseDown={(e) => handleMouseDown(e, 'browser')}
-                    >
-                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay z-10"></div>
-                        <div className="relative z-20 w-full h-full">
-                            <BrowserWindow
-                                imageSrc={browserData.image}
-                                logs={browserData.logs}
-                                onClose={() => setShowBrowserWindow(false)}
-                                socket={socket}
-                            />
-                        </div>
-                    </div>
-                )}
-
-
                 {/* Terminal Window */}
                 {showTerminalWindow && (
                     <div
@@ -1856,18 +2238,22 @@ function App() {
                 )}
 
                 {/* Chat Module */}
-                <ChatModule
-                    messages={messages}
-                    inputValue={inputValue}
-                    setInputValue={setInputValue}
-                    handleSend={handleSend}
-                    isModularMode={isModularMode}
-                    activeDragElement={activeDragElement}
-                    position={elementPositions.chat}
-                    width={elementSizes.chat.w}
-                    height={elementSizes.chat.h}
-                    onMouseDown={(e) => handleMouseDown(e, 'chat')}
-                />
+                {showChatWindow && (
+                    <ChatModule
+                        messages={messages}
+                        inputValue={inputValue}
+                        setInputValue={setInputValue}
+                        handleSend={handleSend}
+                        isModularMode={isModularMode}
+                        activeDragElement={activeDragElement}
+                        position={elementPositions.chat}
+                        width={elementSizes.chat.w}
+                        height={elementSizes.chat.h}
+                        zIndex={getZIndex('chat')}
+                        onClose={() => setShowChatWindow(false)}
+                        onMouseDown={(e) => handleMouseDown(e, 'chat')}
+                    />
+                )}
 
                 {/* Footer Controls / Tools Module */}
                 <div className="z-20 flex justify-center pb-10 pointer-events-none">
@@ -1881,25 +2267,20 @@ function App() {
                         onToggleMute={toggleMute}
                         onToggleVideo={toggleVideo}
                         onToggleSettings={() => setShowSettings(!showSettings)}
-                        onToggleHand={() => {
-                            const enabling = !isHandTrackingEnabled;
-                            setIsHandTrackingEnabled(enabling);
-                            if (enabling && !isVideoOn) {
-                                startVideo();
-                            }
-                        }}
+                        onToggleChat={toggleChatWindow}
+                        showChatWindow={showChatWindow}
+                        onToggleHand={toggleHandTracking}
                         onToggleKasa={toggleKasaWindow}
                         showKasaWindow={showKasaWindow}
                         onTogglePrinter={togglePrinterWindow}
                         showPrinterWindow={showPrinterWindow}
                         onToggleCad={() => setShowCadWindow(!showCadWindow)}
                         showCadWindow={showCadWindow}
-                        onToggleBrowser={() => setShowBrowserWindow(!showBrowserWindow)}
-                        showBrowserWindow={showBrowserWindow}
                         isScreenMode={isScreenMode}
                         onToggleScreenMode={toggleScreenMode}
                         onToggleDocuments={() => setShowDocumentsWindow(true)}
                         activeDragElement={activeDragElement}
+                        isModularMode={isModularMode}
                         position={elementPositions.tools}
                         onMouseDown={(e) => handleMouseDown(e, 'tools')}
                     />
