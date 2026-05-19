@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Box, Monitor, BookOpen, Image } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Box, Monitor, BookOpen, MessageSquareText } from 'lucide-react';
 
 const ToolBubble = ({ icon, label, active, disabled, onClick, title, className = '' }) => (
     <button
@@ -38,6 +38,8 @@ const ToolsModule = ({
     onToggleMute,
     onToggleVideo,
     onToggleSettings,
+    onToggleChat,
+    showChatWindow,
 
     onToggleHand,
     onToggleKasa,
@@ -57,6 +59,17 @@ const ToolsModule = ({
 }) => {
     const [isOpen, setIsOpen] = useState(false);
 
+    useEffect(() => {
+        if (showChatWindow) {
+            setIsOpen(false);
+        }
+    }, [showChatWindow]);
+
+    const runToolAction = (action) => {
+        setIsOpen(false);
+        action?.();
+    };
+
     const tools = [
         {
             key: 'camera',
@@ -71,6 +84,13 @@ const ToolsModule = ({
             icon: <BookOpen size={27} strokeWidth={1.8} />,
             active: false,
             onClick: onToggleDocuments,
+        },
+        {
+            key: 'chat',
+            label: 'Chat',
+            icon: <MessageSquareText size={27} strokeWidth={1.8} />,
+            active: showChatWindow,
+            onClick: onToggleChat,
         },
         {
             key: 'settings',
@@ -88,11 +108,11 @@ const ToolsModule = ({
             onClick: onToggleMute,
         },
         {
-            key: 'gallery',
-            label: 'Galerie',
-            icon: <Image size={27} strokeWidth={1.8} />,
-            active: false,
-            onClick: onToggleDocuments,
+            key: 'screenwatcher',
+            label: 'Ecran',
+            icon: <Monitor size={27} strokeWidth={1.8} />,
+            active: isScreenMode,
+            onClick: onToggleScreenMode,
         },
         {
             key: 'cad',
@@ -135,14 +155,14 @@ const ToolsModule = ({
         <div
             id="tools"
             onMouseDown={onMouseDown}
-            className="absolute pointer-events-auto"
+            className={`fixed transition-opacity duration-200 ${showChatWindow ? 'pointer-events-none opacity-0' : 'pointer-events-auto opacity-100'}`}
             style={{
-                left: position.x,
-                top: position.y,
-                transform: 'translate(-50%, -50%)',
+                left: '50%',
+                bottom: 0,
+                transform: 'translateX(-50%)',
                 width: 560,
                 height: 320,
-                zIndex: 80,
+                zIndex: 500,
             }}
         >
             <div
@@ -150,14 +170,15 @@ const ToolsModule = ({
                 aria-hidden="true"
             />
             <div className={`absolute inset-0 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
-                {tools.slice(0, 5).map((tool, index) => {
+                {tools.slice(0, 6).map((tool, index) => {
                     const { key, ...toolProps } = tool;
                     const positions = [
                         { left: 280, top: 38 },
-                        { left: 164, top: 96 },
-                        { left: 396, top: 96 },
-                        { left: 116, top: 210 },
-                        { left: 444, top: 210 },
+                        { left: 170, top: 82 },
+                        { left: 390, top: 82 },
+                        { left: 116, top: 178 },
+                        { left: 280, top: 158 },
+                        { left: 444, top: 178 },
                     ];
                     return (
                         <div
@@ -170,14 +191,14 @@ const ToolsModule = ({
                                 transitionDelay: `${index * 28}ms`,
                             }}
                         >
-                            <ToolBubble {...toolProps} />
+                            <ToolBubble {...toolProps} onClick={() => runToolAction(toolProps.onClick)} />
                         </div>
                     );
                 })}
             </div>
 
             <div className={`absolute inset-0 transition-opacity duration-300 ${isOpen && isModularMode ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
-                {tools.slice(5).map((tool, index) => {
+                {tools.slice(6).map((tool, index) => {
                     const { key, ...toolProps } = tool;
                     return (
                         <div
@@ -189,13 +210,13 @@ const ToolsModule = ({
                                 transform: isOpen ? 'translate(-50%, -50%) scale(0.86)' : 'translate(-50%, 35%) scale(0.6)',
                             }}
                         >
-                            <ToolBubble {...toolProps} className="h-[68px] w-[68px] text-[10px]" />
+                            <ToolBubble {...toolProps} onClick={() => runToolAction(toolProps.onClick)} className="h-[68px] w-[68px] text-[10px]" />
                         </div>
                     );
                 })}
             </div>
 
-            <div className="absolute left-1/2 top-[238px] -translate-x-1/2 -translate-y-1/2">
+            <div className="absolute left-1/2 top-[238px] z-30 -translate-x-1/2 -translate-y-1/2">
                 <button
                     type="button"
                     onClick={() => setIsOpen(prev => !prev)}

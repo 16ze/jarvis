@@ -337,6 +337,8 @@ ADA_SYSTEM_PROMPT = (
     "Ne verbalise pas ce processus. Exécute directement. "
     # ─── SÉLECTION D'OUTIL ─────────────────────────────────────────────────
     "RÈGLES CRITIQUES DE SÉLECTION D'OUTIL : "
+    "MAC/PC local → execute_pc_task en priorité locale : ouverture d'app, création de note, saisie de texte, rédaction locale et messages depuis Notes/Messages/Mail/TextEdit/Slack/WhatsApp doivent d'abord passer par la routine locale gratuite. "
+    "Le mode vision/API de execute_pc_task n'est autorisé qu'en dernier recours si la routine locale ne suffit pas. "
     "Lumières/prises Tuya → control_light(target=ALIAS_EXACT, action=...) — JAMAIS ha_turn_on. "
     "  Alias inconnu → list_smart_devices d'abord. target='all' pour toutes les lumières. "
     "Musique → spotify_search(query=..., search_type='track'/'playlist') PUIS spotify_play(uri=résultat). "
@@ -534,12 +536,10 @@ _EXCLUDED_FROM_BRIDGE = {
     "generate_cad",
     "iterate_cad",
     "generate_cad_prototype",
-    "control_computer",
     "discover_printers",
     "print_stl",
     "get_print_status",
     "run_web_agent",
-    "execute_pc_task",
     "ada_sleep",
     "ada_wake",
     "camera_switch",  # pas de live stream en mode texte
@@ -593,6 +593,7 @@ class TextAgent:
         self._monitoring = None
         self._evolution = None
         self._advanced_browser = None
+        self._os_control = None
         self.twilio = None  # Added for TwilioMCP
         self._init_done = False
 
@@ -837,6 +838,13 @@ class TextAgent:
         except Exception as e:
             warnings.warn(f"[TextAgent] AdvancedBrowserAgent: {e}")
             self._advanced_browser = None
+        try:
+            from os_control_agent import OsControlAgent
+
+            self._os_control = OsControlAgent()
+        except Exception as e:
+            warnings.warn(f"[TextAgent] OsControlAgent: {e}")
+            self._os_control = None
 
     def _get_client(self) -> genai.Client:
         if self._client is None:
@@ -860,6 +868,33 @@ class TextAgent:
     async def _execute_tool(self, name: str, args: dict) -> str:
         """Exécute un outil et retourne son résultat en string."""
         print(f"[TextAgent] Tool: {name} args={args}")
+
+        if name == "stop_pc_task":
+            if self._os_control:
+                self._os_control.stop()
+            return "Contrôle PC arrêté."
+
+        if name == "execute_pc_task":
+            if not self._os_control:
+                return "OsControlAgent non disponible pour exécuter cette tâche locale."
+            return await self._os_control.run(args.get("task_description", ""))
+
+        if name == "control_computer":
+            if not self._os_control:
+                return "OsControlAgent non disponible pour contrôler le Mac."
+            action = args.get("action", "")
+            if action == "type":
+                return await self._os_control._exec_action({"action": "type", "text": args.get("text", "")})
+            if action == "hotkey":
+                return await self._os_control._exec_action({"action": "hotkey", "text": args.get("text", "")})
+            if action in {"click", "right_click", "double_click", "scroll"}:
+                return await self._os_control._exec_action({
+                    "action": action,
+                    "x": args.get("x"),
+                    "y": args.get("y"),
+                    "delta": args.get("delta", 3),
+                })
+            return f"Action inconnue : {action}"
 
         # ── GMAIL & CALENDAR ────────────────────────────────────────────────
         if name == "read_emails" and self._google:
@@ -1758,6 +1793,16 @@ class TextAgent:
         Fallback automatique vers OpenRouter si quota Gemini épuisé.
         """
         self._init_agents()
+
+        try:
+            from os_control_agent import is_local_first_task
+
+            if is_local_first_task(text):
+                if not self._os_control:
+                    return "OsControlAgent non disponible pour exécuter cette tâche locale."
+                return await self._os_control.run(text)
+        except Exception as e:
+            return f"Erreur tâche locale : {e}"
 
         # Mémoire courte : contexte de session simple (sans état inter-messages pour l'instant)
         memory_block = ""

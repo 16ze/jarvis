@@ -87,6 +87,7 @@ function App() {
     const [showCadWindow, setShowCadWindow] = useState(false);
 
     const [showTerminalWindow, setShowTerminalWindow] = useState(false);
+    const [showChatWindow, setShowChatWindow] = useState(false);
     const [terminalEntries, setTerminalEntries] = useState([]);
 
     // Printing workflow status (for top toolbar display)
@@ -125,12 +126,12 @@ function App() {
         browser: { x: window.innerWidth / 2 - 300, y: window.innerHeight / 2 },
         kasa: { x: window.innerWidth / 2 + 350, y: window.innerHeight / 2 - 100 },
         printer: { x: window.innerWidth / 2 - 350, y: window.innerHeight / 2 - 100 },
-        tools: { x: window.innerWidth / 2, y: window.innerHeight - 100 } // Fixed bottom OFFSET
+        tools: { x: window.innerWidth / 2, y: window.innerHeight - 132 } // Fixed bottom OFFSET
     });
 
     const [elementSizes, setElementSizes] = useState({
         visualizer: { w: 550, h: 350 },
-        chat: { w: 550, h: 220 },
+        chat: { w: 560, h: 320 },
         tools: { w: 500, h: 80 }, // Approx
         cad: { w: 400, h: 400 },
 
@@ -276,9 +277,9 @@ function App() {
 
             const vizH = Math.min(620, Math.max(430, height * 0.58));
             const vizY = Math.max(245, height * 0.38);
-            const toolsCenterY = height - 86;
-            const chatH = 150;
-            const chatY = height - 250;
+            const toolsCenterY = height - 132;
+            const chatH = Math.min(360, Math.max(280, height * 0.34));
+            const chatY = Math.max(96, height - chatH - 126);
 
             setElementSizes(prev => ({
                 ...prev,
@@ -611,6 +612,9 @@ function App() {
         socket.on('terminal_output', (data) => {
             setTerminalEntries(prev => [...prev, { command: data.command, output: data.output }].slice(-100));
             setShowTerminalWindow(true);
+            if (data.command === '[PC]' || data.command === '[CHAT]') {
+                addMessage('System', data.output);
+            }
         });
 
         // Handle streaming transcription
@@ -1598,6 +1602,20 @@ function App() {
         }
     };
 
+    const toggleHandTracking = () => {
+        const enabling = !isHandTrackingEnabled;
+        setIsHandTrackingEnabled(enabling);
+        if (socket.connected) {
+            socket.emit('hand_control_toggle', { enabled: enabling });
+        }
+        if (enabling && !isVideoOn) {
+            startVideo();
+        }
+        if (enabling) {
+            ensureHandLandmarker();
+        }
+    };
+
     const toggleScreenMode = () => {
         const newMode = !isScreenMode;
         setIsScreenMode(newMode);
@@ -1893,6 +1911,14 @@ function App() {
         setShowPrinterWindow(!showPrinterWindow);
     };
 
+    const toggleChatWindow = () => {
+        setShowChatWindow(prev => {
+            const nextValue = !prev;
+            if (nextValue) bringToFront('chat');
+            return nextValue;
+        });
+    };
+
 
 
     if (isMobile) {
@@ -1946,7 +1972,7 @@ function App() {
             {/* Top Bar (Draggable) */}
             <div className="z-50 flex items-center justify-between px-6 py-8 bg-transparent select-none sticky top-0" style={{ WebkitAppRegion: 'drag' }}>
                 <div className="flex items-center gap-4 pl-2">
-                    <h1 className="text-2xl font-bold tracking-[0.02em] text-[#10294d]">
+                    <h1 className="hidden text-2xl font-bold tracking-[0.02em] text-[#10294d]">
                         ADA – REDESIGN
                     </h1>
                     {/* FPS Counter */}
@@ -2094,6 +2120,16 @@ function App() {
                             </button>
                             <button
                                 type="button"
+                                onClick={toggleHandTracking}
+                                className={`ada-camera-control ${isHandTrackingEnabled ? 'is-active' : ''}`}
+                                aria-label={isHandTrackingEnabled ? 'Désactiver le contrôle gestuel' : 'Activer le contrôle gestuel'}
+                                title={isHandTrackingEnabled ? 'Désactiver le contrôle gestuel' : 'Activer le contrôle gestuel'}
+                                aria-pressed={isHandTrackingEnabled}
+                            >
+                                <Hand size={21} />
+                            </button>
+                            <button
+                                type="button"
                                 onClick={() => setShowSettings(!showSettings)}
                                 className="ada-camera-control"
                                 aria-label="Paramètres caméra"
@@ -2202,19 +2238,22 @@ function App() {
                 )}
 
                 {/* Chat Module */}
-                <ChatModule
-                    messages={messages}
-                    inputValue={inputValue}
-                    setInputValue={setInputValue}
-                    handleSend={handleSend}
-                    isModularMode={isModularMode}
-                    activeDragElement={activeDragElement}
-                    position={elementPositions.chat}
-                    width={elementSizes.chat.w}
-                    height={elementSizes.chat.h}
-                    isVisualMinimal
-                    onMouseDown={(e) => handleMouseDown(e, 'chat')}
-                />
+                {showChatWindow && (
+                    <ChatModule
+                        messages={messages}
+                        inputValue={inputValue}
+                        setInputValue={setInputValue}
+                        handleSend={handleSend}
+                        isModularMode={isModularMode}
+                        activeDragElement={activeDragElement}
+                        position={elementPositions.chat}
+                        width={elementSizes.chat.w}
+                        height={elementSizes.chat.h}
+                        zIndex={getZIndex('chat')}
+                        onClose={() => setShowChatWindow(false)}
+                        onMouseDown={(e) => handleMouseDown(e, 'chat')}
+                    />
+                )}
 
                 {/* Footer Controls / Tools Module */}
                 <div className="z-20 flex justify-center pb-10 pointer-events-none">
@@ -2228,19 +2267,9 @@ function App() {
                         onToggleMute={toggleMute}
                         onToggleVideo={toggleVideo}
                         onToggleSettings={() => setShowSettings(!showSettings)}
-                        onToggleHand={() => {
-                            const enabling = !isHandTrackingEnabled;
-                            setIsHandTrackingEnabled(enabling);
-                            if (socket.connected) {
-                                socket.emit('hand_control_toggle', { enabled: enabling });
-                            }
-                            if (enabling && !isVideoOn) {
-                                startVideo();
-                            }
-                            if (enabling) {
-                                ensureHandLandmarker();
-                            }
-                        }}
+                        onToggleChat={toggleChatWindow}
+                        showChatWindow={showChatWindow}
+                        onToggleHand={toggleHandTracking}
                         onToggleKasa={toggleKasaWindow}
                         showKasaWindow={showKasaWindow}
                         onTogglePrinter={togglePrinterWindow}

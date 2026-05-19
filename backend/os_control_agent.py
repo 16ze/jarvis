@@ -47,6 +47,45 @@ _SPECIAL_KEY_CODES = {
 
 _SHELL_PREFIXES = ("open ", "osascript ", "say ", "screencapture", "killall ", "defaults ")
 
+_KNOWN_APPS = {
+    "spotify": "Spotify",
+    "finder": "Finder",
+    "terminal": "Terminal",
+    "safari": "Safari",
+    "chrome": "Google Chrome",
+    "firefox": "Firefox",
+    "vscode": "Visual Studio Code",
+    "code": "Visual Studio Code",
+    "xcode": "Xcode",
+    "figma": "Figma",
+    "slack": "Slack",
+    "zoom": "zoom.us",
+    "discord": "Discord",
+    "telegram": "Telegram",
+    "whatsapp": "WhatsApp",
+    "notes": "Notes",
+    "note": "Notes",
+    "une note": "Notes",
+    "nouvelle note": "Notes",
+    "calendar": "Calendar",
+    "calendrier": "Calendar",
+    "messages": "Messages",
+    "mail": "Mail",
+    "photos": "Photos",
+    "musique": "Music",
+    "music": "Music",
+    "textedit": "TextEdit",
+    "appstore": "App Store",
+    "app store": "App Store",
+}
+
+_NEW_DOCUMENT_APPS = {
+    "Notes",
+    "TextEdit",
+    "Mail",
+    "Messages",
+}
+
 # Tâches qui nécessitent une interaction UI — jamais interceptées par le fast-path
 _INTERACTION_KEYWORDS = re.compile(
     r"messagerie|messages?(?!\s+(?:vocal|audio))|discussion|chat|inbox|"
@@ -149,6 +188,18 @@ def _run_osascript(script: str) -> str:
     return r.stdout.strip()
 
 
+def _osascript_escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _html_escape(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
 def _get_screen_size() -> tuple[int, int]:
     try:
         out = subprocess.run(
@@ -173,11 +224,38 @@ def _parse_json_response(text: str) -> any:
     return json.loads(text)
 
 
+def is_local_first_task(task: str) -> bool:
+    """
+    Détecte les demandes Mac simples que l'on sait tenter en local avant tout LLM.
+    Le routage exact reste dans OsControlAgent._local_interaction_path.
+    """
+    tl = (task or "").strip().lower()
+    if not tl:
+        return False
+
+    app_names = sorted(_KNOWN_APPS.keys(), key=len, reverse=True)
+    app_pattern = "|".join(re.escape(name) for name in app_names)
+    action_pattern = (
+        r"ouvre?|ouvrir|ouvrire|lance?|démarre?|demarre?|active?|"
+        r"écris|ecris|écrire|ecrire|decrir|décrir|decrire|décrire|"
+        r"rédige|redige|tape|saisis|colle|crée|cree|ajoute|envoie"
+    )
+
+    if re.search(rf"\b({action_pattern})\b", tl) and re.search(rf"\b({app_pattern})\b", tl):
+        return True
+
+    if re.search(r"^(?:crée|cree|ajoute|ouvre?|ouvrir|ouvrire)\s+(?:une\s+)?note\b", tl):
+        return True
+
+    if re.search(r"^(?:écris|ecris|écrire|ecrire|decrir|décrir|decrire|décrire|rédige|redige|tape|saisis|colle)\s+", tl):
+        return True
+
+    return False
+
+
 class OsControlAgent:
     def __init__(self):
-        if not GEMINI_API_KEY:
-            raise RuntimeError("GEMINI_API_KEY non configurée.")
-        self._client = genai.Client(api_key=GEMINI_API_KEY)
+        self._client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
         self._global_stop = asyncio.Event()
         self._lock = asyncio.Lock()
         self._current_task = ""
@@ -189,6 +267,55 @@ class OsControlAgent:
 
     def _reset(self):
         self._global_stop.clear()
+
+    async def _press_hotkey_local(self, hotkey: str) -> None:
+        _mods = {
+            "ctrl": "control down",
+            "control": "control down",
+            "cmd": "command down",
+            "command": "command down",
+            "shift": "shift down",
+            "alt": "option down",
+            "option": "option down",
+        }
+        parts = [p.strip().lower() for p in hotkey.split("+") if p.strip()]
+        if not parts:
+            return
+        key = parts[-1]
+        mods = [_mods[p] for p in parts[:-1] if p in _mods]
+        using = ", ".join(mods)
+
+        if key in _SPECIAL_KEY_CODES:
+            code = _SPECIAL_KEY_CODES[key]
+            script = (
+                f'tell application "System Events" to key code {code} using {{{using}}}'
+                if using
+                else f'tell application "System Events" to key code {code}'
+            )
+        elif using:
+            script = (
+                f'tell application "System Events" to keystroke "{_osascript_escape(key)}" '
+                f'using {{{using}}}'
+            )
+        else:
+            script = f'tell application "System Events" to keystroke "{_osascript_escape(key)}"'
+
+        await asyncio.to_thread(_run_osascript, script)
+
+    async def _copy_to_clipboard(self, text: str) -> None:
+        await asyncio.to_thread(
+            lambda: subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
+        )
+
+    async def _paste_clipboard(self) -> None:
+        await asyncio.to_thread(
+            _run_osascript,
+            'tell application "System Events" to keystroke "v" using command down',
+        )
+
+    async def _paste_text_raw(self, text: str) -> None:
+        await self._copy_to_clipboard(text)
+        await self._paste_clipboard()
 
     # ── Screenshot ─────────────────────────────────────────────────────────────
 
@@ -209,6 +336,8 @@ class OsControlAgent:
 
     async def _call_gemini(self, system: str, user_text: str, screenshot_bytes: bytes) -> str:
         """Appel Gemini avec screenshot. Retourne le texte brut de la réponse."""
+        if self._client is None:
+            raise RuntimeError("Mode vision/API indisponible : GEMINI_API_KEY non configurée.")
         resp = await asyncio.to_thread(
             self._client.models.generate_content,
             model=MODEL,
@@ -327,6 +456,351 @@ end tell'''
             return f"UI ({app}):\n{r}" if r.strip() else f"Aucun élément UI accessible dans {app}."
         except Exception as e:
             return f"get_ui_elements erreur: {e}"
+
+    async def _open_app_local(self, target_raw: str) -> tuple[bool, str]:
+        target_clean = target_raw.strip().strip("'\"«»")
+        target_clean = re.sub(
+            r"^(?:l'|la\s+|le\s+|les\s+|un\s+|une\s+|des\s+)",
+            "",
+            target_clean,
+            flags=re.IGNORECASE,
+        ).strip()
+        target_lower = target_clean.lower()
+        app_name = _KNOWN_APPS.get(target_lower, target_clean)
+
+        result = await asyncio.to_thread(
+            subprocess.run,
+            ["open", "-a", app_name],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            await asyncio.sleep(1.0)
+            return True, app_name
+
+        try:
+            await asyncio.to_thread(
+                _run_osascript, f'tell application "{_osascript_escape(app_name)}" to activate'
+            )
+            await asyncio.sleep(1.0)
+            return True, app_name
+        except Exception:
+            return False, app_name
+
+    async def _paste_text_to_frontmost_app(
+        self,
+        text: str,
+        *,
+        create_new_document: bool = False,
+        press_return: bool = False,
+    ) -> str:
+        if create_new_document:
+            await self._press_hotkey_local("cmd+n")
+            await asyncio.sleep(0.4)
+
+        await self._paste_text_raw(text)
+        await asyncio.sleep(0.2)
+
+        if press_return:
+            await self._press_hotkey_local("return")
+            await asyncio.sleep(0.2)
+
+        return "texte collé dans l'app au premier plan"
+
+    @staticmethod
+    def _extract_inline_text(task: str) -> str:
+        quoted = re.search(r"[\"“«](.*?)[\"”»]", task)
+        if quoted:
+            return quoted.group(1).strip()
+
+        inline = re.search(
+            r"(?:écris|ecris|écrire|ecrire|decrir|décrir|decrire|décrire|rédige|redige|tape|saisis|colle)\s+(.+?)(?:\s+dans\s+|\s+sur\s+|$)",
+            task,
+            re.IGNORECASE,
+        )
+        return inline.group(1).strip(" .") if inline else ""
+
+    @staticmethod
+    def _extract_action_text(task: str) -> str:
+        quoted = re.search(r"[\"“«](.*?)[\"”»]", task)
+        if quoted:
+            return quoted.group(1).strip()
+
+        inline = re.search(
+            r"(?:écris|ecris|écrire|ecrire|decrir|décrir|decrire|décrire|rédige|redige|tape|saisis|colle|envoie(?:\s+un\s+message)?|envoie)\s+(.+?)(?:\s+(?:à|a|pour)\s+.+)?$",
+            task,
+            re.IGNORECASE,
+        )
+        return inline.group(1).strip(" .") if inline else ""
+
+    @staticmethod
+    def _extract_recipient(task: str) -> str:
+        match = re.search(
+            r"\b(?:à|a|pour)\s+[\"“«]?([a-zA-Z0-9@+._À-ÿ\-\s#]+?)[\"”»]?(?:\s+(?:avec|en\s+disant|message|sujet|objet)|$)",
+            task,
+            re.IGNORECASE,
+        )
+        return match.group(1).strip(" .") if match else ""
+
+    @staticmethod
+    def _extract_subject(task: str) -> str:
+        quoted = re.search(r"\b(?:sujet|objet)\s+[\"“«](.*?)[\"”»]", task, re.IGNORECASE)
+        if quoted:
+            return quoted.group(1).strip()
+        inline = re.search(r"\b(?:sujet|objet)\s+(.+?)(?:\s+(?:et|avec)|$)", task, re.IGNORECASE)
+        return inline.group(1).strip(" .") if inline else ""
+
+    @staticmethod
+    def _extract_title(task: str) -> str:
+        quoted = re.search(r"\b(?:titre|nom)\s+[\"“«](.*?)[\"”»]", task, re.IGNORECASE)
+        if quoted:
+            return quoted.group(1).strip()
+        return ""
+
+    @staticmethod
+    def _looks_like_note_request(task: str) -> bool:
+        tl = task.lower()
+        return "note" in tl or "notes" in tl
+
+    async def _create_note_local(
+        self, text: str, *, title: str = "", cb: Optional[Callable] = None
+    ) -> str:
+        body_html = _html_escape(text).replace("\n", "<br>")
+        note_html = f"<div>{body_html}</div>"
+        escaped_body = _osascript_escape(note_html)
+        escaped_title = _osascript_escape(title.strip())
+
+        script = f'''
+tell application "Notes"
+    activate
+    set targetAccount to first account
+    set targetFolder to first folder of targetAccount
+    if "{escaped_title}" is not "" then
+        make new note at targetFolder with properties {{name:"{escaped_title}", body:"{escaped_body}"}}
+    else
+        make new note at targetFolder with properties {{body:"{escaped_body}"}}
+    end if
+end tell'''
+        try:
+            await asyncio.to_thread(_run_osascript, script)
+            return "Note créée localement dans Notes."
+        except Exception:
+            opened, app_name = await self._open_app_local("Notes")
+            if not opened:
+                raise
+            if cb:
+                await cb({"image": None, "log": f"[PC] Fallback UI local dans {app_name}"})
+            await self._press_hotkey_local("cmd+n")
+            await asyncio.sleep(0.5)
+            payload = f"{title.strip()}\n\n{text}" if title.strip() else text
+            await self._paste_text_to_frontmost_app(payload)
+            return "Note créée localement dans Notes (fallback UI)."
+
+    async def _compose_mail_local(
+        self,
+        body: str,
+        *,
+        recipient: str = "",
+        subject: str = "",
+    ) -> str:
+        escaped_body = _osascript_escape(body)
+        escaped_subject = _osascript_escape(subject or "")
+        escaped_recipient = _osascript_escape(recipient or "")
+        script = f'''
+tell application "Mail"
+    activate
+    set newMessage to make new outgoing message with properties {{visible:true, subject:"{escaped_subject}", content:"{escaped_body}"}}
+    if "{escaped_recipient}" is not "" then
+        tell newMessage
+            make new to recipient at end of to recipients with properties {{address:"{escaped_recipient}"}}
+        end tell
+    end if
+end tell'''
+        await asyncio.to_thread(_run_osascript, script)
+        return "Brouillon Mail préparé localement."
+
+    async def _compose_messages_local(self, recipient: str, body: str) -> str:
+        await self._open_app_local("Messages")
+        await self._press_hotkey_local("cmd+n")
+        await asyncio.sleep(0.5)
+        if recipient:
+            await self._paste_text_raw(recipient)
+            await asyncio.sleep(0.3)
+            await self._press_hotkey_local("return")
+            await asyncio.sleep(0.4)
+            await self._press_hotkey_local("tab")
+            await asyncio.sleep(0.3)
+        await self._paste_text_raw(body)
+        await asyncio.sleep(0.2)
+        await self._press_hotkey_local("return")
+        return "Message préparé puis envoyé localement dans Messages."
+
+    async def _compose_slack_local(self, recipient: str, body: str) -> str:
+        await self._open_app_local("Slack")
+        await self._press_hotkey_local("cmd+k")
+        await asyncio.sleep(0.4)
+        if recipient:
+            await self._paste_text_raw(recipient)
+            await asyncio.sleep(0.4)
+            await self._press_hotkey_local("return")
+            await asyncio.sleep(0.8)
+        await self._paste_text_raw(body)
+        await asyncio.sleep(0.2)
+        await self._press_hotkey_local("return")
+        return "Message envoyé localement dans Slack."
+
+    async def _compose_whatsapp_local(self, recipient: str, body: str) -> str:
+        await self._open_app_local("WhatsApp")
+        await self._press_hotkey_local("cmd+f")
+        await asyncio.sleep(0.4)
+        if recipient:
+            await self._paste_text_raw(recipient)
+            await asyncio.sleep(0.8)
+            await self._press_hotkey_local("return")
+            await asyncio.sleep(0.8)
+        await self._paste_text_raw(body)
+        await asyncio.sleep(0.2)
+        await self._press_hotkey_local("return")
+        return "Message envoyé localement dans WhatsApp."
+
+    async def _compose_textedit_local(self, body: str) -> str:
+        await self._open_app_local("TextEdit")
+        await self._press_hotkey_local("cmd+n")
+        await asyncio.sleep(0.6)
+        await self._paste_text_to_frontmost_app(body)
+        return "Document TextEdit créé localement."
+
+    async def _run_local_app_routine(
+        self,
+        app_name: str,
+        task: str,
+        *,
+        text: str,
+        recipient: str,
+        subject: str,
+        title: str,
+        cb: Optional[Callable],
+    ) -> Optional[str]:
+        send_requested = bool(re.search(r"\benvoie\b", task, re.IGNORECASE))
+        create_requested = bool(
+            re.search(r"\b(crée|cree|ajoute|nouvelle?|nouveau)\b", task, re.IGNORECASE)
+        )
+
+        if app_name == "Notes":
+            note_text = text or task
+            if create_requested or note_text:
+                return await self._create_note_local(note_text, title=title, cb=cb)
+
+        if app_name == "TextEdit" and (create_requested or text):
+            return await self._compose_textedit_local(text or task)
+
+        if app_name == "Mail" and (create_requested or text or recipient or subject):
+            return await self._compose_mail_local(text or "", recipient=recipient, subject=subject)
+
+        if app_name == "Messages" and send_requested and text:
+            return await self._compose_messages_local(recipient, text)
+
+        if app_name == "Slack" and send_requested and text:
+            return await self._compose_slack_local(recipient, text)
+
+        if app_name == "WhatsApp" and send_requested and text:
+            return await self._compose_whatsapp_local(recipient, text)
+
+        return None
+
+    async def _local_interaction_path(
+        self, task: str, cb: Optional[Callable]
+    ) -> Optional[str]:
+        t = task.strip()
+        text_to_write = self._extract_action_text(t)
+        recipient = self._extract_recipient(t)
+        subject = self._extract_subject(t)
+        title = self._extract_title(t)
+
+        open_and_write = re.search(
+            r"^(?:ouvre?|ouvrir|ouvrire|lance?|démarre?|demarre?|open|start|launch)\s+"
+            r"(?:l'?app(?:lication)?\s+)?[«\"']?([a-zA-Z0-9À-ÿ\s\.\-]+?)[«\"']?"
+            r"\s+(?:et\s+)?(?:écris|ecris|écrire|ecrire|decrir|décrir|decrire|décrire|rédige|redige|tape|saisis|colle|envoie|crée|cree|ajoute)\s+(.+)$",
+            t,
+            re.IGNORECASE,
+        )
+        if open_and_write:
+            target_raw = open_and_write.group(1).strip()
+            opened, app_name = await self._open_app_local(target_raw)
+            if not opened:
+                return None
+            routed = await self._run_local_app_routine(
+                app_name,
+                t,
+                text=text_to_write or open_and_write.group(2).strip(" ."),
+                recipient=recipient,
+                subject=subject,
+                title=title,
+                cb=cb,
+            )
+            if routed is not None:
+                return routed
+            if cb:
+                await cb({"image": None, "log": f"[PC] Écriture locale dans {app_name}"})
+            create_new = app_name in _NEW_DOCUMENT_APPS
+            await self._paste_text_to_frontmost_app(
+                text_to_write or open_and_write.group(2).strip(" ."),
+                create_new_document=create_new,
+            )
+            return f"{app_name} ouvert puis texte écrit localement."
+
+        write_in_app = re.search(
+            r"^(?:dans|sur)\s+[«\"']?([a-zA-Z0-9À-ÿ\s\.\-]+?)[«\"']?\s+"
+            r"(?:écris|ecris|écrire|ecrire|decrir|décrir|decrire|décrire|rédige|redige|tape|saisis|colle|envoie|crée|cree|ajoute)\s+(.+)$",
+            t,
+            re.IGNORECASE,
+        )
+        if write_in_app:
+            target_raw = write_in_app.group(1).strip()
+            opened, app_name = await self._open_app_local(target_raw)
+            if not opened:
+                return None
+            routed = await self._run_local_app_routine(
+                app_name,
+                t,
+                text=text_to_write or write_in_app.group(2).strip(" ."),
+                recipient=recipient,
+                subject=subject,
+                title=title,
+                cb=cb,
+            )
+            if routed is not None:
+                return routed
+            if cb:
+                await cb({"image": None, "log": f"[PC] Écriture locale dans {app_name}"})
+            create_new = app_name in _NEW_DOCUMENT_APPS
+            await self._paste_text_to_frontmost_app(
+                text_to_write or write_in_app.group(2).strip(" ."),
+                create_new_document=create_new,
+            )
+            return f"{app_name} activé puis texte écrit localement."
+
+        note_direct = re.search(
+            r"^(?:crée|cree|ajoute|ouvre?|ouvrir|ouvrire)\s+(?:une\s+)?note\b(?:\s+(?:et\s+)?(?:écris|ecris|écrire|ecrire|decrir|décrir|decrire|décrire|avec)?\s*(.+))?$",
+            t,
+            re.IGNORECASE,
+        )
+        if note_direct:
+            return await self._create_note_local(text_to_write or note_direct.group(1) or "", title=title, cb=cb)
+
+        write_only = re.search(
+            r"^(?:écris|ecris|écrire|ecrire|decrir|décrir|decrire|décrire|rédige|redige|tape|saisis|colle)\s+(.+)$",
+            t,
+            re.IGNORECASE,
+        )
+        if write_only:
+            if cb:
+                await cb({"image": None, "log": "[PC] Écriture locale dans l'app au premier plan"})
+            await self._paste_text_to_frontmost_app(text_to_write or write_only.group(1).strip(" ."))
+            return "Texte écrit localement dans l'app au premier plan."
+
+        return None
 
     async def _click_element_by_name(self, name: str) -> str:
         try:
@@ -519,9 +993,13 @@ end tell'''
         t = task.strip()
         tl = t.lower()
 
-        # Les interactions UI passent toujours en vision loop
+        local_interaction = await self._local_interaction_path(t, cb)
+        if local_interaction is not None:
+            return local_interaction
+
+        # Les interactions UI non couvertes localement passent en vision loop
         if _is_interaction_task(t):
-            print("[OsControl] Interaction détectée → vision loop")
+            print("[OsControl] Interaction détectée hors fast-path local → vision loop")
             return None
 
         # Commande shell directe
@@ -545,37 +1023,8 @@ end tell'''
             "notion": "https://www.notion.so",
             "linkedin": "https://www.linkedin.com",
         }
-        # Apps desktop connues → open -a (pas Safari, pas vision loop)
-        KNOWN_APPS = {
-            "spotify": "Spotify",
-            "finder": "Finder",
-            "terminal": "Terminal",
-            "safari": "Safari",
-            "chrome": "Google Chrome",
-            "firefox": "Firefox",
-            "vscode": "Visual Studio Code",
-            "code": "Visual Studio Code",
-            "xcode": "Xcode",
-            "figma": "Figma",
-            "slack": "Slack",
-            "zoom": "zoom.us",
-            "discord": "Discord",
-            "telegram": "Telegram",
-            "whatsapp": "WhatsApp",
-            "notes": "Notes",
-            "calendar": "Calendar",
-            "calendrier": "Calendar",
-            "messages": "Messages",
-            "mail": "Mail",
-            "photos": "Photos",
-            "musique": "Music",
-            "music": "Music",
-            "appstore": "App Store",
-            "app store": "App Store",
-        }
-
         app_m = re.search(
-            r"^(?:ouvre?|lance?|démarre?|open|start|launch|active?)\s+"
+            r"^(?:ouvre?|ouvrir|ouvrire|lance?|démarre?|demarre?|open|start|launch|active?)\s+"
             r"(?:l'?app(?:lication)?\s+)?[«\"']?([a-zA-Z0-9À-ÿ\s\.\-]+?)[«\"']?\s*$",
             t, re.IGNORECASE
         )
@@ -590,23 +1039,9 @@ end tell'''
                 return f"Safari ouvert sur {url}."
 
             # App desktop connue → open -a avec nom exact
-            if target_lower in KNOWN_APPS:
-                app_name = KNOWN_APPS[target_lower]
-                r = subprocess.run(["open", "-a", app_name], capture_output=True, text=True, timeout=10)
-                if r.returncode == 0:
-                    return f"{app_name} ouvert."
-
-            # App quelconque → tenter open -a avec le nom brut
-            r = subprocess.run(["open", "-a", target_raw], capture_output=True, text=True, timeout=10)
-            if r.returncode == 0:
-                return f"{target_raw} ouvert."
-
-            # Fallback AppleScript activate
-            try:
-                _run_osascript(f'tell application "{target_raw}" to activate')
-                return f"{target_raw} activé."
-            except Exception:
-                pass  # → vision loop
+            opened, app_name = await self._open_app_local(target_raw)
+            if opened:
+                return f"{app_name} ouvert."
 
         # ── Recherche web ──────────────────────────────────────────────────────
         SEARCHES = [

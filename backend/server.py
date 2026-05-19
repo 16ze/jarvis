@@ -28,6 +28,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import ada
 import external_bridge
+from os_control_agent import OsControlAgent, is_local_first_task
 from dotenv import load_dotenv
 load_dotenv()
 from authenticator import FaceAuthenticator
@@ -96,6 +97,7 @@ tuya_agent = TuyaAgent()
 standalone_web_agent = WebAgent()
 cast_agent = CastAgent()
 hand_gesture_os_controller = HandGestureOsController()
+standalone_os_control_agent = OsControlAgent()
 SETTINGS_FILE = "settings.json"
 
 DEFAULT_SETTINGS = {
@@ -813,13 +815,49 @@ async def shutdown(sid, data=None):
 async def user_input(sid, data):
     text = data.get('text')
     print(f"[SERVER DEBUG] User input received: '{text}'")
-    
+
+    if text and is_local_first_task(text):
+        print(f"[SERVER DEBUG] Local-first Mac task intercepted: '{text}'")
+        os_agent = getattr(audio_loop, "os_control_agent", None) if audio_loop else None
+        os_agent = os_agent or standalone_os_control_agent
+        if not os_agent:
+            await sio.emit('terminal_output', {
+                "command": "[PC]",
+                "output": "OsControlAgent non disponible pour exécuter cette tâche locale."
+            }, room=sid)
+            return
+
+        await sio.emit('terminal_output', {
+            "command": "[PC]",
+            "output": f"Mode local prioritaire : {text[:120]}"
+        }, room=sid)
+
+        async def _pc_update(data: dict):
+            log = data.get("log", "")
+            if log:
+                await sio.emit('terminal_output', {"command": "[PC]", "output": log}, room=sid)
+
+        result = await os_agent.run(text, step_callback=_pc_update)
+        await sio.emit('terminal_output', {
+            "command": "[PC]",
+            "output": f"Résultat local : {result}"
+        }, room=sid)
+        return
+
     if not audio_loop:
         print("[SERVER DEBUG] [Error] Audio loop is None. Cannot send text.")
+        await sio.emit('terminal_output', {
+            "command": "[CHAT]",
+            "output": "Ada Live n'est pas démarrée. Les tâches locales Mac peuvent fonctionner sans API, mais les demandes générales nécessitent de démarrer Ada."
+        }, room=sid)
         return
 
     if not audio_loop.session:
         print("[SERVER DEBUG] [Error] Session is None. Cannot send text.")
+        await sio.emit('terminal_output', {
+            "command": "[CHAT]",
+            "output": "La session Ada Live n'est pas encore prête. Réessaie dans quelques secondes ou démarre Ada."
+        }, room=sid)
         return
 
     if text:

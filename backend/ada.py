@@ -843,8 +843,13 @@ SYSTEM_INSTRUCTION_BASE = (
         "N'invente jamais une info, ne dis que tu est limiter a quoi que tu peux dire, Si incertain → dis-le avant d'agir. "
         # ── CONTRÔLE PC ────────────────────────────────────────────────────────
         "MAC/PC : execute_pc_task pour TOUT ce qui touche l'écran. "
+        "RÈGLE LOCALE PRIORITAIRE : pour ouvrir une app installée, créer un contenu local, écrire dans une app ou envoyer un message depuis une app locale, execute_pc_task DOIT d'abord tenter la routine locale 100% gratuite intégrée au Mac. "
+        "N'utilise le mode vision/API de execute_pc_task qu'en DERNIER RECOURS si la routine locale ne suffit pas. "
+        "Apps locales prioritaires : Notes, Messages, Mail, TextEdit, Slack, WhatsApp, Safari, Finder, Terminal et toute app installée sur la machine. "
         "Passe la description COMPLÈTE et PRÉCISE : quoi faire, où, et le contenu exact. "
         "Exemples : execute_pc_task('ouvre Safari sur YouTube') | "
+        "execute_pc_task('ouvre Notes et crée une note avec \"liste courses\"') | "
+        "execute_pc_task('ouvre Slack et envoie \"ping\" à design') | "
         "execute_pc_task('dans Instagram, ouvre la messagerie et envoie \"ça va\" à Karim') | "
         "execute_pc_task('clique sur l\\'icône Messages en haut à droite dans Instagram') | "
         "execute_pc_task('règle le volume à 50') | execute_pc_task('ouvre VS Code'). "
@@ -1066,6 +1071,7 @@ class AudioLoop:
         # Track last transcription text to calculate deltas (Gemini sends cumulative text)
         self._last_input_transcription = ""
         self._last_output_transcription = ""
+        self._last_local_voice_task = ""
 
         self.session = None
 
@@ -2361,8 +2367,68 @@ class AudioLoop:
                                                         "sender": "ADA",
                                                         "text": "[Mode veille activé]",
                                                     }
-                                                )
+                                            )
                                             continue
+
+                                        # ── COMMANDES MAC LOCALES ─────────────
+                                        # Si la transcription live existe, on exécute les tâches Mac simples
+                                        # avant de laisser le modèle raisonner dessus.
+                                        try:
+                                            from os_control_agent import is_local_first_task
+
+                                            full_transcript = transcript.strip()
+                                            full_lower = full_transcript.lower()
+                                            has_action_payload = any(
+                                                token in full_lower
+                                                for token in [
+                                                    "écris",
+                                                    "ecris",
+                                                    "écrire",
+                                                    "ecrire",
+                                                    "decrir",
+                                                    "décrir",
+                                                    "decrire",
+                                                    "décrire",
+                                                    "avec",
+                                                    "envoie",
+                                                    "test",
+                                                ]
+                                            )
+                                            if (
+                                                full_transcript
+                                                and full_transcript != self._last_local_voice_task
+                                                and has_action_payload
+                                                and is_local_first_task(full_transcript)
+                                            ):
+                                                self._last_local_voice_task = full_transcript
+                                                self.clear_audio_queue()
+                                                if self.on_transcription:
+                                                    self.on_transcription(
+                                                        {
+                                                            "sender": "ADA",
+                                                            "text": "[Mode local prioritaire]",
+                                                        }
+                                                    )
+
+                                                async def _run_local_voice_task(task_text: str):
+                                                    if not self.os_control_agent:
+                                                        return
+                                                    result = await self.os_control_agent.run(task_text)
+                                                    if self.on_terminal_output:
+                                                        self.on_terminal_output(
+                                                            {
+                                                                "command": "[PC]",
+                                                                "output": f"Résultat local : {result}",
+                                                            }
+                                                        )
+
+                                                _bg_task(
+                                                    _run_local_voice_task(full_transcript),
+                                                    "local_voice_pc_task",
+                                                )
+                                                continue
+                                        except Exception as e:
+                                            print(f"[ADA] Local voice command routing failed: {e}")
 
                                         # ── TRAITEMENT NORMAL ─────────────────
                                         # ═══ BRAIN INTEGRATION — début ═══
@@ -5024,6 +5090,16 @@ class AudioLoop:
 
     async def process_text_message(self, text: str) -> str:
         """Traite un message texte avec TOUS les outils Ada (pour Telegram/WhatsApp)."""
+        try:
+            from os_control_agent import is_local_first_task
+
+            if is_local_first_task(text):
+                if not self.os_control_agent:
+                    return "OsControlAgent non disponible pour exécuter cette tâche locale."
+                return await self.os_control_agent.run(text)
+        except Exception as e:
+            return f"Erreur tâche locale : {e}"
+
         api_key = os.getenv("GEMINI_API_KEY", "")
         if not api_key:
             return "GEMINI_API_KEY non configurée."

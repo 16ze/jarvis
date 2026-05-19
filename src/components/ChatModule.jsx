@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { X } from 'lucide-react';
 
 const ChatModule = ({
     messages,
@@ -11,6 +12,8 @@ const ChatModule = ({
     width = 672, // default max-w-2xl
     height,
     isVisualMinimal = false,
+    zIndex,
+    onClose,
     onMouseDown
 }) => {
     const messagesEndRef = useRef(null);
@@ -37,12 +40,30 @@ const ChatModule = ({
                 top: position.y,
                 transform: 'translate(-50%, 0)', // Aligned top-center
                 width: width,
-                height: height
+                height: height,
+                zIndex
             }}
         >
+            <div className="relative z-20 mb-3 flex items-center justify-between">
+                <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-blue-500/80">Chat Ada</p>
+                    <p className="text-xs text-slate-500">Ecris une tache locale ou une demande pour Ada.</p>
+                </div>
+                {onClose && (
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-full border border-blue-100 bg-white/65 p-2 text-blue-500 shadow-sm transition hover:border-red-200 hover:text-red-500"
+                        aria-label="Fermer le chat Ada"
+                        title="Fermer le chat Ada"
+                    >
+                        <X size={16} strokeWidth={2} />
+                    </button>
+                )}
+            </div>
             <div
                 className="flex flex-col gap-3 overflow-y-auto mb-4 scrollbar-hide mask-image-gradient relative z-10"
-                style={{ height: height ? `calc(${height}px - 70px)` : '15rem' }}
+                style={{ height: height ? `calc(${height}px - 112px)` : '15rem' }}
             >
                 {messages.slice(-5).map((msg, i) => (
                     <div key={i} className="text-sm border-l-2 border-blue-300/70 pl-3 py-1">
@@ -59,7 +80,7 @@ const ChatModule = ({
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleSend}
-                    placeholder="INITIALIZE COMMAND..."
+                    placeholder="Demande a Ada d'executer une tache..."
                     className="flex-1 bg-white/70 border border-blue-200/80 rounded-xl p-3 text-[#10294d] focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300/70 transition-all placeholder:text-slate-400 backdrop-blur-sm"
                 />
             </div>
