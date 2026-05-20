@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, session } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, systemPreferences } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -263,6 +263,27 @@ function applyCSP() {
 
 app.whenReady().then(() => {
     applyCSP();
+
+    // Autorise mic + caméra pour le renderer (sinon getUserMedia renvoie un stream
+    // sans frames et enumerateDevices ne livre pas les labels).
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+        const allowed = new Set(['media', 'microphone', 'camera']);
+        callback(allowed.has(permission));
+    });
+    session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+        const allowed = new Set(['media', 'microphone', 'camera']);
+        return allowed.has(permission);
+    });
+
+    // Demande TCC macOS pour mic ET caméra au démarrage.
+    if (process.platform === 'darwin') {
+        systemPreferences.askForMediaAccess('microphone')
+            .then((g) => console.log(`[Permissions] Microphone access: ${g ? 'granted' : 'denied'}`))
+            .catch((err) => console.error(`[Permissions] Microphone request failed: ${err.message}`));
+        systemPreferences.askForMediaAccess('camera')
+            .then((g) => console.log(`[Permissions] Camera access: ${g ? 'granted' : 'denied'}`))
+            .catch((err) => console.error(`[Permissions] Camera request failed: ${err.message}`));
+    }
 
     ipcMain.on('window-minimize', () => {
         if (mainWindow) mainWindow.minimize();
