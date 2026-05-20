@@ -2394,7 +2394,11 @@ class AudioLoop:
                                                     "test",
                                                 ]
                                             )
-                                            if (
+                                            # DISABLED 2026-05-20 — ce routage faisait `continue` et empêchait
+                                            # Ada de répondre vocalement (faux positifs sur phrases banales).
+                                            # À réactiver quand is_local_first_task() sera fiabilisé.
+                                            # Le mode texte (process_text_message) garde le local-first intact.
+                                            if False and (
                                                 full_transcript
                                                 and full_transcript != self._last_local_voice_task
                                                 and has_action_payload
