@@ -95,11 +95,19 @@ Ta vision : un OS IA multi-écrans, où Jarvis peut lui-même naviguer et automa
 
 ## 6. Feuille de route proposée (par phases)
 
-**Phase 0 — Sécuriser & sauvegarder (immédiat, bloquant)**
-- Pousser les 18 commits + committer le travail en cours vers GitHub (§7).
-- Retirer les secrets du tracking + révoquer/régénérer (§2.3).
-- Authentifier Socket.IO + restreindre CORS (§2.1).
-- Remplacer la blocklist par une allowlist + confirmation (§2.2).
+**Phase 0 — Sécuriser & sauvegarder (immédiat, bloquant) — ✅ TERMINÉE (2026-07-05)**
+- ✅ Sauvegarde : tout poussé sur GitHub (`main` 159 commits + `codex/restore-voice-pipeline`
+  + toutes les branches). Le disque externe s'est déconnecté en pleine session — rien perdu,
+  car déjà poussé. Preuve en direct de la fragilité signalée au §7.
+- ✅ Secrets : sortis du suivi git (`git rm --cached`), copiés dans le coffre
+  `~/.jarvis/secrets-vault` (conservés, non révoqués), gitignorés. **Token Notion réel
+  découvert dans l'historique et purgé de toutes les branches** (`git filter-repo`).
+- ✅ Socket.IO/CORS : origines restreintes + auth token optionnelle sur le handshake
+  (`server.py`, `App.jsx`). Faille CSRF/DNS-rebinding fermée.
+- ✅ Exécution shell : politique robuste `backend/safe_exec.py` (blocage dur non
+  contournable via shlex) câblée dans `handle_terminal_request`, `os_control_agent`,
+  `task_agent`. Mode `ADA_SHELL_STRICT`. 22 tests unitaires verts.
+- ✅ Bonus robustesse : 4 `except:` nus corrigés.
 
 **Phase 1 — Stabiliser le socle**
 - Découper `ada.py`, centraliser le registre d'outils, nettoyer les `except:` nus.
