@@ -10,6 +10,17 @@ env/
 .env
 .env.local
 .env.*.local
+.env.bak*
+
+# Tokens & clés runtime (coffre : ~/.jarvis/secrets-vault)
+backend/.spotify_token
+**/devices.json
+**/devices.json.bak*
+**/tinytuya.json
+**/tuya-raw.json
+
+# Cache Whisper (modèles téléchargés, non versionnés)
+backend/.whisper_cache/
 
 # ADA — Données runtime locales (non versionnées)
 backend/reference.jpg
@@ -71,3 +82,6 @@ backend/memory/vision_timeline.db
 backend/memory/vision_timeline.db-journal
 backend/memory/vision_timeline.db-wal
 backend/memory/vision_timeline.db-shm
+
+# Cache outil Playwright MCP
+.playwright-mcp/
