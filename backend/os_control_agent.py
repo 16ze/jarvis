@@ -77,6 +77,29 @@ _KNOWN_APPS = {
     "textedit": "TextEdit",
     "appstore": "App Store",
     "app store": "App Store",
+    "facetime": "FaceTime",
+    "face time": "FaceTime",
+    "réglages système": "System Settings",
+    "reglages systeme": "System Settings",
+    "réglages": "System Settings",
+    "reglages": "System Settings",
+    "paramètres système": "System Settings",
+    "parametres systeme": "System Settings",
+    "paramètres": "System Settings",
+    "parametres": "System Settings",
+    "préférences système": "System Settings",
+    "preferences systeme": "System Settings",
+    "system settings": "System Settings",
+    "system preferences": "System Settings",
+    "réglages du système": "System Settings",
+    "rappels": "Reminders",
+    "reminders": "Reminders",
+    "contacts": "Contacts",
+    "plans": "Maps",
+    "maps": "Maps",
+    "aperçu": "Preview",
+    "apercu": "Preview",
+    "preview": "Preview",
 }
 
 _NEW_DOCUMENT_APPS = {
@@ -510,12 +533,25 @@ end tell'''
         create_new_document: bool = False,
         press_return: bool = False,
     ) -> str:
+        # S'assurer que l'app cible est bien au premier plan avant de taper,
+        # sinon les frappes partent dans le vide (cause de "TextEdit vide").
+        front = await self._get_front_app()
+        if front and front != "Unknown":
+            try:
+                await asyncio.to_thread(
+                    _run_osascript,
+                    f'tell application "{_osascript_escape(front)}" to activate',
+                )
+            except Exception:
+                pass
+        await asyncio.sleep(0.5)
+
         if create_new_document:
             await self._press_hotkey_local("cmd+n")
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(1.0)  # laisser le nouveau document s'ouvrir et prendre le focus
 
         await self._paste_text_raw(text)
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.3)
 
         if press_return:
             await self._press_hotkey_local("return")
@@ -646,21 +682,69 @@ end tell'''
         await asyncio.to_thread(_run_osascript, script)
         return "Brouillon Mail préparé localement."
 
+    @staticmethod
+    def _looks_like_phone_or_email(recipient: str) -> bool:
+        r = (recipient or "").strip()
+        if "@" in r and "." in r:
+            return True
+        digits = re.sub(r"[\s().\-]", "", r)
+        return bool(re.fullmatch(r"\+?\d{6,15}", digits))
+
+    async def _send_imessage_applescript(self, recipient: str, body: str) -> bool:
+        """Envoi direct et fiable via l'API AppleScript de Messages (numéro/email).
+        Retourne True si l'envoi a réussi."""
+        target = recipient.strip()
+        if "@" not in target:
+            target = re.sub(r"[\s().\-]", "", target)  # normalise le numéro
+        eb = _osascript_escape(body)
+        et = _osascript_escape(target)
+        script = f'''
+tell application "Messages"
+    try
+        set svc to 1st service whose service type = iMessage
+        set buddyRef to buddy "{et}" of svc
+        send "{eb}" to buddyRef
+        return "ok"
+    on error
+        try
+            send "{eb}" to participant "{et}"
+            return "ok"
+        on error errMsg
+            return "err:" & errMsg
+        end try
+    end try
+end tell'''
+        try:
+            r = await asyncio.to_thread(_run_osascript, script)
+            return r.strip() == "ok"
+        except Exception as e:
+            print(f"[OsControl] iMessage AppleScript échec : {e}")
+            return False
+
     async def _compose_messages_local(self, recipient: str, body: str) -> str:
+        # 1. Destinataire = numéro ou email → envoi direct fiable via AppleScript.
+        if recipient and self._looks_like_phone_or_email(recipient):
+            if await self._send_imessage_applescript(recipient, body):
+                return f"Message envoyé à {recipient} via Messages."
+            # sinon on retombe sur le chemin UI ci-dessous
+
+        # 2. Destinataire = nom (ou AppleScript indispo) → nouvelle conversation par l'UI.
         await self._open_app_local("Messages")
-        await self._press_hotkey_local("cmd+n")
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1.0)
+        await self._press_hotkey_local("cmd+n")   # nouvelle conversation
+        await asyncio.sleep(1.0)                    # laisser le champ "À :" prendre le focus
         if recipient:
             await self._paste_text_raw(recipient)
-            await asyncio.sleep(0.3)
-            await self._press_hotkey_local("return")
-            await asyncio.sleep(0.4)
-            await self._press_hotkey_local("tab")
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(1.2)                # attendre l'autocomplétion du contact
+            await self._press_hotkey_local("return")   # sélectionner le contact proposé
+            await asyncio.sleep(0.6)
+            # Descendre vers le champ message (return valide le contact, focus va au corps)
+        else:
+            return "Aucun destinataire fourni pour le message."
         await self._paste_text_raw(body)
-        await asyncio.sleep(0.2)
-        await self._press_hotkey_local("return")
-        return "Message préparé puis envoyé localement dans Messages."
+        await asyncio.sleep(0.3)
+        await self._press_hotkey_local("return")   # envoyer
+        return f"Message préparé pour {recipient} dans Messages."
 
     async def _compose_slack_local(self, recipient: str, body: str) -> str:
         await self._open_app_local("Slack")
@@ -1122,6 +1206,21 @@ end tell'''
                     return f"Safari ouvert sur {url}."
             return None  # Navigation avec sous-action → vision loop
 
+        # Appel FaceTime / téléphone vers un NUMÉRO via schéma d'URL (fiable)
+        if re.search(r"\b(appelle?|appeler|téléphone|telephone|call|facetime)\b", tl):
+            num_m = re.search(r"(\+?\d[\d\s().\-]{5,}\d)", t)
+            if num_m:
+                number = re.sub(r"[\s().\-]", "", num_m.group(1))
+                audio = bool(re.search(r"\b(audio|vocal|téléphon|telephon)", tl))
+                scheme = "facetime-audio" if audio else "facetime"
+                await asyncio.to_thread(
+                    subprocess.run, ["open", f"{scheme}://{number}"],
+                    capture_output=True, timeout=10,
+                )
+                return f"Appel {'audio ' if audio else ''}FaceTime lancé vers {number}."
+            # Appel vers un NOM → nécessite la résolution du contact → vision loop
+            return None
+
         # Volume
         if re.search(r"(mute|coupe?\s+le\s+son|silence|sourdine)", tl):
             _run_osascript("set volume output muted true")
@@ -1144,11 +1243,19 @@ end tell'''
     # ── Point d'entrée principal ───────────────────────────────────────────────
 
     async def run(self, task: str, step_callback: Optional[Callable] = None) -> str:
-        # Stop toute tâche précédente en cours
+        # Stop proprement toute tâche précédente et ATTENDRE sa libération réelle
+        # (sinon la 2e demande se bloque et l'utilisateur croit à une perte de
+        # connexion). Attente bornée : au-delà, message clair plutôt qu'un blocage.
         if self._lock.locked():
-            print("[OsControl] Tâche précédente active → stop")
+            print("[OsControl] Tâche précédente active → arrêt demandé")
             self._global_stop.set()
-            await asyncio.sleep(0.3)
+            for _ in range(25):  # jusqu'à ~5s
+                await asyncio.sleep(0.2)
+                if not self._lock.locked():
+                    break
+            if self._lock.locked():
+                return ("Une tâche PC précédente est encore en cours d'arrêt. "
+                        "Réessaie dans un instant.")
 
         async with self._lock:
             self._reset()
