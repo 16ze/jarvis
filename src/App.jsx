@@ -17,6 +17,7 @@ import KasaWindow from './components/KasaWindow';
 import PrinterWindow from './components/PrinterWindow';
 import SettingsWindow from './components/SettingsWindow';
 import DocumentsWindow from './components/DocumentsWindow';
+import OsShell from './components/OsShell';
 import MobileApp from './components/MobileApp';
 import {
     DEFAULT_HAND_CONTROL_CONFIG,
@@ -2002,6 +2003,26 @@ function App() {
                     socket={socket}
                     onAuthenticated={() => setIsAuthenticated(true)}
                     onAnimationComplete={() => setIsLockScreenVisible(false)}
+                />
+            )}
+
+            {/* Shell OS : menu hamburger + écrans dédiés (réutilise les fenêtres existantes) */}
+            {!isLockScreenVisible && (
+                <OsShell
+                    socket={socket}
+                    status={{ socketConnected, isAuthenticated, printerCount }}
+                    openWindow={(key) => {
+                        const openers = {
+                            terminal: () => setShowTerminalWindow(true),
+                            domotique: () => setShowKasaWindow(true),
+                            printer: () => setShowPrinterWindow(true),
+                            cad: () => setShowCadWindow(true),
+                            documents: () => setShowDocumentsWindow(true),
+                            workspace: () => setShowWorkspaceWindow(true),
+                            settings: () => setShowSettings(true),
+                        };
+                        openers[key]?.();
+                    }}
                 />
             )}
 
