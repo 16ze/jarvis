@@ -524,6 +524,21 @@ web_search_tool = {
     },
 }
 
+open_screen_tool = {
+    "name": "open_screen",
+    "description": "Ouvre un écran de l'interface Ada OS pour aider Bryan à visualiser ou utiliser une fonctionnalité. Utilise cet outil quand Bryan demande à voir/ouvrir un écran, ou quand afficher un module aide à accomplir sa demande.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "screen": {
+                "type": "STRING",
+                "description": "L'écran à ouvrir. Valeurs : observability (activité/logs), agents (capacités), terminal, domotique, printer (impression 3D), cad (CAO), documents, workspace (navigateur/recherche), settings (réglages), home (retour à la vue vocale).",
+            },
+        },
+        "required": ["screen"],
+    },
+}
+
 # NOTE : l'ancienne blocklist DANGEROUS_COMMANDS (sous-chaînes, contournable via
 # /bin/rm, base64, find -delete…) a été remplacée par la politique robuste
 # backend/safe_exec.py — voir handle_terminal_request().
@@ -765,6 +780,7 @@ tools = [
             generate_cad,
             run_terminal_tool,
             web_search_tool,
+            open_screen_tool,
             read_emails_tool,
             send_email_tool,
             get_email_body_tool,
@@ -979,6 +995,7 @@ class AudioLoop:
         on_workspace_event=None,
         on_device_update=None,
         on_terminal_output=None,
+        on_os_navigate=None,
         on_error=None,
         input_device_index=None,
         input_device_name=None,
@@ -1004,6 +1021,7 @@ class AudioLoop:
         self.on_workspace_event = on_workspace_event
         self.on_device_update = on_device_update
         self.on_terminal_output = on_terminal_output
+        self.on_os_navigate = on_os_navigate
         self.on_error = on_error
         self.input_device_index = input_device_index
         self.input_device_name = input_device_name
@@ -2233,6 +2251,36 @@ class AudioLoop:
         except Exception as e:
             print(f"[ADA DEBUG] [ERR] Failed to send PC task result: {e}")
 
+    # Écrans reconnus par l'UI (voir src/components/OsShell.jsx + ToolsModule).
+    _OS_SCREENS = {
+        "observability", "agents", "terminal", "domotique", "printer",
+        "cad", "documents", "workspace", "settings", "home",
+    }
+
+    def handle_open_screen(self, screen: str) -> str:
+        """Demande à l'UI d'ouvrir un écran (navigation pilotée par Ada)."""
+        s = (screen or "").strip().lower()
+        # Quelques alias tolérés côté modèle.
+        aliases = {
+            "activité": "observability", "activite": "observability",
+            "logs": "observability", "observabilité": "observability",
+            "maison": "domotique", "lumières": "domotique", "lumieres": "domotique",
+            "imprimante": "printer", "impression": "printer",
+            "navigateur": "workspace", "recherche": "workspace",
+            "réglages": "settings", "reglages": "settings", "paramètres": "settings",
+            "accueil": "home",
+        }
+        s = aliases.get(s, s)
+        if s not in self._OS_SCREENS:
+            return f"Écran inconnu : « {screen} ». Écrans valides : {', '.join(sorted(self._OS_SCREENS))}."
+        if self.on_os_navigate:
+            try:
+                self.on_os_navigate(s)
+            except Exception as e:
+                return f"Impossible d'ouvrir l'écran {s} : {e}"
+            return f"Écran « {s} » ouvert dans l'interface."
+        return "Navigation UI indisponible (interface non connectée)."
+
     async def handle_terminal_request(self, command, working_dir=None, source="ai"):
         import safe_exec
 
@@ -2542,6 +2590,7 @@ class AudioLoop:
                                     "generate_cad",
                                     "run_terminal",
                                     "web_search",
+                                    "open_screen",
                                     "read_emails",
                                     "send_email",
                                     "get_email_body",
@@ -2685,6 +2734,16 @@ class AudioLoop:
                                                 id=fc.id,
                                                 name=fc.name,
                                                 response={"result": _truncate_tool_response(output)},
+                                            )
+                                        )
+
+                                    elif fc.name == "open_screen":
+                                        output = self.handle_open_screen(fc.args.get("screen", ""))
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={"result": output},
                                             )
                                         )
 
@@ -5558,6 +5617,9 @@ class AudioLoop:
                     args.get("query", ""), int(args.get("max_results", 6) or 6)
                 )
                 return _truncate_tool_response(result)
+            # ── NAVIGATION UI (Ada ouvre un écran) ────────────────────────────
+            elif name == "open_screen":
+                return self.handle_open_screen(args.get("screen", ""))
             # ── NAVIGATION AVANCÉE ────────────────────────────────────────────
             elif name == "advanced_web_navigation":
                 if not self.advanced_browser_agent:

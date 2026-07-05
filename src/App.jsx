@@ -2015,6 +2015,7 @@ function App() {
                     screen={osScreen}
                     onClose={() => setOsScreen(null)}
                     onNavigate={(target) => {
+                        if (target === 'home') { setOsScreen(null); return; }
                         const windows = {
                             terminal: () => setShowTerminalWindow(true),
                             domotique: () => setShowKasaWindow(true),

@@ -784,6 +784,11 @@ async def start_audio(sid, data=None):
         # data = {"command": str, "output": str}
         asyncio.create_task(sio.emit('terminal_output', data))
 
+    # Callback : Ada demande d'ouvrir un écran de l'UI (navigation pilotée)
+    def on_os_navigate(screen):
+        print(f"[SERVER] os_navigate → {screen}")
+        asyncio.create_task(sio.emit('os_navigate', {'screen': screen}))
+
     # Callback to send Error to frontend
     def on_error(msg):
         print(f"Sending Error to frontend: {msg}")
@@ -806,6 +811,7 @@ async def start_audio(sid, data=None):
             on_workspace_event=on_workspace_event,
             on_device_update=on_device_update,
             on_terminal_output=on_terminal_output,
+            on_os_navigate=on_os_navigate,
             on_error=on_error,
 
             input_device_index=device_index,
