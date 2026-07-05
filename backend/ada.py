@@ -505,23 +505,9 @@ run_terminal_tool = {
     },
 }
 
-# Commands that require confirmation before execution
-DANGEROUS_COMMANDS = [
-    "rm ",
-    "rm\t",
-    "sudo ",
-    "mkfs",
-    "dd ",
-    "format",
-    "kill ",
-    "killall",
-    "pkill",
-    "shutdown",
-    "reboot",
-    "chmod 777",
-    "> /dev/",
-    ":(){ :|:& };",
-]
+# NOTE : l'ancienne blocklist DANGEROUS_COMMANDS (sous-chaînes, contournable via
+# /bin/rm, base64, find -delete…) a été remplacée par la politique robuste
+# backend/safe_exec.py — voir handle_terminal_request().
 
 # ─── MEMORY TOOLS ────────────────────────────────────────────────────────────
 
@@ -2283,43 +2269,32 @@ class AudioLoop:
         except Exception as e:
             print(f"[ADA DEBUG] [ERR] Failed to send PC task result: {e}")
 
-    async def handle_terminal_request(self, command, working_dir=None):
-        import subprocess
+    async def handle_terminal_request(self, command, working_dir=None, source="ai"):
+        import safe_exec
 
-        print(f"[ADA DEBUG] [TERMINAL] Executing: {command}")
-        # Block dangerous commands before execution
-        for dangerous in DANGEROUS_COMMANDS:
-            if dangerous in command:
-                blocked_msg = f"Error: Command blocked — contains dangerous operation '{dangerous.strip()}'. If this is intentional, ask Bryan to run it manually."
-                print(f"[ADA DEBUG] [TERMINAL] BLOCKED: {command}")
-                if self.on_terminal_output:
-                    self.on_terminal_output({"command": command, "output": blocked_msg})
-                return blocked_msg
-        try:
-            result = await asyncio.to_thread(
-                subprocess.run,
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                cwd=working_dir or os.path.expanduser("~"),
-            )
-            stdout = result.stdout.strip()
-            stderr = result.stderr.strip()
-            output = stdout if stdout else ""
-            if stderr:
-                output += f"\n[stderr]: {stderr}" if output else f"[stderr]: {stderr}"
-            if not output:
-                output = "(no output)"
-            print(f"[ADA DEBUG] [TERMINAL] Result: {output[:200]}")
-            if self.on_terminal_output:
-                self.on_terminal_output({"command": command, "output": output})
-            return output
-        except subprocess.TimeoutExpired:
-            return "Error: Command timed out after 60 seconds."
-        except Exception as e:
-            return f"Error: {str(e)}"
+        print(f"[ADA DEBUG] [TERMINAL] Executing ({source}): {command}")
+
+        # Politique d'exécution robuste (remplace l'ancienne blocklist par
+        # sous-chaîne, contournable via /bin/rm, base64, find -delete…).
+        #  - HARD_BLOCK : commandes catastrophiques → jamais exécutées.
+        #  - Mode strict (ADA_SHELL_STRICT=true) : les commandes modifiantes
+        #    initiées par l'IA exigent une confirmation humaine explicite.
+        #    Par défaut (false) : Jarvis reste capable d'agir, seuls les
+        #    patterns catastrophiques sont bloqués.
+        strict = os.getenv("ADA_SHELL_STRICT", "false").strip().lower() in {"1", "true", "yes", "on"}
+        decision, output = await asyncio.to_thread(
+            safe_exec.run,
+            command,
+            source,
+            cwd=working_dir or os.path.expanduser("~"),
+            timeout=60,
+            allow_confirm=not strict,
+        )
+        if decision.action != safe_exec.ALLOW:
+            print(f"[ADA DEBUG] [TERMINAL] {decision.action.upper()}: {decision.reason}")
+        if self.on_terminal_output:
+            self.on_terminal_output({"command": command, "output": output})
+        return output
 
     async def receive_audio(self):
         "Background task to reads from the websocket and write pcm chunks to the output queue"

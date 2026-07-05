@@ -101,25 +101,16 @@ class TaskAgent:
         return results
 
     async def _run_terminal(self, command: str) -> str:
-        """Exécute une commande shell, retourne stdout/stderr tronqué."""
+        """Exécute une commande shell (via la politique safe_exec)."""
         if not command:
             return "(commande vide)"
-        try:
-            proc = await asyncio.to_thread(
-                subprocess.run,
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            out = proc.stdout.strip() or ""
-            err = proc.stderr.strip() or ""
-            return (out + ("\n[stderr]: " + err if err else "")).strip() or "(no output)"
-        except subprocess.TimeoutExpired:
-            return "Erreur : commande expirée (>30s)."
-        except Exception as e:
-            return f"Erreur : {str(e)}"
+        import safe_exec
+        # Agent autonome initié par l'IA : blocage dur + commandes modifiantes
+        # autorisées (allow_confirm) car le task_agent agit sur mandat explicite.
+        _decision, output = await asyncio.to_thread(
+            safe_exec.run, command, "ai", timeout=30, allow_confirm=True
+        )
+        return output
 
     async def _report(self, objective: str, results: list[str]) -> str:
         """Passe 3 : rapport de complétion Gemini."""

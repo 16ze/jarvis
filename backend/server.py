@@ -68,10 +68,44 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+# ─── ORIGINES AUTORISÉES ──────────────────────────────────────────────────────
+# Le serveur écoute sur 127.0.0.1, mais avec CORS '*' n'importe quelle page web
+# ouverte dans le navigateur pouvait ouvrir une socket vers localhost:8000 et
+# piloter le PC (CSRF / DNS-rebinding). On restreint aux origines légitimes de
+# l'UI (Electron + dev Vite). Surchargeable via ADA_ALLOWED_ORIGINS (CSV).
+_DEFAULT_ORIGINS = [
+    "http://localhost:5173", "http://127.0.0.1:5173",   # Vite dev
+    "http://localhost:8000", "http://127.0.0.1:8000",   # backend self
+    "app://.", "file://",                                 # Electron packagé
+]
+
+
+def _allowed_origins() -> list[str]:
+    raw = os.getenv("ADA_ALLOWED_ORIGINS", "").strip()
+    if raw == "*":
+        return ["*"]  # opt-in explicite uniquement (déconseillé)
+    if raw:
+        return [o.strip() for o in raw.split(",") if o.strip()]
+    return list(_DEFAULT_ORIGINS)
+
+
+ALLOWED_ORIGINS = _allowed_origins()
+
+# Token partagé exigé sur le handshake Socket.IO si ADA_API_TOKEN est défini.
+# Non défini → connexions locales autorisées (la restriction d'origine ci-dessus
+# reste la première ligne de défense).
+_SOCKET_TOKEN = os.getenv("ADA_API_TOKEN", "")
+
+
 # Create a Socket.IO server
-sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
+sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins=ALLOWED_ORIGINS)
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app_socketio = socketio.ASGIApp(sio, app)
 
 import signal
@@ -483,7 +517,15 @@ async def on_get_chromecast_status(sid, data=None):
     await sio.emit("chromecast_status", {"status": status}, room=sid)
 
 @sio.event
-async def connect(sid, environ):
+async def connect(sid, environ, auth=None):
+    # Auth par token sur le handshake (si ADA_API_TOKEN est configuré).
+    # Le client envoie io(url, { auth: { token } }). Sans token valide → refus.
+    if _SOCKET_TOKEN:
+        provided = (auth or {}).get("token") if isinstance(auth, dict) else None
+        if provided != _SOCKET_TOKEN:
+            print(f"[SERVER] Connexion refusée (token invalide) sid={sid}")
+            raise socketio.exceptions.ConnectionRefusedError("unauthorized")
+
     print(f"Client connected: {sid}")
     await sio.emit('status', {'msg': 'Connected to A.D.A Backend'}, room=sid)
     # Ré-émettre le health report au nouveau client

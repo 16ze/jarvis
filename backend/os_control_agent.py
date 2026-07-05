@@ -880,6 +880,16 @@ end tell'''
             print(f"[OsControl] ⛔ {msg}")
             return msg
 
+        # Politique d'exécution partagée : blocage dur des commandes
+        # catastrophiques (fork bomb, rm -rf /, dd disque…) initiées par l'IA.
+        if action == "run_shell" and text:
+            import safe_exec
+            _decision = safe_exec.classify(text, source="ai")
+            if _decision.action == safe_exec.BLOCK:
+                msg = f"[BLOQUÉ] {_decision.reason}: {text[:60]}"
+                print(f"[OsControl] ⛔ {msg}")
+                return msg
+
         sw, sh = self._sw, self._sh
 
         def lp(nx, ny):
@@ -1015,6 +1025,13 @@ end tell'''
 
         # Commande shell directe
         if any(tl.startswith(p) for p in _SHELL_PREFIXES):
+            import safe_exec
+            _decision = safe_exec.classify(t, source="ai")
+            if _decision.action == safe_exec.BLOCK:
+                msg = f"[BLOQUÉ] {_decision.reason}"
+                if cb:
+                    await cb({"image": None, "log": f"[PC] ⛔ {msg}"})
+                return msg
             if cb:
                 await cb({"image": None, "log": f"[PC] {t[:80]}"})
             r = await asyncio.to_thread(subprocess.run, t, shell=True,
