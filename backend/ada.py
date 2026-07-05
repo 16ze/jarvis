@@ -505,6 +505,25 @@ run_terminal_tool = {
     },
 }
 
+web_search_tool = {
+    "name": "web_search",
+    "description": "Recherche sur le web et renvoie des résultats récents (titres, liens, extraits). Utilise cet outil dès que Bryan pose une question d'actualité, sur un fait récent, un prix, une info en ligne, ou quoi que ce soit qui nécessite le web. Rapide et fiable — à préférer à advanced_web_navigation qui est lourd.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "query": {
+                "type": "STRING",
+                "description": "La requête de recherche, formulée clairement.",
+            },
+            "max_results": {
+                "type": "INTEGER",
+                "description": "Nombre de résultats souhaités (défaut 6).",
+            },
+        },
+        "required": ["query"],
+    },
+}
+
 # NOTE : l'ancienne blocklist DANGEROUS_COMMANDS (sous-chaînes, contournable via
 # /bin/rm, base64, find -delete…) a été remplacée par la politique robuste
 # backend/safe_exec.py — voir handle_terminal_request().
@@ -745,6 +764,7 @@ tools = [
         "function_declarations": [
             generate_cad,
             run_terminal_tool,
+            web_search_tool,
             read_emails_tool,
             send_email_tool,
             get_email_body_tool,
@@ -2521,6 +2541,7 @@ class AudioLoop:
                                 _CORE_TOOLS = {
                                     "generate_cad",
                                     "run_terminal",
+                                    "web_search",
                                     "read_emails",
                                     "send_email",
                                     "get_email_body",
@@ -2650,6 +2671,20 @@ class AudioLoop:
                                                 id=fc.id,
                                                 name=fc.name,
                                                 response={"result": output},
+                                            )
+                                        )
+
+                                    elif fc.name == "web_search":
+                                        import web_search as _ws
+                                        query = fc.args.get("query", "")
+                                        n = int(fc.args.get("max_results", 6) or 6)
+                                        print(f"[ADA DEBUG] [TOOL] Tool Call: 'web_search' query='{query[:60]}'")
+                                        output = await _ws.web_search(query, n)
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={"result": _truncate_tool_response(output)},
                                             )
                                         )
 
@@ -5514,6 +5549,13 @@ class AudioLoop:
             elif name == "run_terminal":
                 result = await self.handle_terminal_request(
                     args.get("command", ""), args.get("working_dir")
+                )
+                return _truncate_tool_response(result)
+            # ── RECHERCHE WEB ─────────────────────────────────────────────────
+            elif name == "web_search":
+                import web_search as _ws
+                result = await _ws.web_search(
+                    args.get("query", ""), int(args.get("max_results", 6) or 6)
                 )
                 return _truncate_tool_response(result)
             # ── NAVIGATION AVANCÉE ────────────────────────────────────────────

@@ -458,6 +458,19 @@ _CORE_TOOL_DEFS = [
             "required": ["command"],
         },
     },
+    # Recherche web
+    {
+        "name": "web_search",
+        "description": "Recherche sur le web des infos récentes (actualité, faits, prix, etc.). Rapide et fiable — à utiliser dès qu'une info en ligne est nécessaire.",
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "query": {"type": "STRING", "description": "Requête de recherche."},
+                "max_results": {"type": "INTEGER", "description": "Nombre de résultats (défaut 6)."},
+            },
+            "required": ["query"],
+        },
+    },
     # Twilio
     {
         "name": "twilio_send_sms",
@@ -920,23 +933,24 @@ class TextAgent:
                 )
             return "Aucun document trouvé."
 
+        # ── RECHERCHE WEB ─────────────────────────────────────────────────────
+        elif name == "web_search":
+            import web_search as _ws
+            out = await _ws.web_search(
+                args.get("query", ""), int(args.get("max_results", 6) or 6)
+            )
+            return out[:2000]
+
         # ── TERMINAL ────────────────────────────────────────────────────────
         elif name == "run_terminal":
+            # Passe par la politique safe_exec (blocage dur non contournable).
+            import safe_exec
             cmd = args.get("command", "")
             cwd = args.get("working_dir") or os.path.expanduser("~")
-            try:
-                proc = await asyncio.create_subprocess_shell(
-                    cmd,
-                    cwd=cwd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                )
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
-                return stdout.decode(errors="replace")[:2000] or "(pas de sortie)"
-            except asyncio.TimeoutError:
-                return "Timeout : commande trop longue."
-            except Exception as e:
-                return f"Erreur terminal : {e}"
+            _decision, output = await asyncio.to_thread(
+                safe_exec.run, cmd, "ai", cwd=cwd, timeout=30, allow_confirm=True
+            )
+            return output[:2000] or "(pas de sortie)"
 
         # ── SLACK ────────────────────────────────────────────────────────────
         elif name == "slack_list_channels" and self._slack:
