@@ -110,12 +110,19 @@ THINK LIKE A SENIOR HUMAN:
 - Analyze the entire current screen state
 - Identify exactly what UI elements are present and where
 - Plan ALL steps needed upfront — never plan just one step
-- Be precise about coordinates: mentally zoom into elements, use their CENTER
-- For text input: always click the field FIRST to focus it, then type
-- For sending messages: click input field → type text → hotkey "return"
-- For navigation within apps: identify the exact nav element, click it precisely
+- For text input: always focus the field FIRST, then type
+- For sending messages: focus input field → type text → hotkey "return"
 
-COORDINATE SYSTEM: 0-1000 scale (0,0 = top-left, 1000,1000 = bottom-right)
+RELIABILITY — PREFER ACCESSIBILITY OVER COORDINATES:
+- Coordinate clicks are UNRELIABLE (you cannot judge pixels precisely from an image).
+- Whenever a named button, link or toolbar item exists, use "click_element" with
+  its accessible name — this clicks the real element via the macOS accessibility
+  API and almost never misses. The list "ACCESSIBLE UI ELEMENTS" below (when
+  provided) gives you the exact names to use.
+- Only fall back to coordinate "click" when NO named element matches (e.g. a
+  precise spot inside a canvas, a map, or an unlabeled area).
+
+COORDINATE SYSTEM (fallback only): 0-1000 scale (0,0 = top-left, 1000,1000 = bottom-right)
 Example: element visually at 1/3 from left, 3/4 from top → x=333, y=750
 
 COMMON PATTERNS:
@@ -132,7 +139,8 @@ OUTPUT: ONLY a valid JSON array (no markdown, no explanation):
 ]
 
 ACTIONS:
-  click         : {"action":"click","x":0-1000,"y":0-1000,"reason":"..."}
+  click_element : {"action":"click_element","text":"exact accessible name","reason":"..."}  ← PREFER THIS
+  click         : {"action":"click","x":0-1000,"y":0-1000,"reason":"..."}  (fallback only)
   double_click  : {"action":"double_click","x":0-1000,"y":0-1000,"reason":"..."}
   right_click   : {"action":"right_click","x":0-1000,"y":0-1000,"reason":"..."}
   type          : {"action":"type","text":"text to type","reason":"..."}
@@ -354,12 +362,19 @@ class OsControlAgent:
 
     async def _plan(self, task: str, screenshot: bytes) -> list[dict]:
         """Génère un plan complet d'actions pour accomplir la tâche."""
+        # Fiabilité : fournir au modèle la liste des éléments UI réels (accessibilité)
+        # pour qu'il cible par NOM (click_element) au lieu de deviner des pixels.
+        try:
+            ui_elements = await asyncio.wait_for(self._get_ui_elements(), timeout=4)
+        except Exception:
+            ui_elements = ""
+        ui_block = f"\n\nACCESSIBLE UI ELEMENTS (use these exact names with click_element):\n{ui_elements}\n" if ui_elements and "Aucun" not in ui_elements else ""
         prompt = (
-            f"Task to accomplish: {task}\n\n"
+            f"Task to accomplish: {task}\n{ui_block}\n"
             "Analyze the screenshot carefully. "
             "Generate the COMPLETE action sequence needed. "
-            "Be precise about coordinates — identify element centers visually. "
-            "Include ALL steps including focus clicks before typing."
+            "PREFER click_element (by accessible name) over coordinate clicks. "
+            "Include ALL steps including focus before typing."
         )
         raw = await self._call_gemini(_PLAN_SYSTEM, prompt, screenshot)
         try:
