@@ -5190,8 +5190,8 @@ class AudioLoop:
                 if hasattr(self, "audio_stream") and self.audio_stream:
                     try:
                         self.audio_stream.close()
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"[ADA] audio_stream.close() a échoué (ignoré) : {e}")
 
     # ─── MODE TEXTE (Telegram / WhatsApp / bridges) ───────────────────────────
 

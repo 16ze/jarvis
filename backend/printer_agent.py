@@ -454,7 +454,7 @@ class PrinterAgent:
                             print(f"[PRINTER DEBUG] Page Title: {title}")
                         if "Server" in resp.headers:
                             print(f"[PRINTER DEBUG] Server Header: {resp.headers['Server']}")
-                except:
+                except Exception:
                     pass
                     
         except Exception as e:
@@ -491,7 +491,7 @@ class PrinterAgent:
                             if "multipart/x-mixed-replace" in ctype or "image" in ctype:
                                 print(f"[PRINTER] Found Camera: {url}")
                                 return url
-                except:
+                except Exception:
                     continue
         return None
     

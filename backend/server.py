@@ -117,9 +117,9 @@ def signal_handler(sig, frame):
     if audio_loop:
         try:
             print("[SERVER] Stopping Audio Loop...")
-            audio_loop.stop() 
-        except:
-            pass
+            audio_loop.stop()
+        except Exception as e:
+            print(f"[SERVER] audio_loop.stop() a échoué (ignoré) : {e}")
     # Force kill
     print("[SERVER] Force exiting...")
     os._exit(0)
