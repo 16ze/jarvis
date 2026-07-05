@@ -109,15 +109,23 @@ Ta vision : un OS IA multi-écrans, où Jarvis peut lui-même naviguer et automa
   `task_agent`. Mode `ADA_SHELL_STRICT`. 22 tests unitaires verts.
 - ✅ Bonus robustesse : 4 `except:` nus corrigés.
 
-**Phase 1 — Stabiliser le socle**
-- Découper `ada.py`, centraliser le registre d'outils, nettoyer les `except:` nus.
-- Mettre en place pytest + CI GitHub Actions.
-- Créer un point d'exécution unique `safe_exec()` (fin des `shell=True` dispersés).
+**Phase 1 — Stabiliser le socle — 🟡 EN COURS (2026-07-05)**
+- ✅ `except:` nus nettoyés ; ✅ `safe_exec()` (point d'exécution unique, Phase 0).
+- ✅ Personnalité/comportement centralisés dans `backend/prompts.py` (voix + texte).
+- ✅ pytest + CI GitHub Actions (`.github/workflows/ci.yml`) : compile backend +
+  tests légers + build front. 25 tests verts.
+- ✅ Test de cohérence du câblage d'outils (a révélé l'overlap control_light/MCP).
+- ⏳ Reste : découpage complet de la classe `AudioLoop` (5 500 lignes) — à faire
+  incrémentalement, désormais sécurisé par la CI + les tests.
 
-**Phase 2 — Le shell OS IA**
-- Routeur multi-écrans + menu hamburger, écrans dédiés par capacité.
-- Bus d'actions partagé UI/Jarvis.
-- Écran d'observabilité (logs, agents, décisions, brain).
+**Phase 2 — Le shell OS IA — 🟡 EN COURS (2026-07-05)**
+- ✅ Menu hamburger + drawer animé + écrans dédiés (`src/components/OsShell.jsx`),
+  en surcouche de la page vocale (inchangée). Réutilise les fenêtres existantes.
+- ✅ Écran d'observabilité (flux d'activité live) + écran Agents (catalogue).
+- ⏳ Reste : navigation pilotée par Ada — le hook frontend `os_navigate` est prêt ;
+  il manque le câblage backend d'un outil Gemini `open_screen` (déclaration +
+  routage + dispatch voix/texte), à faire avec test à l'exécution.
+- ⏳ Reste : bus d'actions pleinement partagé UI/Jarvis (registre d'outils unifié).
 
 **Phase 3 — Le cerveau exécuteur**
 - Moteur de planification délibérative (intention → plan → confirmation → exécution → vérification).
