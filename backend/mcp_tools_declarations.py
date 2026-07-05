@@ -1692,6 +1692,81 @@ count_objects_seen_tool = {
     },
 }
 
+workspace_create_tool = {
+    "name": "workspace_create",
+    "description": "Crée ou ouvre un workspace ADA pour organiser recherches, notes, sources et livrables.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "name": {"type": "STRING", "description": "Nom du workspace."},
+            "goal": {"type": "STRING", "description": "Objectif principal du workspace."},
+        },
+        "required": ["name"],
+    },
+}
+
+workspace_research_tool = {
+    "name": "workspace_research",
+    "description": "Effectue une recherche Internet structurée, sauvegarde les sources et produit optionnellement une synthèse dans le workspace actif.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "query": {"type": "STRING", "description": "Sujet à rechercher."},
+            "depth": {
+                "type": "STRING",
+                "enum": ["quick", "standard", "deep"],
+                "description": "Profondeur de recherche.",
+            },
+            "workspace": {"type": "STRING", "description": "Workspace cible optionnel."},
+            "synthesize": {
+                "type": "BOOLEAN",
+                "description": "True pour produire une synthèse IA. False pour retourner seulement les résultats moteur.",
+            },
+        },
+        "required": ["query"],
+    },
+    "behavior": "NON_BLOCKING",
+}
+
+workspace_save_note_tool = {
+    "name": "workspace_save_note",
+    "description": "Ajoute une note structurée dans le workspace actif.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "title": {"type": "STRING", "description": "Titre de la note."},
+            "content": {"type": "STRING", "description": "Contenu markdown ou texte."},
+            "tags": {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Tags optionnels."},
+        },
+        "required": ["title", "content"],
+    },
+}
+
+workspace_list_tool = {
+    "name": "workspace_list",
+    "description": "Liste notes, sources, livrables ou événements du workspace actif.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "kind": {"type": "STRING", "description": "note, source, artifact, capture, task ou all."},
+        },
+    },
+}
+
+workspace_open_browser_tool = {
+    "name": "workspace_open_browser",
+    "description": "Lance une mission navigateur contrôlée par ADA et affiche sa progression dans le workspace.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "mission": {"type": "STRING", "description": "Mission web à accomplir."},
+            "save_result": {"type": "BOOLEAN", "description": "Sauvegarder le résultat dans le workspace."},
+        },
+        "required": ["mission"],
+    },
+    "behavior": "NON_BLOCKING",
+}
+
 MCP_TOOLS = [
     # ── Communication ─────────────────────────────────────────────────────────
     telegram_send_message_tool, telegram_send_photo_tool, telegram_get_updates_tool,
@@ -1719,6 +1794,9 @@ MCP_TOOLS = [
     # ── Recherche ─────────────────────────────────────────────────────────────
     youtube_search_tool, youtube_video_info_tool, youtube_transcript_tool,
     wikipedia_search_tool, wikipedia_article_tool,
+    # ── ADA OS Workspace ─────────────────────────────────────────────────────
+    workspace_create_tool, workspace_research_tool, workspace_save_note_tool,
+    workspace_list_tool, workspace_open_browser_tool,
     # ── Contrôle PC ───────────────────────────────────────────────────────────
     execute_pc_task_tool, stop_pc_task_tool,
     # ── Caméra Tuya PTZ ───────────────────────────────────────────────────────

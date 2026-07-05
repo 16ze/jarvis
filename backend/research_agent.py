@@ -21,7 +21,7 @@ from mcps.wikipedia_mcp import WikipediaMCP
 from mcps.arxiv_mcp import ArxivMCP
 from mcps.youtube_mcp import YouTubeMCP
 
-SUB_MODEL = "gemini-2.0-flash-lite"
+SUB_MODEL = os.getenv("ADA_SUB_MODEL", "gemini-2.5-flash")
 _client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 

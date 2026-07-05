@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, session, systemPreferences } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, shell, systemPreferences } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -46,6 +46,21 @@ function withReactiveBrainDefaults(env) {
     return merged;
 }
 
+function isHttpUrl(url) {
+    try {
+        const parsed = new URL(url);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+        return false;
+    }
+}
+
+function safeOpenExternal(url) {
+    if (isHttpUrl(url)) {
+        shell.openExternal(url);
+    }
+}
+
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1920,
@@ -54,6 +69,7 @@ function createWindow() {
             nodeIntegration: true,
             contextIsolation: false, // For simple IPC/Socket.IO usage
             backgroundThrottling: false,
+            webviewTag: false,
         },
         backgroundColor: '#000000',
         frame: false, // Frameless for custom UI
@@ -211,6 +227,13 @@ function startPythonBackend() {
 }
 
 // ─── CONTENT SECURITY POLICY ─────────────────────────────────────────────────
+function isAdaUiResponse(url, isDev) {
+    if (isDev) {
+        return url.startsWith('http://localhost:5173/') || url.startsWith('http://127.0.0.1:5173/');
+    }
+    return url.startsWith('file://');
+}
+
 function applyCSP() {
     const isDev = process.env.NODE_ENV !== 'production';
 
@@ -246,6 +269,11 @@ function applyCSP() {
     ].join('; ');
 
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        if (!isAdaUiResponse(details.url, isDev)) {
+            callback({ responseHeaders: details.responseHeaders });
+            return;
+        }
+
         callback({
             responseHeaders: {
                 ...details.responseHeaders,
@@ -301,6 +329,10 @@ app.whenReady().then(() => {
 
     ipcMain.on('window-close', () => {
         if (mainWindow) mainWindow.close();
+    });
+
+    ipcMain.on('ada-search-open-external', (event, payload = {}) => {
+        safeOpenExternal(payload.url);
     });
 
     checkBackendPort(8000).then((isTaken) => {

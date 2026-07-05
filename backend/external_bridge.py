@@ -9,6 +9,7 @@ Implémente un vrai agentic loop avec function calling :
 
 import asyncio
 import io
+import json
 import os
 import subprocess
 import tempfile
@@ -540,6 +541,7 @@ _EXCLUDED_FROM_BRIDGE = {
     "print_stl",
     "get_print_status",
     "run_web_agent",
+    "workspace_open_browser",
     "ada_sleep",
     "ada_wake",
     "camera_switch",  # pas de live stream en mode texte
@@ -594,6 +596,8 @@ class TextAgent:
         self._evolution = None
         self._advanced_browser = None
         self._os_control = None
+        self._workspace_manager = None
+        self._workspace_research = None
         self.twilio = None  # Added for TwilioMCP
         self._init_done = False
 
@@ -845,6 +849,20 @@ class TextAgent:
         except Exception as e:
             warnings.warn(f"[TextAgent] OsControlAgent: {e}")
             self._os_control = None
+        try:
+            from pathlib import Path
+            from workspace_manager import WorkspaceManager
+            from workspace_research_agent import WorkspaceResearchAgent
+
+            self._workspace_manager = WorkspaceManager(Path(JARVIS_ROOT))
+            self._workspace_research = WorkspaceResearchAgent(
+                workspace_manager=self._workspace_manager,
+                research_agent=self._research,
+            )
+        except Exception as e:
+            warnings.warn(f"[TextAgent] Workspace OS: {e}")
+            self._workspace_manager = None
+            self._workspace_research = None
 
     def _get_client(self) -> genai.Client:
         if self._client is None:
@@ -1602,6 +1620,44 @@ class TextAgent:
                 return "Navigation avancée : timeout dépassé (5 min). Mission trop longue ou bloquée."
             except Exception as e:
                 return f"Navigation avancée erreur : {e}"
+        elif name == "workspace_create":
+            if not self._workspace_manager:
+                return "WorkspaceManager non disponible."
+            return self._workspace_manager.create_workspace(
+                args.get("name", ""),
+                args.get("goal"),
+            )
+        elif name == "workspace_save_note":
+            if not self._workspace_manager:
+                return "WorkspaceManager non disponible."
+            note_id = self._workspace_manager.add_note(
+                args.get("title", "Note"),
+                args.get("content", ""),
+                args.get("tags") or [],
+            )
+            return f"Note sauvegardée dans le workspace (id: {note_id})."
+        elif name == "workspace_list":
+            if not self._workspace_manager:
+                return "WorkspaceManager non disponible."
+            return json.dumps(
+                self._workspace_manager.list_items(args.get("kind", "all")),
+                ensure_ascii=False,
+                indent=2,
+            )
+        elif name == "workspace_research":
+            if not self._workspace_research:
+                return "WorkspaceResearchAgent non disponible."
+            return await self._workspace_research.run(
+                query=args.get("query", ""),
+                depth=args.get("depth", "standard"),
+                workspace=args.get("workspace"),
+                synthesize=bool(args.get("synthesize", True)),
+            )
+        elif name == "workspace_open_browser":
+            return (
+                "Action refusée depuis Telegram/WhatsApp : la navigation locale peut exposer "
+                "des comptes connectés. Lance cette mission depuis l'interface ADA."
+            )
         elif name == "anticipate" and self._anticipation:
             return await self._anticipation.run(args.get("context", ""))
         elif name == "start_monitoring" and self._monitoring:

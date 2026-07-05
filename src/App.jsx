@@ -7,6 +7,7 @@ import CadWindow from './components/CadWindow';
 import TerminalWindow from './components/TerminalWindow';
 import ChatModule from './components/ChatModule';
 import ToolsModule from './components/ToolsModule';
+import WorkspaceShell from './components/WorkspaceShell';
 import { Mic, MicOff, Settings, X, Minus, Power, Video, VideoOff, Layout, Hand, Printer, Clock } from 'lucide-react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 // MemoryPrompt removed - memory is now actively saved to project
@@ -85,6 +86,11 @@ function App() {
     const [showPrinterWindow, setShowPrinterWindow] = useState(false);
     const [showDocumentsWindow, setShowDocumentsWindow] = useState(false);
     const [showCadWindow, setShowCadWindow] = useState(false);
+    const [showWorkspaceWindow, setShowWorkspaceWindow] = useState(false);
+    const [workspaceState, setWorkspaceState] = useState({ activeWorkspace: 'default', items: [] });
+    const [workspaceEvents, setWorkspaceEvents] = useState([]);
+    const [workspaceStatus, setWorkspaceStatus] = useState(null);
+    const [workspaceResearchResult, setWorkspaceResearchResult] = useState(null);
 
     const [showTerminalWindow, setShowTerminalWindow] = useState(false);
     const [showChatWindow, setShowChatWindow] = useState(false);
@@ -686,6 +692,39 @@ function App() {
             addMessage('System', `Switched to project: ${data.project}`);
         });
 
+        socket.on('workspace_state', (data) => {
+            setWorkspaceState(data || { activeWorkspace: 'default', items: [] });
+        });
+
+        socket.on('workspace_status', (data) => {
+            setWorkspaceStatus(data);
+            if (data?.message) {
+                addMessage('System', data.message);
+            }
+        });
+
+        socket.on('workspace_activity', (data) => {
+            setWorkspaceEvents(prev => [...prev, data].slice(-80));
+        });
+
+        socket.on('workspace_item_created', (data) => {
+            setWorkspaceEvents(prev => [...prev, { type: 'item_created', ...data }].slice(-80));
+        });
+
+        socket.on('workspace_research_result', (data) => {
+            if (!data) {
+                setWorkspaceResearchResult(null);
+                return;
+            }
+            setWorkspaceResearchResult({
+                markdown: data.markdown || '',
+                results: Array.isArray(data.results) ? data.results : [],
+                query: data.query || '',
+                depth: data.depth || 'standard',
+                synthesized: Boolean(data.synthesized),
+            });
+        });
+
         // Track printer count for toolbar display
         socket.on('printer_list', (list) => {
             console.log('[PRINTERS] Count:', list.length);
@@ -791,6 +830,13 @@ function App() {
             socket.off('transcription');
             socket.off('tool_confirmation_request');
             socket.off('kasa_devices');
+            socket.off('kasa_update');
+            socket.off('project_update');
+            socket.off('workspace_state');
+            socket.off('workspace_status');
+            socket.off('workspace_activity');
+            socket.off('workspace_item_created');
+            socket.off('workspace_research_result');
             socket.off('printer_list');
             socket.off('slicing_progress');
             socket.off('print_status_update');
@@ -2279,6 +2325,8 @@ function App() {
                         isScreenMode={isScreenMode}
                         onToggleScreenMode={toggleScreenMode}
                         onToggleDocuments={() => setShowDocumentsWindow(true)}
+                        onToggleWorkspace={() => setShowWorkspaceWindow(true)}
+                        showWorkspaceWindow={showWorkspaceWindow}
                         activeDragElement={activeDragElement}
                         isModularMode={isModularMode}
                         position={elementPositions.tools}
@@ -2316,6 +2364,17 @@ function App() {
                 {/* Documents / RAG Window */}
                 {showDocumentsWindow && (
                     <DocumentsWindow onClose={() => setShowDocumentsWindow(false)} />
+                )}
+
+                {showWorkspaceWindow && (
+                    <WorkspaceShell
+                        socket={socket}
+                        workspaceState={workspaceState}
+                        workspaceEvents={workspaceEvents}
+                        workspaceStatus={workspaceStatus}
+                        researchResult={workspaceResearchResult}
+                        onClose={() => setShowWorkspaceWindow(false)}
+                    />
                 )}
 
                 {/* Tool Confirmation Modal */}

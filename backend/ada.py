@@ -4,6 +4,7 @@ import io
 import os
 import sys
 import traceback
+import json
 from dotenv import load_dotenv
 import cv2
 import pyaudio
@@ -1025,6 +1026,7 @@ class AudioLoop:
         on_cad_status=None,
         on_cad_thought=None,
         on_project_update=None,
+        on_workspace_event=None,
         on_device_update=None,
         on_terminal_output=None,
         on_error=None,
@@ -1049,6 +1051,7 @@ class AudioLoop:
         self.on_cad_status = on_cad_status
         self.on_cad_thought = on_cad_thought
         self.on_project_update = on_project_update
+        self.on_workspace_event = on_workspace_event
         self.on_device_update = on_device_update
         self.on_terminal_output = on_terminal_output
         self.on_error = on_error
@@ -1161,6 +1164,33 @@ class AudioLoop:
             arxiv=self.arxiv,
             youtube=self.youtube,
         )
+        try:
+            from pathlib import Path as _Path
+            from workspace_event_bus import WorkspaceEventBus
+            from workspace_manager import WorkspaceManager
+            from workspace_policy import WorkspacePolicy
+            from workspace_research_agent import WorkspaceResearchAgent
+
+            async def _emit_workspace_event(event: str, payload: dict):
+                if self.on_workspace_event:
+                    self.on_workspace_event(event, payload)
+
+            self.workspace_manager = WorkspaceManager(_Path(JARVIS_ROOT))
+            self.workspace_event_bus = WorkspaceEventBus(_emit_workspace_event)
+            self.workspace_policy = WorkspacePolicy()
+            self.workspace_research_agent = WorkspaceResearchAgent(
+                workspace_manager=self.workspace_manager,
+                research_agent=self.research_agent,
+                event_bus=self.workspace_event_bus,
+            )
+        except Exception as e:
+            import warnings
+
+            warnings.warn(f"[ADA] Workspace OS init: {e}")
+            self.workspace_manager = None
+            self.workspace_event_bus = None
+            self.workspace_policy = None
+            self.workspace_research_agent = None
         self.task_agent = TaskAgent()
         self.anticipation_agent = AnticipationAgent(memory=memory)
         self.monitoring_agent = MonitoringAgent(
@@ -2882,6 +2912,104 @@ class AudioLoop:
                                             },
                                         )
                                         function_responses.append(function_response)
+
+                                    elif fc.name == "workspace_create":
+                                        if not self.workspace_manager:
+                                            result_str = "WorkspaceManager non disponible."
+                                        else:
+                                            result_str = self.workspace_manager.create_workspace(
+                                                fc.args.get("name", ""),
+                                                fc.args.get("goal"),
+                                            )
+                                            if self.workspace_event_bus:
+                                                await self.workspace_event_bus.emit_state(
+                                                    self.workspace_manager.get_active_workspace()
+                                                )
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={"result": result_str},
+                                            )
+                                        )
+
+                                    elif fc.name == "workspace_save_note":
+                                        if not self.workspace_manager:
+                                            result_str = "WorkspaceManager non disponible."
+                                        else:
+                                            note_id = self.workspace_manager.add_note(
+                                                fc.args.get("title", "Note"),
+                                                fc.args.get("content", ""),
+                                                fc.args.get("tags") or [],
+                                            )
+                                            result_str = f"Note sauvegardée dans le workspace (id: {note_id})."
+                                            if self.workspace_event_bus:
+                                                await self.workspace_event_bus.emit_state(
+                                                    self.workspace_manager.get_active_workspace()
+                                                )
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={"result": result_str},
+                                            )
+                                        )
+
+                                    elif fc.name == "workspace_list":
+                                        if not self.workspace_manager:
+                                            result_str = "WorkspaceManager non disponible."
+                                        else:
+                                            items = self.workspace_manager.list_items(fc.args.get("kind", "all"))
+                                            result_str = json.dumps(items, ensure_ascii=False, indent=2)
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={"result": result_str},
+                                            )
+                                        )
+
+                                    elif fc.name == "workspace_research":
+                                        if not self.workspace_research_agent:
+                                            result_str = "WorkspaceResearchAgent non disponible."
+                                            function_responses.append(
+                                                types.FunctionResponse(
+                                                    id=fc.id,
+                                                    name=fc.name,
+                                                    response={"result": result_str},
+                                                )
+                                            )
+                                        else:
+                                            _bg_task(
+                                                self.workspace_research_agent.run(
+                                                    query=fc.args.get("query", ""),
+                                                    depth=fc.args.get("depth", "standard"),
+                                                    workspace=fc.args.get("workspace"),
+                                                    synthesize=bool(fc.args.get("synthesize", True)),
+                                                ),
+                                                "workspace_research",
+                                            )
+                                            function_responses.append(
+                                                types.FunctionResponse(
+                                                    id=fc.id,
+                                                    name=fc.name,
+                                                    response={"result": "Recherche workspace démarrée en arrière-plan."},
+                                                )
+                                            )
+
+                                    elif fc.name == "workspace_open_browser":
+                                        mission = fc.args.get("mission", "")
+                                        _bg_task(
+                                            self.handle_advanced_browser_request(mission),
+                                            "workspace_open_browser",
+                                        )
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={"result": "Mission navigateur workspace démarrée."},
+                                            )
+                                        )
 
                                     elif fc.name == "list_smart_devices":
                                         print(
@@ -5565,6 +5693,55 @@ class AudioLoop:
                 return msg
             elif name == "list_projects":
                 return f"Projets : {', '.join(self.project_manager.list_projects())}"
+            # ── ADA OS WORKSPACE ─────────────────────────────────────────────
+            elif name == "workspace_create":
+                if not self.workspace_manager:
+                    return "WorkspaceManager non disponible."
+                result = self.workspace_manager.create_workspace(
+                    args.get("name", ""),
+                    args.get("goal"),
+                )
+                if self.workspace_event_bus:
+                    await self.workspace_event_bus.emit_state(
+                        self.workspace_manager.get_active_workspace()
+                    )
+                return result
+            elif name == "workspace_save_note":
+                if not self.workspace_manager:
+                    return "WorkspaceManager non disponible."
+                note_id = self.workspace_manager.add_note(
+                    args.get("title", "Note"),
+                    args.get("content", ""),
+                    args.get("tags") or [],
+                )
+                if self.workspace_event_bus:
+                    await self.workspace_event_bus.emit_state(
+                        self.workspace_manager.get_active_workspace()
+                    )
+                return f"Note sauvegardée dans le workspace (id: {note_id})."
+            elif name == "workspace_list":
+                if not self.workspace_manager:
+                    return "WorkspaceManager non disponible."
+                items = self.workspace_manager.list_items(args.get("kind", "all"))
+                return json.dumps(items, ensure_ascii=False, indent=2)
+            elif name == "workspace_research":
+                if not self.workspace_research_agent:
+                    return "WorkspaceResearchAgent non disponible."
+                return _truncate_tool_response(
+                    await self.workspace_research_agent.run(
+                        query=args.get("query", ""),
+                        depth=args.get("depth", "standard"),
+                        workspace=args.get("workspace"),
+                        synthesize=bool(args.get("synthesize", True)),
+                    )
+                )
+            elif name == "workspace_open_browser":
+                if not self.advanced_browser_agent:
+                    return "AdvancedBrowserAgent non disponible."
+                result = await self.advanced_browser_agent.run(args.get("mission", ""))
+                if args.get("save_result") and self.workspace_manager:
+                    self.workspace_manager.add_artifact("browser-result.md", result, "artifact")
+                return _truncate_tool_response(result)
             # ── DOMOTIQUE ─────────────────────────────────────────────────────
             elif name == "list_smart_devices":
                 if not self.tuya_agent.devices:

@@ -36,6 +36,10 @@ from tuya_agent import TuyaAgent
 from web_agent import WebAgent
 from chromecast_agent import CastAgent
 from hand_gesture_os_controller import HandGestureOsController
+from workspace_event_bus import WorkspaceEventBus
+from workspace_manager import WorkspaceManager
+from workspace_policy import WorkspacePolicy
+from workspace_research_agent import WorkspaceResearchAgent
 
 # ─── API AUTH ─────────────────────────────────────────────────────────────────
 _bearer = HTTPBearer(auto_error=False)
@@ -98,6 +102,9 @@ standalone_web_agent = WebAgent()
 cast_agent = CastAgent()
 hand_gesture_os_controller = HandGestureOsController()
 standalone_os_control_agent = OsControlAgent()
+JARVIS_ROOT = Path(os.getenv("JARVIS_ROOT", Path(__file__).parent.parent)).resolve()
+workspace_manager = WorkspaceManager(JARVIS_ROOT)
+workspace_policy = WorkspacePolicy()
 SETTINGS_FILE = "settings.json"
 
 DEFAULT_SETTINGS = {
@@ -179,6 +186,7 @@ async def build_health_report() -> dict:
         "Supabase":                "SUPABASE_URL",
         "Vercel":                  "VERCEL_TOKEN",
         "Google Maps":             "GOOGLE_MAPS_API_KEY",
+        "Brave Search (AdaSearch)":"BRAVE_SEARCH_API_KEY",
         "ElevenLabs":              "ELEVENLABS_API_KEY",
         "Replicate":               "REPLICATE_API_TOKEN",
         "Home Assistant":          "HOME_ASSISTANT_URL",
@@ -315,6 +323,29 @@ async def health_endpoint():
 @app.get("/status")
 async def status():
     return {"status": "running", "service": "A.D.A Backend"}
+
+
+@app.get("/api/workspace")
+async def get_workspace():
+    """Retourne le workspace ADA actif pour le chargement initial de l'UI."""
+    return workspace_manager.get_active_workspace()
+
+
+@app.get("/api/workspace/items")
+async def get_workspace_items(kind: str = "all"):
+    """Liste les items du workspace actif."""
+    return {"items": workspace_manager.list_items(kind)}
+
+
+@app.post("/api/workspace/note")
+async def post_workspace_note(payload: dict):
+    """Ajoute une note dans le workspace actif."""
+    note_id = workspace_manager.add_note(
+        payload.get("title", "Note"),
+        payload.get("content", ""),
+        payload.get("tags") or [],
+    )
+    return {"id": note_id, "state": workspace_manager.get_active_workspace()}
 
 
 @app.get("/brain/v3/traces")
@@ -458,6 +489,7 @@ async def connect(sid, environ):
     # Ré-émettre le health report au nouveau client
     if _health_report:
         await sio.emit('health_report', _health_report, room=sid)
+    await _emit_workspace_state(room=sid)
 
     global authenticator
     
@@ -501,6 +533,101 @@ async def connect(sid, environ):
 @sio.event
 async def disconnect(sid):
     print(f"Client disconnected: {sid}")
+
+
+async def _emit_workspace_state(room=None):
+    await sio.emit("workspace_state", workspace_manager.get_active_workspace(), room=room)
+
+
+def _workspace_bus(room=None) -> WorkspaceEventBus:
+    async def _emit(event: str, payload: dict):
+        await sio.emit(event, payload, room=room)
+
+    return WorkspaceEventBus(_emit)
+
+
+@sio.event
+async def workspace_create(sid, data):
+    name = (data or {}).get("name", "")
+    goal = (data or {}).get("goal")
+    result = workspace_manager.create_workspace(name, goal)
+    await sio.emit("workspace_status", {"message": result, "level": "info"}, room=sid)
+    await _emit_workspace_state(room=sid)
+
+
+@sio.event
+async def workspace_list(sid, data=None):
+    kind = (data or {}).get("kind", "all")
+    await sio.emit(
+        "workspace_state",
+        {
+            **workspace_manager.get_active_workspace(),
+            "items": workspace_manager.list_items(kind),
+        },
+        room=sid,
+    )
+
+
+@sio.event
+async def workspace_save_note(sid, data):
+    data = data or {}
+    note_id = workspace_manager.add_note(
+        data.get("title", "Note"),
+        data.get("content", ""),
+        data.get("tags") or [],
+    )
+    item = next((item for item in workspace_manager.list_items() if item["id"] == note_id), None)
+    if item:
+        await sio.emit("workspace_item_created", item, room=sid)
+    await _emit_workspace_state(room=sid)
+
+
+@sio.event
+async def workspace_research(sid, data):
+    data = data or {}
+    bus = _workspace_bus(room=sid)
+    agent = WorkspaceResearchAgent(
+        workspace_manager=workspace_manager,
+        research_agent=getattr(audio_loop, "research_agent", None) if audio_loop else None,
+        event_bus=bus,
+    )
+
+    async def _run():
+        try:
+            await agent.run(
+                query=data.get("query", ""),
+                depth=data.get("depth", "standard"),
+                workspace=data.get("workspace"),
+                synthesize=bool(data.get("synthesize", False)),
+            )
+        except Exception as exc:
+            await sio.emit("workspace_status", {"message": f"Recherche échouée : {exc}", "level": "error"}, room=sid)
+
+    asyncio.create_task(_run())
+    await sio.emit("workspace_status", {"message": "Recherche workspace démarrée.", "level": "info"}, room=sid)
+
+
+@sio.event
+async def workspace_open_browser(sid, data):
+    data = data or {}
+    mission = data.get("mission", "")
+    action = {"type": "browser", "name": "workspace_open_browser", "description": mission}
+    if workspace_policy.classify(action) == "confirm":
+        await sio.emit(
+            "workspace_status",
+            {"message": "Mission navigateur à confirmer depuis le flux principal ADA.", "level": "warning"},
+            room=sid,
+        )
+        return
+    agent = getattr(audio_loop, "advanced_browser_agent", None) if audio_loop else None
+    if not agent:
+        await sio.emit("workspace_status", {"message": "AdvancedBrowserAgent non disponible.", "level": "error"}, room=sid)
+        return
+    result = await agent.run(mission)
+    if data.get("save_result"):
+        workspace_manager.add_artifact("browser-result.md", result, "artifact")
+    await sio.emit("workspace_activity", {"type": "browser_completed", "mission": mission}, room=sid)
+    await _emit_workspace_state(room=sid)
 
 @sio.event
 async def start_audio(sid, data=None):
@@ -601,6 +728,9 @@ async def start_audio(sid, data=None):
         print(f"Sending Project Update: {project_name}")
         asyncio.create_task(sio.emit('project_update', {'project': project_name}))
 
+    def on_workspace_event(event, payload):
+        asyncio.create_task(sio.emit(event, payload))
+
     # Callback to send Device Update to frontend
     def on_device_update(devices):
         # devices is a list of dicts
@@ -631,6 +761,7 @@ async def start_audio(sid, data=None):
             on_cad_status=on_cad_status,
             on_cad_thought=on_cad_thought,
             on_project_update=on_project_update,
+            on_workspace_event=on_workspace_event,
             on_device_update=on_device_update,
             on_terminal_output=on_terminal_output,
             on_error=on_error,

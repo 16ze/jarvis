@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Box, Monitor, BookOpen, MessageSquareText } from 'lucide-react';
+import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Box, Monitor, BookOpen, MessageSquareText, Layout } from 'lucide-react';
 
 const ToolBubble = ({ icon, label, active, disabled, onClick, title, className = '' }) => (
     <button
@@ -51,6 +51,8 @@ const ToolsModule = ({
     isScreenMode,
     onToggleScreenMode,
     onToggleDocuments,
+    onToggleWorkspace,
+    showWorkspaceWindow,
     activeDragElement,
     isModularMode = false,
 
@@ -77,6 +79,13 @@ const ToolsModule = ({
             icon: isVideoOn ? <Video size={27} strokeWidth={1.8} /> : <VideoOff size={27} strokeWidth={1.8} />,
             active: isVideoOn,
             onClick: onToggleVideo,
+        },
+        {
+            key: 'workspace',
+            label: 'Workspace',
+            icon: <Layout size={27} strokeWidth={1.8} />,
+            active: showWorkspaceWindow,
+            onClick: onToggleWorkspace,
         },
         {
             key: 'documents',
