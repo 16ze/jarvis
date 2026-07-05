@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Box, Monitor, BookOpen, MessageSquareText, Layout } from 'lucide-react';
+import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Box, Monitor, BookOpen, MessageSquareText, Layout, Activity, Cpu } from 'lucide-react';
 
 const ToolBubble = ({ icon, label, active, disabled, onClick, title, className = '' }) => (
     <button
@@ -53,6 +53,9 @@ const ToolsModule = ({
     onToggleDocuments,
     onToggleWorkspace,
     showWorkspaceWindow,
+    onOpenObservability,
+    onOpenAgents,
+    activeOsScreen,
     activeDragElement,
     isModularMode = false,
 
@@ -150,6 +153,20 @@ const ToolsModule = ({
             icon: <Hand size={25} strokeWidth={1.8} />,
             active: isHandTrackingEnabled,
             onClick: onToggleHand,
+        },
+        {
+            key: 'observability',
+            label: 'Activité',
+            icon: <Activity size={25} strokeWidth={1.8} />,
+            active: activeOsScreen === 'observability',
+            onClick: onOpenObservability,
+        },
+        {
+            key: 'agents',
+            label: 'Agents',
+            icon: <Cpu size={25} strokeWidth={1.8} />,
+            active: activeOsScreen === 'agents',
+            onClick: onOpenAgents,
         },
         {
             key: 'power',

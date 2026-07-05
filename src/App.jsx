@@ -125,6 +125,7 @@ function App() {
     const [selectedSpeakerId, setSelectedSpeakerId] = useState(() => localStorage.getItem('selectedSpeakerId') || '');
     const [selectedWebcamId, setSelectedWebcamId] = useState(() => localStorage.getItem('selectedWebcamId') || '');
     const [showSettings, setShowSettings] = useState(false);
+    const [osScreen, setOsScreen] = useState(null); // écran natif OS actif : null | 'observability' | 'agents'
     const [currentProject, setCurrentProject] = useState('default');
 
     // Modular Mode State
@@ -2006,13 +2007,15 @@ function App() {
                 />
             )}
 
-            {/* Shell OS : menu hamburger + écrans dédiés (réutilise les fenêtres existantes) */}
+            {/* Écrans natifs de l'OS (Observabilité, Agents), ouverts depuis le dock central */}
             {!isLockScreenVisible && (
                 <OsShell
                     socket={socket}
                     status={{ socketConnected, isAuthenticated, printerCount }}
-                    openWindow={(key) => {
-                        const openers = {
+                    screen={osScreen}
+                    onClose={() => setOsScreen(null)}
+                    onNavigate={(target) => {
+                        const windows = {
                             terminal: () => setShowTerminalWindow(true),
                             domotique: () => setShowKasaWindow(true),
                             printer: () => setShowPrinterWindow(true),
@@ -2021,7 +2024,8 @@ function App() {
                             workspace: () => setShowWorkspaceWindow(true),
                             settings: () => setShowSettings(true),
                         };
-                        openers[key]?.();
+                        if (windows[target]) windows[target]();
+                        else setOsScreen(target); // écrans natifs (observability, agents)
                     }}
                 />
             )}
@@ -2352,6 +2356,9 @@ function App() {
                         onToggleDocuments={() => setShowDocumentsWindow(true)}
                         onToggleWorkspace={() => setShowWorkspaceWindow(true)}
                         showWorkspaceWindow={showWorkspaceWindow}
+                        onOpenObservability={() => setOsScreen('observability')}
+                        onOpenAgents={() => setOsScreen('agents')}
+                        activeOsScreen={osScreen}
                         activeDragElement={activeDragElement}
                         isModularMode={isModularMode}
                         position={elementPositions.tools}
