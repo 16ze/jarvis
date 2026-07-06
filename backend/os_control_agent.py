@@ -100,6 +100,9 @@ _KNOWN_APPS = {
     "aperçu": "Preview",
     "apercu": "Preview",
     "preview": "Preview",
+    "localiser": "FindMy",
+    "find my": "FindMy",
+    "findmy": "FindMy",
 }
 
 _NEW_DOCUMENT_APPS = {
@@ -138,10 +141,11 @@ THINK LIKE A SENIOR HUMAN:
 
 RELIABILITY — PREFER ACCESSIBILITY OVER COORDINATES:
 - Coordinate clicks are UNRELIABLE (you cannot judge pixels precisely from an image).
-- Whenever a named button, link or toolbar item exists, use "click_element" with
-  its accessible name — this clicks the real element via the macOS accessibility
-  API and almost never misses. The list "ACCESSIBLE UI ELEMENTS" below (when
-  provided) gives you the exact names to use.
+- Whenever a named element exists (button, link, tab, sidebar row, checkbox,
+  toolbar item…), use "click_element" with its accessible label — this clicks
+  the real element via the macOS accessibility API and almost never misses.
+  The list "ACCESSIBLE UI ELEMENTS" below (when provided) gives you the exact
+  labels to use.
 - Only fall back to coordinate "click" when NO named element matches (e.g. a
   precise spot inside a canvas, a map, or an unlabeled area).
 
@@ -169,7 +173,12 @@ LOGIN / SIGNUP FORMS:
   4. Handle cookie banners first (click "Accept"/"Tout accepter") if they block
      the form.
   NEVER invent credentials. If none are provided and AutoFill shows nothing,
-  stop and report that credentials are required.
+  use the "ask_user" action with a precise French question (e.g. "Quel email et
+  quel mot de passe dois-je utiliser pour ce site ?"). Do the same for 2FA
+  codes, captchas, or any step only the user can do. The task will be
+  relaunched with the user's answer — the screen keeps its current state, so
+  the next plan resumes exactly where you stopped (after login: continue the
+  original navigation, don't start over).
 
 OUTPUT: ONLY a valid JSON array (no markdown, no explanation):
 [
@@ -179,7 +188,8 @@ OUTPUT: ONLY a valid JSON array (no markdown, no explanation):
 
 ACTIONS:
   open_app      : {"action":"open_app","text":"App display name","reason":"..."}  ← to OPEN any app
-  click_element : {"action":"click_element","text":"exact accessible name","reason":"..."}  ← PREFER for clicks
+  click_element : {"action":"click_element","text":"exact accessible label","reason":"..."}  ← PREFER for clicks (works on buttons, tabs, rows, links…)
+  ask_user      : {"action":"ask_user","text":"precise question in French","reason":"..."}  ← STOPS the task and asks the user (credentials, 2FA, captcha, choice). Use it INSTEAD of guessing.
   click         : {"action":"click","x":0-1000,"y":0-1000,"reason":"..."}  (fallback only)
   double_click  : {"action":"double_click","x":0-1000,"y":0-1000,"reason":"..."}
   right_click   : {"action":"right_click","x":0-1000,"y":0-1000,"reason":"..."}
@@ -313,6 +323,7 @@ class OsControlAgent:
         self._lock = asyncio.Lock()
         self._current_task = ""
         self._sw, self._sh = 1440, 900  # mis à jour au premier run
+        self._need_user_question = None  # question posée via l'action ask_user
 
     def stop(self):
         self._global_stop.set()
@@ -320,6 +331,7 @@ class OsControlAgent:
 
     def _reset(self):
         self._global_stop.clear()
+        self._need_user_question = None
 
     async def _press_hotkey_local(self, hotkey: str) -> None:
         _mods = {
@@ -483,21 +495,66 @@ class OsControlAgent:
             return "Unknown"
 
     async def _get_ui_elements(self) -> str:
+        """Liste les éléments UI accessibles de la fenêtre avant : tous types
+        (boutons, onglets, lignes, liens, champs, textes…), pas seulement les
+        boutons — indispensable pour les apps SwiftUI (Localiser, Réglages…).
+        Les libellés retournés sont directement utilisables avec click_element."""
+        app = await self._get_front_app()
+        script = f'''
+with timeout of 8 seconds
+tell application "System Events"
+    tell process "{_osascript_escape(app)}"
+        set out to ""
+        set n to 0
+        set elems to entire contents of window 1
+        repeat with e in elems
+            set n to n + 1
+            if n > 400 then exit repeat
+            set lbl to ""
+            try
+                set lbl to (description of e) as text
+            end try
+            if lbl is "" or lbl is "groupe" or lbl is "group" or lbl is "image" then
+                try
+                    set lbl to (name of e) as text
+                end try
+            end if
+            if lbl is not "" and lbl is not "missing value" and lbl is not "groupe" and lbl is not "group" and lbl is not "image" then
+                set kind to ""
+                try
+                    set kind to (role description of e) as text
+                end try
+                set out to out & kind & ": " & lbl & linefeed
+            end if
+        end repeat
+        return out
+    end tell
+end tell
+end timeout'''
         try:
-            app = await self._get_front_app()
+            r = await asyncio.to_thread(_run_osascript, script)
+            lines, seen = [], set()
+            for line in (r or "").splitlines():
+                line = line.strip()
+                if line and line not in seen:
+                    seen.add(line)
+                    lines.append(line)
+            listing = "\n".join(lines[:150])
+            if listing:
+                return f"UI ({app}):\n{listing}"
+        except Exception as e:
+            print(f"[OsControl] get_ui_elements (riche) erreur : {e}")
+        # Fallback minimal : boutons de la fenêtre + toolbar
+        try:
             script = f'''
 tell application "System Events"
-    tell process "{app}"
+    tell process "{_osascript_escape(app)}"
         set res to ""
         try
             repeat with btn in every button of window 1
                 try
                     set d to description of btn
                     if d is not "" then set res to res & "BTN:" & d & "\\n"
-                end try
-                try
-                    set t to title of btn
-                    if t is not "" then set res to res & "BTN_T:" & t & "\\n"
                 end try
             end repeat
         end try
@@ -831,6 +888,218 @@ end tell'''
             return contact["emails"][0]
         return ""
 
+    @staticmethod
+    def _extract_phone_number(text: str) -> str:
+        """Extrait et normalise un numéro de téléphone présent dans le texte."""
+        m = re.search(r"(\+?\d[\d\s().\-]{5,}\d)", text)
+        return re.sub(r"[\s().\-]", "", m.group(1)) if m else ""
+
+    # Cibles jamais gérées par la routine message locale (autres outils dédiés)
+    _MSG_EXCLUDE = re.compile(
+        r"\b(mail|e-?mail|courriel|gmail|note|telegram|messenger|instagram|"
+        r"tweet|discord|invitation|événement|evenement|calendrier)\b",
+        re.IGNORECASE,
+    )
+
+    def _extract_message_intent(self, task: str) -> Optional[tuple]:
+        """Détecte une intention « envoyer un message » en langage naturel.
+
+        Retourne (destinataire, corps, app) — app ∈ {"", "whatsapp", "slack"} —
+        ou None si la tâche n'est pas un envoi de message exploitable localement.
+        Le destinataire peut être un NOM (résolu via Contacts) ou un NUMÉRO.
+        """
+        t = task.strip()
+        tl = t.lower()
+        if not re.search(r"\b(envoie?s?|envoyer)\b", tl):
+            return None
+        if self._MSG_EXCLUDE.search(tl):
+            return None
+
+        app = ""
+        if "whatsapp" in tl:
+            app = "whatsapp"
+        elif "slack" in tl:
+            app = "slack"
+
+        # Corps du message : texte cité, sinon après un marqueur ("disant"…)
+        body = ""
+        quoted = re.search(r"[\"“«](.+?)[\"”»]", t)
+        if quoted:
+            body = quoted.group(1).strip()
+        else:
+            marker = re.search(
+                r"\b(?:disant\s+(?:que\s+)?|qui\s+dit\s+|en\s+disant\s+(?:que\s+)?|"
+                r"pour\s+(?:lui|leur)\s+dire\s+(?:que\s+)?|dis(?:-|\s+)(?:lui|leur)\s+(?:que\s+)?|"
+                r"avec\s+le\s+(?:texte|message)\s+|:\s*)(.+)$",
+                t,
+                re.IGNORECASE,
+            )
+            if marker:
+                body = marker.group(1).strip(" .")
+        if not body:
+            return None
+
+        # Destinataire : numéro en priorité, sinon nom après à/au/pour
+        recipient = self._extract_phone_number(t)
+        if recipient and body and recipient in re.sub(r"[\s().\-]", "", body):
+            recipient = ""  # le numéro trouvé faisait partie du corps
+        if not recipient:
+            m = re.search(
+                r"\b(?:à|a|au|aux|pour)\s+[\"“«]?([A-Za-zÀ-ÿ0-9@+._\-\s]+?)[\"”»]?"
+                r"(?=\s+(?:disant|qui\s+dit|en\s+disant|pour\s+(?:lui|leur)\s+dire|"
+                r"avec|sur|via|le\s+message|:)|\s*$)",
+                t,
+                re.IGNORECASE,
+            )
+            if m:
+                recipient = m.group(1).strip(" .")
+                recipient = re.sub(
+                    r"\s+(?:sur|via)\s+(?:whatsapp|slack|messages?|imessage).*$",
+                    "", recipient, flags=re.IGNORECASE,
+                ).strip()
+        if not recipient:
+            return None
+        return recipient, body, app
+
+    @staticmethod
+    def _extract_locate_intent(task: str) -> Optional[str]:
+        """Intention « localiser un objet/appareil » via l'app Localiser (FindMy).
+
+        Retourne le nom de l'objet (« voiture », « clés »…) ou None.
+        « trouve X » n'est accepté que si Localiser/AirTag est mentionné,
+        pour ne pas capter les recherches web ou fichiers.
+        """
+        tl = task.lower().strip()
+        if re.search(r"\b(fichier|dossier|document|finder)\b", tl):
+            return None
+        mentions_app = bool(re.search(r"\b(localiser|find\s?my|findmy|airtags?)\b", tl))
+        m = re.search(
+            r"\b(?:localise[sz]?|géolocalise[sz]?|geolocalise[sz]?|"
+            r"où\s+(?:est|sont|se\s+trouvent?)|ou\s+(?:est|sont|se\s+trouvent?))\s+(.+)$",
+            tl,
+        )
+        if not m and mentions_app:
+            m = re.search(r"\b(?:re)?trouve[sz]?\s+(.+)$", tl)
+        if not m:
+            return None
+        obj = m.group(1).strip(" ?!.'\"«»")
+        obj = re.sub(r"^(?:et|puis)\s+", "", obj)
+        obj = re.sub(r"^(?:re)?trouve[sz]?\s+", "", obj)
+        obj = re.sub(r"\s+(?:dans|avec|via|sur|grâce\s+à|grace\s+a)\s+.*$", "", obj)
+        obj = re.sub(r"^(?:ma|mon|mes|ta|ton|tes|sa|son|ses|la|le|les|l')\s*", "", obj)
+        obj = obj.strip(" ?!.")
+        return obj or None
+
+    @staticmethod
+    def _norm_text(s: str) -> str:
+        """Normalisation casse + accents pour comparaison souple."""
+        import unicodedata
+        return "".join(
+            c for c in unicodedata.normalize("NFD", (s or "").casefold())
+            if not unicodedata.combining(c)
+        )
+
+    async def _list_ui_texts(self, process: str) -> list:
+        """Liste les textes statiques (descriptions) de la fenêtre avant d'un process."""
+        script = f'''
+with timeout of 12 seconds
+tell application "System Events"
+    tell process "{_osascript_escape(process)}"
+        set out to ""
+        set n to 0
+        set elems to entire contents of window 1
+        repeat with e in elems
+            set n to n + 1
+            if n > 350 then exit repeat
+            try
+                if class of e is static text then
+                    set out to out & (description of e) & linefeed
+                end if
+            end try
+        end repeat
+        return out
+    end tell
+end tell
+end timeout'''
+        try:
+            r = await asyncio.to_thread(_run_osascript, script)
+        except Exception as e:
+            print(f"[OsControl] _list_ui_texts({process}) erreur : {e}")
+            return []
+        return [line.strip() for line in (r or "").splitlines() if line.strip()]
+
+    async def _find_my_locate(self, item: str) -> str:
+        """Localise un objet/appareil/personne dans l'app Localiser (FindMy),
+        sans appel LLM : ouvre l'app, parcourt les onglets, sélectionne l'objet
+        et lit sa position depuis la barre latérale (API accessibilité)."""
+        obj = (item or "").strip()
+        obj = re.sub(r"^(?:ma|mon|mes|la|le|les|l')\s*", "", obj, flags=re.IGNORECASE).strip(" ?!.")
+        if not obj:
+            return "Quel objet dois-je localiser ?"
+
+        opened, _ = await self._open_app_local("Localiser")
+        if not opened:
+            return "Impossible d'ouvrir l'app Localiser."
+        try:
+            await asyncio.to_thread(
+                _run_osascript, 'tell application "System Events" to set frontmost of process "FindMy" to true'
+            )
+        except Exception:
+            pass
+        await asyncio.sleep(2.0)
+
+        target = self._norm_text(obj)
+        info_pattern = re.compile(
+            r"(\d|il y a|maintenant|domicile|travail|pas de position|position indisponible)",
+            re.IGNORECASE,
+        )
+        for tab in ("Objets", "Appareils", "Personnes", "Items", "Devices", "People"):
+            click_r = await self._click_element_by_name(tab, process="FindMy")
+            if "not_found" in click_r or "erreur" in click_r:
+                continue
+            await asyncio.sleep(1.3)
+            texts = await self._list_ui_texts("FindMy")
+            idx = next(
+                (i for i, s in enumerate(texts) if target in self._norm_text(s)),
+                None,
+            )
+            if idx is None:
+                continue
+            matched = texts[idx]
+            # Sélectionner la ligne pour centrer la carte (best effort)
+            await self._click_element_by_name(matched, process="FindMy")
+            # Les textes voisins de la ligne portent lieu + fraîcheur + distance
+            neighbors = texts[max(0, idx - 2):idx] + texts[idx + 1:idx + 3]
+            info = [s for s in neighbors if info_pattern.search(s)]
+            if info:
+                return f"D'après Localiser : {matched} — {' ; '.join(info)}."
+            return f"{matched} trouvé dans Localiser (onglet {tab}), position affichée à l'écran."
+        return (
+            f"Je n'ai pas trouvé « {obj} » dans Localiser "
+            "(onglets Objets, Appareils, Personnes vérifiés)."
+        )
+
+    async def _confirm_facetime_call(self) -> bool:
+        """Après `open tel://…` ou `open facetime://…`, FaceTime affiche une
+        demande de confirmation — la valider automatiquement, sinon l'appel
+        ne part jamais."""
+        for attempt in range(6):
+            await asyncio.sleep(1.0)
+            for label in ("Appeler", "Call"):
+                r = await self._click_element_by_name(label, process="FaceTime")
+                if "ok" in r:
+                    return True
+            if attempt >= 3:
+                # Dernier recours : Entrée si FaceTime est au premier plan
+                try:
+                    front = await self._get_front_app()
+                    if front == "FaceTime":
+                        await self._press_hotkey_local("return")
+                        return True
+                except Exception:
+                    pass
+        return False
+
     async def _send_imessage_applescript(self, recipient: str, body: str) -> bool:
         """Envoi direct et fiable via l'API AppleScript de Messages (numéro/email).
         Retourne True si l'envoi a réussi."""
@@ -850,8 +1119,15 @@ tell application "Messages"
         try
             send "{eb}" to participant "{et}"
             return "ok"
-        on error errMsg
-            return "err:" & errMsg
+        on error
+            -- Destinataire non-iMessage → relais SMS (iPhone jumelé) si disponible
+            try
+                set svcSMS to 1st service whose service type = SMS
+                send "{eb}" to buddy "{et}" of svcSMS
+                return "ok"
+            on error errMsg
+                return "err:" & errMsg
+            end try
         end try
     end try
 end tell'''
@@ -1064,31 +1340,72 @@ end tell'''
 
         return None
 
-    async def _click_element_by_name(self, name: str) -> str:
+    async def _click_element_by_name(self, name: str, process: str = "") -> str:
+        """Clique un élément UI par son libellé accessible (description, nom ou
+        titre), quel que soit son type : bouton, onglet, ligne de barre
+        latérale, lien, case… Recherche d'abord les chemins rapides (boutons),
+        puis récursivement dans toute la fenêtre (SwiftUI compris)."""
         try:
-            app = await self._get_front_app()
+            app = process or await self._get_front_app()
+            safe = _osascript_escape(name)
             script = f'''
+with timeout of 10 seconds
 tell application "System Events"
-    tell process "{app}"
+    tell process "{_osascript_escape(app)}"
         try
-            click (first button whose description contains "{name}") of window 1
-            return "ok"
+            click (first button whose description contains "{safe}") of window 1
+            return "ok:button"
         end try
         try
-            click (first button whose title contains "{name}") of window 1
-            return "ok"
+            click (first button whose title contains "{safe}") of window 1
+            return "ok:button"
         end try
         try
-            click (first button whose description contains "{name}") of toolbar 1 of window 1
-            return "ok"
+            click (first button whose description contains "{safe}") of toolbar 1 of window 1
+            return "ok:toolbar"
         end try
         try
-            click (first link whose description contains "{name}") of window 1
-            return "ok"
+            click (first link whose description contains "{safe}") of window 1
+            return "ok:link"
         end try
+        -- Recherche récursive tous types (onglets, lignes, textes, cases…)
+        repeat with w in windows
+            set elems to entire contents of w
+            repeat with e in elems
+                set lbl to ""
+                try
+                    set lbl to (description of e) as text
+                end try
+                if lbl does not contain "{safe}" then
+                    try
+                        set lbl to (name of e) as text
+                    end try
+                end if
+                if lbl does not contain "{safe}" then
+                    try
+                        set lbl to (title of e) as text
+                    end try
+                end if
+                if lbl contains "{safe}" then
+                    try
+                        perform action "AXPress" of e
+                        return "ok:axpress"
+                    end try
+                    try
+                        click e
+                        return "ok:click"
+                    end try
+                    try
+                        set selected of e to true
+                        return "ok:selected"
+                    end try
+                end if
+            end repeat
+        end repeat
         return "not_found"
     end tell
-end tell'''
+end tell
+end timeout'''
             r = await asyncio.to_thread(_run_osascript, script)
             return f"click_element '{name}': {r}"
         except Exception as e:
@@ -1180,6 +1497,12 @@ end tell'''
             elif action == "get_ui_elements":
                 return await self._get_ui_elements()
 
+            elif action == "ask_user" and text:
+                # Le plan a besoin d'une info que seul l'utilisateur possède
+                # (identifiants, code 2FA, captcha, choix). La question remonte
+                # jusqu'à Ada qui la pose vocalement, puis la tâche est relancée.
+                return f"[NEED_USER] {text}"
+
             elif action == "type" and text:
                 await asyncio.to_thread(
                     lambda: subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
@@ -1258,6 +1581,13 @@ end tell'''
                 await cb({"image": None, "log": f"[PC] {reason}"})
             result = await self._exec_action(action)
             print(f"[OsControl]   → {result}")
+            # Le plan demande une info à l'utilisateur → arrêt propre du plan,
+            # la question remonte via _plan_execute_verify.
+            if result.startswith("[NEED_USER]"):
+                self._need_user_question = result[len("[NEED_USER]"):].strip()
+                if cb:
+                    await cb({"image": None, "log": f"[PC] ❓ {self._need_user_question}"})
+                return True
             # Si l'action a été bloquée, notifier et continuer (pas d'arrêt)
             if result.startswith("[BLOQUÉ]") and cb:
                 await cb({"image": None, "log": f"[PC] ⛔ {result}"})
@@ -1269,6 +1599,91 @@ end tell'''
         """Navigation pure et commandes shell directes. None → vision loop."""
         t = task.strip()
         tl = t.lower()
+
+        # ── Envoi de message en langage naturel (« envoie un message à X… ») ──
+        # AVANT le test _is_interaction_task, sinon « envoie » part en vision
+        # loop et le chemin local fiable (Contacts + AppleScript) est inatteignable.
+        msg_intent = self._extract_message_intent(t)
+        if msg_intent:
+            recipient, body, app = msg_intent
+            if cb:
+                await cb({"image": None, "log": f"[PC] Message local pour {recipient}"})
+            if app == "whatsapp":
+                return await self._compose_whatsapp_local(recipient, body)
+            if app == "slack":
+                return await self._compose_slack_local(recipient, body)
+            return await self._compose_messages_local(recipient, body)
+
+        # ── Appel téléphonique / FaceTime (nom OU numéro) ──────────────────────
+        # « comment s'appelle… » et « rappelle-moi » ne sont pas des appels.
+        if (
+            re.search(r"\b(appelle?s?|appeler|appel|téléphoner?|telephoner?|call|facetime)\b", tl)
+            and not re.search(r"[smt]['’]appelle|\brappel|\b(comment|pourquoi)\b", tl)
+        ):
+            video = bool(re.search(r"\b(vidéo|video|visio)\b", tl)) or (
+                "facetime" in tl and not re.search(r"\b(audio|vocal)\b", tl)
+            )
+            if "facetime" in tl:
+                scheme = "facetime" if video else "facetime-audio"
+            else:
+                # Vrai appel téléphonique : tel:// passe par le relais iPhone
+                # (Continuité) et retombe sur FaceTime audio sinon.
+                scheme = "tel" if not video else "facetime"
+            number = self._extract_phone_number(t)
+            target, label = "", ""
+            if number:
+                target, label = number, number
+            else:
+                name = self._extract_recipient(t) or re.sub(
+                    r"^.*?\b(?:appelle?s?|appeler|appel|téléphoner?|telephoner?|call|facetime)\b\s*",
+                    "", t, flags=re.IGNORECASE,
+                ).strip(" .'\"«»?")
+                name = re.sub(r"^(?:le|la)\s+", "", name, flags=re.IGNORECASE)
+                name = re.sub(
+                    r"\s+(?:en\s+)?(?:audio|vocal|vidéo|video|visio)\s*$", "", name, flags=re.IGNORECASE
+                )
+                name = re.sub(
+                    r"\s+(?:sur|via|par)\s+(?:facetime|téléphone|telephone|le\s+téléphone).*$",
+                    "", name, flags=re.IGNORECASE,
+                )
+                name = re.sub(
+                    r"\s+(?:au\s+téléphone|au\s+telephone|s'il\s+te\s+pla[îi]t)\s*$",
+                    "", name, flags=re.IGNORECASE,
+                ).strip(" .'\"«»?")
+                if name:
+                    contact = await self._resolve_contact(name)
+                    target = self._best_handle(contact)
+                    label = f"{contact.get('name', name)} ({target})" if target else ""
+                    if target and "@" in target and scheme == "tel":
+                        scheme = "facetime-audio"  # un email ne se compose qu'en FaceTime
+            if target:
+                if cb:
+                    await cb({"image": None, "log": f"[PC] Appel vers {label}"})
+                await asyncio.to_thread(
+                    subprocess.run, ["open", f"{scheme}://{target}"],
+                    capture_output=True, timeout=10,
+                )
+                confirmed = await self._confirm_facetime_call()
+                kind = "FaceTime vidéo" if scheme == "facetime" else (
+                    "FaceTime audio" if scheme == "facetime-audio" else "téléphonique"
+                )
+                if confirmed:
+                    return f"Appel {kind} lancé vers {label}."
+                return (
+                    f"Appel {kind} préparé vers {label} — FaceTime attend une "
+                    "confirmation à l'écran que je n'ai pas pu valider."
+                )
+            return (
+                "Contact introuvable pour l'appel. Précise un numéro ou vérifie "
+                "le nom dans Contacts."
+            )
+
+        # ── Localisation d'objet/appareil (AirTag, iPhone…) via Localiser ─────
+        locate_obj = self._extract_locate_intent(t)
+        if locate_obj:
+            if cb:
+                await cb({"image": None, "log": f"[PC] Localisation de « {locate_obj} »"})
+            return await self._find_my_locate(locate_obj)
 
         local_interaction = await self._local_interaction_path(t, cb)
         if local_interaction is not None:
@@ -1309,23 +1724,36 @@ end tell'''
         }
         app_m = re.search(
             r"^(?:ouvre?|ouvrir|ouvrire|lance?|démarre?|demarre?|open|start|launch|active?)\s+"
-            r"(?:l'?app(?:lication)?\s+)?[«\"']?([a-zA-Z0-9À-ÿ\s\.\-]+?)[«\"']?\s*$",
+            r"(?:l'?app(?:lication)?\s+)?[«\"']?([a-zA-Z0-9À-ÿ\s\.\-]+?)[«\"']?"
+            r"(?:\s+(?:et|puis)\s+(.+))?\s*$",
             t, re.IGNORECASE
         )
         if app_m:
             target_raw = app_m.group(1).strip().strip("'\"«»")
+            rest = (app_m.group(2) or "").strip()
             target_lower = target_raw.lower()
 
             # Site web connu → Safari
             if target_lower in WEB_SITES:
                 url = WEB_SITES[target_lower]
                 subprocess.run(["open", "-a", "Safari", url], capture_output=True, timeout=10)
+                if rest:
+                    return None  # site ouvert, la suite passe en vision loop
                 return f"Safari ouvert sur {url}."
 
             # App desktop connue → open -a avec nom exact
             opened, app_name = await self._open_app_local(target_raw)
             if opened:
-                return f"{app_name} ouvert."
+                if not rest:
+                    return f"{app_name} ouvert."
+                # « ouvre Localiser et trouve ma voiture » → routine dédiée
+                if app_name.lower() in ("findmy", "localiser"):
+                    obj = re.sub(
+                        r"^(?:(?:re)?trouve[sz]?|localise[sz]?|cherche[sz]?)\s+",
+                        "", rest, flags=re.IGNORECASE,
+                    )
+                    return await self._find_my_locate(obj)
+                return None  # app ouverte, la suite de la tâche passe en vision loop
 
         # ── Recherche web ──────────────────────────────────────────────────────
         SEARCHES = [
@@ -1362,34 +1790,6 @@ end tell'''
                     subprocess.run(["open", "-a", "Safari", url], capture_output=True, timeout=10)
                     return f"Safari ouvert sur {url}."
             return None  # Navigation avec sous-action → vision loop
-
-        # Appel FaceTime / téléphone via schéma d'URL (fiable)
-        if re.search(r"\b(appelle?|appeler|téléphone|telephone|call|facetime)\b", tl):
-            audio = bool(re.search(r"\b(audio|vocal|téléphon|telephon)", tl))
-            scheme = "facetime-audio" if audio else "facetime"
-            num_m = re.search(r"(\+?\d[\d\s().\-]{5,}\d)", t)
-            target = None
-            label = ""
-            if num_m:
-                target = re.sub(r"[\s().\-]", "", num_m.group(1))
-                label = target
-            else:
-                # Appel vers un NOM → résolution via Contacts.app
-                name = self._extract_recipient(t) or re.sub(
-                    r"^.*?\b(?:appelle?|appeler|téléphone|telephone|call|facetime)\b\s*",
-                    "", t, flags=re.IGNORECASE,
-                ).strip(" .'\"«»")
-                if name:
-                    contact = await self._resolve_contact(name)
-                    target = self._best_handle(contact)
-                    label = f"{contact.get('name', name)} ({target})" if target else ""
-            if target:
-                await asyncio.to_thread(
-                    subprocess.run, ["open", f"{scheme}://{target}"],
-                    capture_output=True, timeout=10,
-                )
-                return f"Appel {'audio ' if audio else ''}FaceTime lancé vers {label}."
-            return f"Contact introuvable pour l'appel. Précise un numéro ou vérifie le nom dans Contacts."
 
         # Volume
         if re.search(r"(mute|coupe?\s+le\s+son|silence|sourdine)", tl):
@@ -1513,6 +1913,14 @@ end tell'''
             completed = await self._execute_plan(plan, cb, stop)
             if not completed:
                 return "Tâche interrompue."
+
+            # Une info utilisateur est requise (identifiants, 2FA…) : remonter
+            # la question à Ada — l'écran reste dans son état courant et la
+            # tâche pourra être relancée avec la réponse pour continuer.
+            if self._need_user_question:
+                question = self._need_user_question
+                self._need_user_question = None
+                return f"BESOIN_UTILISATEUR: {question}"
 
             # Laisser l'UI se stabiliser
             await asyncio.sleep(0.8)
