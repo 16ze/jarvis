@@ -520,11 +520,12 @@ tell application "System Events"
                 end try
             end if
             if lbl is not "" and lbl is not "missing value" and lbl is not "groupe" and lbl is not "group" and lbl is not "image" then
-                set kind to ""
+                -- « kind » est une propriété réservée de process : ne pas l'utiliser comme variable
+                set roleTxt to ""
                 try
-                    set kind to (role description of e) as text
+                    set roleTxt to (role description of e) as text
                 end try
-                set out to out & kind & ": " & lbl & linefeed
+                set out to out & roleTxt & ": " & lbl & linefeed
             end if
         end repeat
         return out
@@ -1000,7 +1001,11 @@ end tell'''
         )
 
     async def _list_ui_texts(self, process: str) -> list:
-        """Liste les textes statiques (descriptions) de la fenêtre avant d'un process."""
+        """Liste les libellés (descriptions) de la fenêtre avant d'un process.
+
+        Pas de filtre sur `class of e` : sur les apps SwiftUI (Localiser…),
+        la lecture de la classe échoue sur certains éléments — on collecte
+        toutes les descriptions et on filtre les libellés génériques."""
         script = f'''
 with timeout of 12 seconds
 tell application "System Events"
@@ -1012,9 +1017,8 @@ tell application "System Events"
             set n to n + 1
             if n > 350 then exit repeat
             try
-                if class of e is static text then
-                    set out to out & (description of e) & linefeed
-                end if
+                set d to (description of e) as text
+                if d is not "" then set out to out & d & linefeed
             end try
         end repeat
         return out
@@ -1026,7 +1030,12 @@ end timeout'''
         except Exception as e:
             print(f"[OsControl] _list_ui_texts({process}) erreur : {e}")
             return []
-        return [line.strip() for line in (r or "").splitlines() if line.strip()]
+        generic = {"groupe", "group", "image", "barre d’outils", "barre d'outils", "toolbar"}
+        return [
+            line.strip()
+            for line in (r or "").splitlines()
+            if line.strip() and line.strip().lower() not in generic
+        ]
 
     async def _find_my_locate(self, item: str) -> str:
         """Localise un objet/appareil/personne dans l'app Localiser (FindMy),
@@ -1364,11 +1373,9 @@ tell application "System Events"
             click (first button whose description contains "{safe}") of toolbar 1 of window 1
             return "ok:toolbar"
         end try
-        try
-            click (first link whose description contains "{safe}") of window 1
-            return "ok:link"
-        end try
-        -- Recherche récursive tous types (onglets, lignes, textes, cases…)
+        -- Recherche récursive tous types (onglets, lignes, liens, textes, cases…)
+        -- NB : ne PAS utiliser la classe « link » ici — inconnue du dictionnaire
+        -- Processes de System Events, elle ferait échouer la COMPILATION du script.
         repeat with w in windows
             set elems to entire contents of w
             repeat with e in elems
@@ -1472,15 +1479,21 @@ end timeout'''
         try:
             if action in ("click", "double_click", "right_click") and nx is not None:
                 lx, ly = lp(nx, ny)
-                if action == "click":
-                    s = f'tell application "System Events" to click at {{{lx}, {ly}}}'
-                elif action == "double_click":
-                    s = f'tell application "System Events" to double click at {{{lx}, {ly}}}'
+                if action == "right_click":
+                    # « click at … using {control down} » ne compile pas dans
+                    # System Events → clic droit via pynput (fiable).
+                    def _right_click():
+                        from pynput.mouse import Button, Controller
+                        m = Controller()
+                        m.position = (lx, ly)
+                        m.click(Button.right, 1)
+                    await asyncio.to_thread(_right_click)
                 else:
-                    s = (f'tell application "System Events"\n'
-                         f'  click at {{{lx}, {ly}}} using {{control down}}\n'
-                         f'end tell')
-                await asyncio.to_thread(_run_osascript, s)
+                    if action == "click":
+                        s = f'tell application "System Events" to click at {{{lx}, {ly}}}'
+                    else:
+                        s = f'tell application "System Events" to double click at {{{lx}, {ly}}}'
+                    await asyncio.to_thread(_run_osascript, s)
                 await asyncio.sleep(0.3)
                 return f"{action}({lx},{ly})"
 

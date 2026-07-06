@@ -37,10 +37,31 @@ npm run web                          # front web (5173) — ou npm start (Electr
   - **ouverture de toute app** (`_open_app_local` + action vision `open_app`, ex. « Localiser » → FindMy) ;
   - capacité **login/inscription web** (autofill Safari, sinon demande les identifiants).
 
+## Corrections 2026-07-06 (contrôle PC — testé en réel)
+- **Cause racine navigation** : `click_element` ne compilait JAMAIS (classe `link` inconnue du
+  dictionnaire Processes de System Events → échec de compilation de tout le script). Corrigé +
+  recherche récursive de n'importe quel élément (onglets, lignes, textes) par `description`.
+- **Messages** : « envoie un message à <nom|numéro> disant "…" » passe désormais par le chemin
+  local fiable (`_extract_message_intent` → Contacts + AppleScript + fallback SMS), plus par la
+  vision loop. WhatsApp/Slack routés si nommés.
+- **Appels** : « appelle <nom|numéro> » → `tel://` (relais iPhone) par défaut, FaceTime si demandé ;
+  la **boîte de confirmation FaceTime est validée automatiquement** (`_confirm_facetime_call`) —
+  avant, l'appel ne partait jamais. « passe un appel », « téléphone à », noms avec suffixe
+  (« en audio ») gérés.
+- **Localiser/AirTag** : « localise ma voiture » / « où est … » → `_find_my_locate` : ouvre FindMy,
+  clique l'onglet (Objets/Appareils/Personnes), lit la position dans la barre latérale via
+  accessibilité (zéro appel LLM).
+- **Login/inscription web** : nouvelle action de plan `ask_user` → résultat `BESOIN_UTILISATEUR: <question>` ;
+  Ada pose la question (identifiants/2FA/captcha), puis relance `execute_pc_task` pour continuer
+  après authentification (prompts.py mis à jour dans les 2 prompts).
+- **Divers** : `right_click` via pynput (l'AppleScript `click at … using` ne compile pas) ;
+  `_get_ui_elements` liste tous les types d'éléments (apps SwiftUI) ; pièges AppleScript : `rd` et
+  `kind` sont des identifiants réservés ; mapping `_KNOWN_APPS` : localiser/find my → FindMy.
+- ⚠️ Le backend doit être **redémarré** pour charger ces changements.
+
 ## Ce qui reste / à valider (priorité contrôle PC)
-- **Tester en réel sur le Mac** toutes les corrections contrôle PC (je ne peux pas piloter l'écran) :
-  appel/message par nom, ouverture d'apps, login web. Garder l'écran **Activité** ouvert pour voir
-  les actions (`open_app`, `click_element`).
+- Valider à la voix : appel/message par nom et par numéro, login web avec question/reprise.
+  Garder l'écran **Activité** ouvert pour voir les actions (`open_app`, `click_element`).
 - Découpage complet de `ada.py` (6500+ lignes) — reste à faire, sécurisé par la CI.
 - 2 tests obsolètes échouent (`test_run_web_agent`, `test_kasa_agent`) : features supprimées, à nettoyer.
 

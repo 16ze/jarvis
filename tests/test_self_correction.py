@@ -6,15 +6,16 @@ def test_import():
     assert SelfCorrectionAgent is not None
 
 def test_validate_path_ok():
-    from self_correction_agent import SelfCorrectionAgent
+    # Indépendant de l'emplacement du projet (déplacé sur disque externe)
+    from self_correction_agent import SelfCorrectionAgent, JARVIS_ROOT
     agent = SelfCorrectionAgent.__new__(SelfCorrectionAgent)
-    assert agent._validate_path("/Users/bryandev/jarvis/backend/ada.py") is True
+    assert agent._validate_path(str(JARVIS_ROOT / "backend" / "ada.py")) is True
 
 def test_validate_path_blocked():
-    from self_correction_agent import SelfCorrectionAgent
+    from self_correction_agent import SelfCorrectionAgent, JARVIS_ROOT
     agent = SelfCorrectionAgent.__new__(SelfCorrectionAgent)
     assert agent._validate_path("/etc/passwd") is False
-    assert agent._validate_path("/Users/bryandev/jarvis/../../../etc/passwd") is False
+    assert agent._validate_path(str(JARVIS_ROOT) + "/../../../etc/passwd") is False
 
 def test_write_and_read_file():
     from self_correction_agent import SelfCorrectionAgent, JARVIS_ROOT
