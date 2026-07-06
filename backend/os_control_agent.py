@@ -162,7 +162,8 @@ OUTPUT: ONLY a valid JSON array (no markdown, no explanation):
 ]
 
 ACTIONS:
-  click_element : {"action":"click_element","text":"exact accessible name","reason":"..."}  ← PREFER THIS
+  open_app      : {"action":"open_app","text":"App display name","reason":"..."}  ← to OPEN any app
+  click_element : {"action":"click_element","text":"exact accessible name","reason":"..."}  ← PREFER for clicks
   click         : {"action":"click","x":0-1000,"y":0-1000,"reason":"..."}  (fallback only)
   double_click  : {"action":"double_click","x":0-1000,"y":0-1000,"reason":"..."}
   right_click   : {"action":"right_click","x":0-1000,"y":0-1000,"reason":"..."}
@@ -181,10 +182,15 @@ RULES:
 - If the task requires scrolling to find something, include scroll steps
 - Maximum 12 actions in one plan — if more needed, prioritize the most direct path
 
+OPENING APPS:
+- To open ANY app, use the "open_app" action with the app's display name
+  (e.g. {"action":"open_app","text":"Localiser"} or "FindMy", "Notes", "Safari").
+  open_app resolves localized/French names automatically — DON'T use run_shell
+  "open -a" for apps (it fails on localized names like "Localiser").
+
 ABSOLUTE PROHIBITIONS — these will be blocked at execution level and cause task failure:
 - NEVER use hotkey "cmd+space" or "command+space" — Spotlight is FORBIDDEN
-- NEVER open Spotlight for any reason — use run_shell with "open -a AppName" instead
-- To open any app: run_shell with "open -a 'AppName'" (not Spotlight, not clicking the Dock)
+- NEVER open Spotlight for any reason — use the open_app action instead
 - To search the web: run_shell with "open -a 'Safari' 'https://google.com/search?q=...'"
 - Spotlight will be intercepted and blocked — your plan will fail if you use it
 """
@@ -495,6 +501,33 @@ end tell'''
         except Exception as e:
             return f"get_ui_elements erreur: {e}"
 
+    async def _find_app_path(self, display_name: str) -> str:
+        """Trouve le chemin .app d'une app par son NOM AFFICHÉ (localisé), via
+        Spotlight. Gère les noms français (« Localiser » → FindMy.app) et toute
+        app installée. Retourne le chemin ou "".
+        """
+        safe = display_name.replace("'", "").replace('"', "")
+        query = (
+            "kMDItemContentType == 'com.apple.application-bundle' && "
+            f"kMDItemDisplayName == '{safe}*'wc"
+        )
+        try:
+            r = await asyncio.to_thread(
+                subprocess.run, ["mdfind", query],
+                capture_output=True, text=True, timeout=8,
+            )
+        except Exception:
+            return ""
+        paths = [p for p in (r.stdout or "").splitlines() if p.strip().endswith(".app")]
+        if not paths:
+            return ""
+        # Préférer les apps dans /Applications ou /System/Applications (vraies apps)
+        paths.sort(key=lambda p: (
+            0 if p.startswith(("/System/Applications", "/Applications")) else 1,
+            len(p),
+        ))
+        return paths[0]
+
     async def _open_app_local(self, target_raw: str) -> tuple[bool, str]:
         target_clean = target_raw.strip().strip("'\"«»")
         target_clean = re.sub(
@@ -506,6 +539,7 @@ end tell'''
         target_lower = target_clean.lower()
         app_name = _KNOWN_APPS.get(target_lower, target_clean)
 
+        # 1. Tentative directe par nom (bundle ou nom exact).
         result = await asyncio.to_thread(
             subprocess.run,
             ["open", "-a", app_name],
@@ -517,6 +551,22 @@ end tell'''
             await asyncio.sleep(1.0)
             return True, app_name
 
+        # 2. Fallback générique : résoudre le NOM AFFICHÉ (français/localisé) vers
+        #    le chemin .app via Spotlight, puis ouvrir par chemin. Couvre TOUTE
+        #    app installée (ex. « Localiser » → /System/Applications/FindMy.app).
+        app_path = await self._find_app_path(target_clean)
+        if app_path:
+            r2 = await asyncio.to_thread(
+                subprocess.run, ["open", app_path],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r2.returncode == 0:
+                await asyncio.sleep(1.0)
+                # Nom réel de l'app (sans .app) pour la suite du routage
+                real = os.path.splitext(os.path.basename(app_path))[0]
+                return True, real
+
+        # 3. Dernier recours : activation AppleScript.
         try:
             await asyncio.to_thread(
                 _run_osascript, f'tell application "{_osascript_escape(app_name)}" to activate'
@@ -690,6 +740,81 @@ end tell'''
         digits = re.sub(r"[\s().\-]", "", r)
         return bool(re.fullmatch(r"\+?\d{6,15}", digits))
 
+    async def _resolve_contact(self, name: str) -> dict:
+        """Résout un NOM en handles via Contacts.app.
+
+        Retourne {'name', 'phones': [...], 'emails': [...]} ou {} si introuvable.
+        La recherche est insensible à la casse et partielle (prénom seul OK).
+        """
+        query = (name or "").strip().strip("'\"«»")
+        if not query:
+            return {}
+        escaped = _osascript_escape(query)
+        script = f'''
+tell application "Contacts"
+    set out to ""
+    try
+        set matches to (every person whose name contains "{escaped}")
+    on error
+        return "NONE"
+    end try
+    if (count of matches) is 0 then return "NONE"
+    set p to item 1 of matches
+    set out to (name of p) & "||"
+    try
+        repeat with ph in phones of p
+            set out to out & "PHONE:" & (value of ph) & ";"
+        end repeat
+    end try
+    try
+        repeat with em in emails of p
+            set out to out & "EMAIL:" & (value of em) & ";"
+        end repeat
+    end try
+    return out
+end tell'''
+        async def _query() -> str:
+            return await asyncio.wait_for(
+                asyncio.to_thread(_run_osascript, script), timeout=8
+            )
+
+        try:
+            r = await _query()
+        except Exception as e:
+            # -600 : Contacts n'est pas lancé → le démarrer en arrière-plan (sans
+            # fenêtre ni focus) puis réessayer une fois.
+            if "-600" in str(e) or "pas ouverte" in str(e) or "isn’t running" in str(e):
+                try:
+                    await asyncio.to_thread(
+                        subprocess.run, ["open", "-g", "-j", "-a", "Contacts"],
+                        capture_output=True, timeout=10,
+                    )
+                    await asyncio.sleep(1.5)
+                    r = await _query()
+                except Exception as e2:
+                    print(f"[OsControl] résolution contact « {query} » échouée : {e2}")
+                    return {}
+            else:
+                print(f"[OsControl] résolution contact « {query} » échouée : {e}")
+                return {}
+        if not r or r.strip() == "NONE":
+            return {}
+        display_name, _, rest = r.partition("||")
+        phones = [re.sub(r"[\s().\-]", "", p) for p in re.findall(r"PHONE:([^;]+)", rest)]
+        emails = [e.strip() for e in re.findall(r"EMAIL:([^;]+)", rest)]
+        return {"name": display_name.strip(), "phones": phones, "emails": emails}
+
+    @staticmethod
+    def _best_handle(contact: dict) -> str:
+        """Meilleur identifiant joignable d'un contact résolu (numéro > email)."""
+        if not contact:
+            return ""
+        if contact.get("phones"):
+            return contact["phones"][0]
+        if contact.get("emails"):
+            return contact["emails"][0]
+        return ""
+
     async def _send_imessage_applescript(self, recipient: str, body: str) -> bool:
         """Envoi direct et fiable via l'API AppleScript de Messages (numéro/email).
         Retourne True si l'envoi a réussi."""
@@ -728,7 +853,18 @@ end tell'''
                 return f"Message envoyé à {recipient} via Messages."
             # sinon on retombe sur le chemin UI ci-dessous
 
-        # 2. Destinataire = nom (ou AppleScript indispo) → nouvelle conversation par l'UI.
+        # 1bis. Destinataire = NOM → résolution via Contacts.app, puis envoi direct.
+        if recipient and not self._looks_like_phone_or_email(recipient):
+            contact = await self._resolve_contact(recipient)
+            handle = self._best_handle(contact)
+            if handle:
+                if await self._send_imessage_applescript(handle, body):
+                    return f"Message envoyé à {contact['name']} ({handle}) via Messages."
+                # AppleScript a échoué → chemin UI avec le handle résolu
+                recipient = handle
+            # contact introuvable → on tente quand même le chemin UI avec le nom brut
+
+        # 2. Fallback UI : nouvelle conversation par l'interface.
         await self._open_app_local("Messages")
         await asyncio.sleep(1.0)
         await self._press_hotkey_local("cmd+n")   # nouvelle conversation
@@ -1020,6 +1156,11 @@ end tell'''
                 await asyncio.sleep(0.3)
                 return r
 
+            elif action == "open_app" and text:
+                ok, real = await self._open_app_local(text)
+                await asyncio.sleep(0.8)
+                return f"open_app '{text}' → {real} ({'ok' if ok else 'échec'})"
+
             elif action == "get_ui_elements":
                 return await self._get_ui_elements()
 
@@ -1206,20 +1347,33 @@ end tell'''
                     return f"Safari ouvert sur {url}."
             return None  # Navigation avec sous-action → vision loop
 
-        # Appel FaceTime / téléphone vers un NUMÉRO via schéma d'URL (fiable)
+        # Appel FaceTime / téléphone via schéma d'URL (fiable)
         if re.search(r"\b(appelle?|appeler|téléphone|telephone|call|facetime)\b", tl):
+            audio = bool(re.search(r"\b(audio|vocal|téléphon|telephon)", tl))
+            scheme = "facetime-audio" if audio else "facetime"
             num_m = re.search(r"(\+?\d[\d\s().\-]{5,}\d)", t)
+            target = None
+            label = ""
             if num_m:
-                number = re.sub(r"[\s().\-]", "", num_m.group(1))
-                audio = bool(re.search(r"\b(audio|vocal|téléphon|telephon)", tl))
-                scheme = "facetime-audio" if audio else "facetime"
+                target = re.sub(r"[\s().\-]", "", num_m.group(1))
+                label = target
+            else:
+                # Appel vers un NOM → résolution via Contacts.app
+                name = self._extract_recipient(t) or re.sub(
+                    r"^.*?\b(?:appelle?|appeler|téléphone|telephone|call|facetime)\b\s*",
+                    "", t, flags=re.IGNORECASE,
+                ).strip(" .'\"«»")
+                if name:
+                    contact = await self._resolve_contact(name)
+                    target = self._best_handle(contact)
+                    label = f"{contact.get('name', name)} ({target})" if target else ""
+            if target:
                 await asyncio.to_thread(
-                    subprocess.run, ["open", f"{scheme}://{number}"],
+                    subprocess.run, ["open", f"{scheme}://{target}"],
                     capture_output=True, timeout=10,
                 )
-                return f"Appel {'audio ' if audio else ''}FaceTime lancé vers {number}."
-            # Appel vers un NOM → nécessite la résolution du contact → vision loop
-            return None
+                return f"Appel {'audio ' if audio else ''}FaceTime lancé vers {label}."
+            return f"Contact introuvable pour l'appel. Précise un numéro ou vérifie le nom dans Contacts."
 
         # Volume
         if re.search(r"(mute|coupe?\s+le\s+son|silence|sourdine)", tl):
