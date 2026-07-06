@@ -155,6 +155,22 @@ COMMON PATTERNS:
   Open URL       : run_shell "open -a 'Safari' 'https://...'"
   Instagram DM   : the chat input is typically at the bottom center of the screen
 
+LOGIN / SIGNUP FORMS:
+  When a page asks to log in or sign up, complete the form yourself:
+  1. If credentials are given in the task, use them: click the email/username
+     field → type it → click the password field (or hotkey "tab") → type the
+     password → click the submit button (login/"Se connecter"/"Sign in") or
+     hotkey "return".
+  2. In Safari, saved logins auto-suggest: after clicking the username field, a
+     Safari AutoFill suggestion may appear — click it to fill both fields, then
+     submit. Prefer this when no explicit credentials are provided.
+  3. For signup, fill each field in order (email, password, confirm password,
+     name…) then click the create-account button.
+  4. Handle cookie banners first (click "Accept"/"Tout accepter") if they block
+     the form.
+  NEVER invent credentials. If none are provided and AutoFill shows nothing,
+  stop and report that credentials are required.
+
 OUTPUT: ONLY a valid JSON array (no markdown, no explanation):
 [
   {"action": "ACTION", "x": N, "y": N, "text": "...", "reason": "brief description"},
