@@ -127,6 +127,34 @@ class MemoryManager:
             print(f"[MEMORY] search_memory error: {e}")
             return []
 
+    def recent_conversations(self, n: int = 6) -> list[str]:
+        """Les n échanges les plus récents, du plus ancien au plus récent.
+
+        Rejeu temporel (et non sémantique) : c'est la matière première de la
+        consolidation au repos — cf. backend/idle_mind.py.
+        """
+        try:
+            count = self.conversations.count()
+            if count == 0:
+                return []
+            # Chroma ne trie pas : on récupère un lot puis on trie par timestamp.
+            batch = self.conversations.get(
+                limit=min(count, max(n * 10, 50)),
+                include=["documents", "metadatas"],
+            )
+            docs = batch.get("documents") or []
+            metas = batch.get("metadatas") or []
+            paired = [
+                ((meta or {}).get("timestamp", ""), doc)
+                for doc, meta in zip(docs, metas)
+                if doc
+            ]
+            paired.sort(key=lambda item: item[0])
+            return [doc for _, doc in paired[-n:]]
+        except Exception as e:
+            print(f"[MEMORY] recent_conversations error: {e}")
+            return []
+
     # ─── ENTITÉS ────────────────────────────────────────────────────────────
 
     def update_entity(self, name: str, info: str):

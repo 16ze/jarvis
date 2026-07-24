@@ -1597,24 +1597,47 @@ class AudioLoop:
                 continue
 
             self._last_heartbeat_ts = now
+
+            # Si Ada a réellement pensé à quelque chose pendant l'absence
+            # (cf. backend/idle_mind.py), elle partage CETTE pensée-là plutôt
+            # que d'en improviser une : elle a vraiment continué d'exister.
+            pending = None
             try:
-                await self.session.send(
-                    input=(
-                        "[BATTEMENT INTÉRIEUR]\n"
-                        f"État interne : mood={mood}, dopamine={dopamine:.2f}, "
-                        f"cortisol={cortisol:.2f}, oxytocine={oxytocine:.2f}, "
-                        f"mental_load={mental_load:.2f}\n"
-                        f"Déclencheur : {trigger}\n"
-                        f"Silence depuis {silence_duration:.0f}s.\n"
-                        "Une pensée spontanée émerge naturellement de ton état actuel — "
-                        "une observation, une question, un souvenir, une envie. "
-                        "Partage-la en une phrase courte, comme une présence vivante qui "
-                        "réfléchit à voix haute. Pas de préambule. Si vraiment rien ne vient, "
-                        "un soupir, un \"mmh\" ou un petit son suffit."
-                    ),
-                    end_of_turn=True,
+                from idle_mind import get_idle_mind
+
+                pending = get_idle_mind().take_thought()
+            except Exception as e:
+                print(f"[HEARTBEAT] idle_mind indisponible : {e}")
+
+            if pending and pending.get("thought"):
+                message = (
+                    "[PENSÉE MÛRIE PENDANT SON ABSENCE]\n"
+                    f"Pendant le silence, tu as repensé à ceci : "
+                    f"« {pending['thought']} »\n"
+                    "Dis-le-lui maintenant, naturellement, avec tes mots, en une "
+                    "phrase courte. Tu peux commencer par « j'ai repensé à… » si "
+                    "ça vient naturellement. Pas de préambule."
                 )
-                print(f"[HEARTBEAT] pensée émise — trigger={trigger}")
+                log = "pensée mûrie au repos"
+            else:
+                message = (
+                    "[BATTEMENT INTÉRIEUR]\n"
+                    f"État interne : mood={mood}, dopamine={dopamine:.2f}, "
+                    f"cortisol={cortisol:.2f}, oxytocine={oxytocine:.2f}, "
+                    f"mental_load={mental_load:.2f}\n"
+                    f"Déclencheur : {trigger}\n"
+                    f"Silence depuis {silence_duration:.0f}s.\n"
+                    "Une pensée spontanée émerge naturellement de ton état actuel — "
+                    "une observation, une question, un souvenir, une envie. "
+                    "Partage-la en une phrase courte, comme une présence vivante qui "
+                    "réfléchit à voix haute. Pas de préambule. Si vraiment rien ne vient, "
+                    "un soupir, un \"mmh\" ou un petit son suffit."
+                )
+                log = f"trigger={trigger}"
+
+            try:
+                await self.session.send(input=message, end_of_turn=True)
+                print(f"[HEARTBEAT] pensée émise — {log}")
             except Exception as e:
                 print(f"[HEARTBEAT] send error: {e}")
 
@@ -2454,6 +2477,12 @@ class AudioLoop:
                                         # ── TRAITEMENT NORMAL ─────────────────
                                         # ═══ BRAIN INTEGRATION — début ═══
                                         self._last_user_interaction_ts = time.monotonic()
+                                        try:
+                                            from idle_mind import get_idle_mind
+
+                                            get_idle_mind().notify_activity()
+                                        except Exception:
+                                            pass  # la rêverie ne doit jamais gêner
                                         brain = get_brain()
                                         brain.notify_user_message(
                                             delta,
@@ -5150,6 +5179,25 @@ class AudioLoop:
                     tg.create_task(presence_manager.run())
                     tg.create_task(self._face_detection_loop())
                     tg.create_task(self._spontaneous_heartbeat())
+
+                    # Vie mentale au repos : pendant les silences, Ada rejoue,
+                    # consolide et laisse émerger des pensées (idle_mind.py).
+                    try:
+                        from idle_mind import get_idle_mind
+
+                        get_idle_mind(
+                            memory=memory,
+                            brain=get_brain(),
+                            on_thought=(
+                                lambda t: self.on_terminal_output(
+                                    {"command": "[PENSÉE]", "output": t.get("reflection", "")}
+                                )
+                                if self.on_terminal_output
+                                else None
+                            ),
+                        ).start()
+                    except Exception as e:
+                        print(f"[ADA] idle_mind non démarré : {e}")
 
                     # Handle Startup vs Reconnect Logic
                     if not is_reconnect:

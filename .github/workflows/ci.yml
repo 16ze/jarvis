@@ -25,9 +25,17 @@ jobs:
       - name: Compilation (py_compile)
         run: python -m compileall -q backend
 
-      # Tests sans dépendances lourdes : politique shell + cohérence des outils.
-      - name: Tests légers (safe_exec + cohérence outils)
-        run: python -m pytest tests/test_safe_exec.py tests/test_tool_consistency.py -q
+      # Tests sans dépendances lourdes : politique shell, cohérence des outils,
+      # et les sous-systèmes cognitifs (persistance, mémoire émotionnelle, repos).
+      - name: Tests légers (shell, outils, brain)
+        run: |
+          python -m pytest \
+            tests/test_safe_exec.py \
+            tests/test_tool_consistency.py \
+            tests/test_emotional_memory.py \
+            tests/test_idle_mind.py \
+            brain/tests/test_persistence.py \
+            -q
 
   frontend:
     name: Frontend — build
