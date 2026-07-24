@@ -5,6 +5,7 @@ import {
     ArrowLeft,
     BookmarkPlus,
     ChevronLeft,
+    ExternalLink,
     FileText,
     Folder,
     Globe,
@@ -571,12 +572,60 @@ const SearchTabContent = ({
 
 const PageTabContent = ({ tab, onTitleChange, onUrlChange, onSaveAsNote }) => {
     const [currentUrl, setCurrentUrl] = useState(tab.url);
+    const [loading, setLoading] = useState(true);
+    const [failed, setFailed] = useState(null);   // message d'échec → repli externe
+    const [canGoBack, setCanGoBack] = useState(false);
+    const webviewRef = useRef(null);
+
+    // Le <webview> Electron n'existe que dans l'app packagée : hors Electron
+    // (mode web), on garde le repli « ouvrir à l'extérieur ».
+    const canEmbed = Boolean(electronBridge.ipcRenderer);
 
     useEffect(() => {
         setCurrentUrl(tab.url);
         onUrlChange(tab.url);
         onTitleChange(tab.title || extractDomain(tab.url));
     }, [onTitleChange, onUrlChange, tab.title, tab.url]);
+
+    // Branchement des événements du navigateur intégré.
+    useEffect(() => {
+        const view = webviewRef.current;
+        if (!view || !canEmbed) return undefined;
+
+        const onStart = () => { setLoading(true); setFailed(null); };
+        const onStop = () => {
+            setLoading(false);
+            try {
+                const url = view.getURL?.();
+                if (url) { setCurrentUrl(url); onUrlChange(url); }
+                setCanGoBack(Boolean(view.canGoBack?.()));
+            } catch { /* webview pas encore prêt */ }
+        };
+        const onTitle = (e) => { if (e?.title) onTitleChange(e.title); };
+        const onFail = (e) => {
+            // -3 = ERR_ABORTED (navigation annulée) : sans gravité.
+            if (e?.errorCode === -3) return;
+            setLoading(false);
+            setFailed(e?.errorDescription || 'Chargement impossible');
+        };
+
+        view.addEventListener('did-start-loading', onStart);
+        view.addEventListener('did-stop-loading', onStop);
+        view.addEventListener('page-title-updated', onTitle);
+        view.addEventListener('did-fail-load', onFail);
+        return () => {
+            view.removeEventListener('did-start-loading', onStart);
+            view.removeEventListener('did-stop-loading', onStop);
+            view.removeEventListener('page-title-updated', onTitle);
+            view.removeEventListener('did-fail-load', onFail);
+        };
+    }, [canEmbed, onTitleChange, onUrlChange]);
+
+    const goBack = () => { try { webviewRef.current?.goBack(); } catch { /* ignore */ } };
+    const reload = () => {
+        setFailed(null);
+        try { webviewRef.current?.reload(); } catch { /* ignore */ }
+    };
 
     const openExternal = () => {
         electronBridge.ipcRenderer?.send('ada-search-open-external', { url: currentUrl || tab.initialUrl });
@@ -587,26 +636,37 @@ const PageTabContent = ({ tab, onTitleChange, onUrlChange, onSaveAsNote }) => {
             <div className="flex items-center gap-2 border-b border-white/60 bg-white/55 px-3 py-2">
                 <button
                     type="button"
-                    className="grid h-8 w-8 place-items-center rounded-md text-slate-400"
+                    onClick={goBack}
+                    className="grid h-8 w-8 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100 disabled:text-slate-300 disabled:hover:bg-transparent"
                     title="Retour"
                     aria-label="Retour"
-                    disabled
+                    disabled={!canEmbed || !canGoBack}
                 >
                     <ChevronLeft size={16} />
                 </button>
                 <button
                     type="button"
-                    disabled
-                    className="grid h-8 w-8 place-items-center rounded-md text-slate-400"
+                    onClick={reload}
+                    disabled={!canEmbed}
+                    className="grid h-8 w-8 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100 disabled:text-slate-300 disabled:hover:bg-transparent"
                     title="Recharger"
                     aria-label="Recharger"
                 >
-                    <RotateCw size={15} />
+                    <RotateCw size={15} className={loading && canEmbed ? 'animate-spin' : ''} />
                 </button>
                 <div className="flex h-8 min-w-0 flex-1 items-center gap-2 truncate rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-600">
                     <Globe size={13} className="shrink-0 text-slate-400" />
                     <span className="truncate">{currentUrl}</span>
                 </div>
+                <button
+                    type="button"
+                    onClick={openExternal}
+                    className="grid h-8 w-8 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100"
+                    title="Ouvrir dans le navigateur système"
+                    aria-label="Ouvrir dans le navigateur système"
+                >
+                    <ExternalLink size={14} />
+                </button>
                 <button
                     type="button"
                     onClick={onSaveAsNote}
@@ -617,24 +677,52 @@ const PageTabContent = ({ tab, onTitleChange, onUrlChange, onSaveAsNote }) => {
                     Note
                 </button>
             </div>
-            <div className="grid min-h-0 flex-1 place-items-center bg-white px-6 text-center">
-                <div className="max-w-md">
-                    <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full border border-blue-100 bg-blue-50 text-blue-600">
-                        <Globe size={24} />
+            <div className="relative min-h-0 flex-1 bg-white">
+                {canEmbed && !failed ? (
+                    // Navigateur intégré. Le contenu distant tourne sans Node,
+                    // en sandbox et dans une session isolée (cf. electron/main.js).
+                    <webview
+                        ref={webviewRef}
+                        src={tab.url}
+                        className="h-full w-full"
+                        partition="persist:ada-browser"
+                        allowpopups="false"
+                    />
+                ) : (
+                    <div className="grid h-full place-items-center px-6 text-center">
+                        <div className="max-w-md">
+                            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full border border-blue-100 bg-blue-50 text-blue-600">
+                                <Globe size={24} />
+                            </div>
+                            <div className="text-base font-semibold text-[#10294d]">
+                                {failed ? 'Page non affichable ici' : 'Navigation externe'}
+                            </div>
+                            <p className="mt-2 text-sm leading-6 text-slate-600">
+                                {failed
+                                    ? `${failed}. Certains sites refusent l’affichage intégré — ouvre-la dans ton navigateur.`
+                                    : 'Le navigateur intégré n’est disponible que dans l’application Ada.'}
+                            </p>
+                            <div className="mt-5 flex items-center justify-center gap-2">
+                                {failed && (
+                                    <button
+                                        type="button"
+                                        onClick={reload}
+                                        className="rounded-md border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+                                    >
+                                        Réessayer
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={openExternal}
+                                    className="rounded-md bg-[#10294d] px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-900"
+                                >
+                                    Ouvrir la page
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    <div className="text-base font-semibold text-[#10294d]">Navigation externe requise</div>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
-                        Le navigateur intégré Electron fait planter Ada sur cette configuration. La page est conservée ici,
-                        mais l’ouverture se fait dans le navigateur système.
-                    </p>
-                    <button
-                        type="button"
-                        onClick={openExternal}
-                        className="mt-5 rounded-md bg-[#10294d] px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-900"
-                    >
-                        Ouvrir la page
-                    </button>
-                </div>
+                )}
             </div>
         </div>
     );

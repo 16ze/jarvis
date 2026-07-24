@@ -69,7 +69,11 @@ function createWindow() {
             nodeIntegration: true,
             contextIsolation: false, // For simple IPC/Socket.IO usage
             backgroundThrottling: false,
-            webviewTag: false,
+            // Navigateur intégré du Workspace. Le <webview> lui-même tourne
+            // SANS intégration Node et dans une session isolée (voir
+            // will-attach-webview ci-dessous) : le contenu web distant n'a
+            // aucun accès aux API privilégiées de l'app.
+            webviewTag: true,
         },
         backgroundColor: '#000000',
         frame: false, // Frameless for custom UI
@@ -109,6 +113,22 @@ function createWindow() {
     };
 
     loadFrontend();
+
+    // ── Sécurité du navigateur intégré ────────────────────────────────────────
+    // Le <webview> affiche du web arbitraire : on lui retire tout privilège
+    // avant même son attachement. Sans ça, activer webviewTag serait dangereux
+    // dans une fenêtre qui tourne en nodeIntegration.
+    mainWindow.webContents.on('will-attach-webview', (_event, webPreferences, params) => {
+        delete webPreferences.preload;
+        webPreferences.nodeIntegration = false;
+        webPreferences.nodeIntegrationInSubFrames = false;
+        webPreferences.contextIsolation = true;
+        webPreferences.sandbox = true;
+        webPreferences.webSecurity = true;
+        // Session dédiée : les cookies du web n'atteignent pas ceux de l'app.
+        params.partition = 'persist:ada-browser';
+        params.allowpopups = false;
+    });
 
     mainWindow.on('closed', () => {
         mainWindow = null;
