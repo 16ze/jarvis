@@ -2504,6 +2504,9 @@ class AudioLoop:
                                                             "sender"
                                                         ]
                                                     },
+                                                    # Marque le souvenir de sa charge
+                                                    # affective (consolidation).
+                                                    emotional_state=get_brain().get_affect_snapshot(),
                                                 )
                                             # Start new
                                             self.chat_buffer = {
@@ -2563,6 +2566,9 @@ class AudioLoop:
                                                             "sender"
                                                         ]
                                                     },
+                                                    # Marque le souvenir de sa charge
+                                                    # affective (consolidation).
+                                                    emotional_state=get_brain().get_affect_snapshot(),
                                                 )
                                             # Start new
                                             self.chat_buffer = {
@@ -3555,7 +3561,11 @@ class AudioLoop:
                                     elif fc.name == "search_memory":
                                         query = fc.args.get("query", "")
                                         print(f"[MEMORY] search_memory: '{query}'")
-                                        results = memory.search_memory(query)
+                                        # Rappel congruent à l'humeur courante.
+                                        results = memory.search_memory(
+                                            query,
+                                            emotional_state=get_brain().get_affect_snapshot(),
+                                        )
                                         if results:
                                             result_str = "\n".join(
                                                 f"[{r['timestamp']}] {r['content']}"
@@ -5646,7 +5656,11 @@ class AudioLoop:
                     return f"PC task erreur : {e}"
             # ── MÉMOIRE ───────────────────────────────────────────────────────
             elif name == "search_memory":
-                results = memory.search_memory(args.get("query", ""))
+                # Rappel congruent à l'humeur : l'état courant pondère la remontée.
+                results = memory.search_memory(
+                    args.get("query", ""),
+                    emotional_state=get_brain().get_affect_snapshot(),
+                )
                 if results:
                     return _truncate_tool_response(
                         "\n".join(f"[{r['timestamp']}] {r['content']}" for r in results)

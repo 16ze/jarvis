@@ -12,6 +12,8 @@ import chromadb
 from datetime import datetime
 from pathlib import Path
 
+import emotional_memory
+
 MEMORY_DIR = Path(__file__).parent / "memory"
 DOCUMENTS_DIR = MEMORY_DIR / "documents"  # Fichiers originaux conservés
 
@@ -57,12 +59,24 @@ class MemoryManager:
 
     # ─── CONVERSATIONS ───────────────────────────────────────────────────────
 
-    def save_conversation(self, content: str, metadata: dict | None = None):
-        """Sauvegarde un échange ou une info importante dans la mémoire vectorielle."""
+    def save_conversation(
+        self,
+        content: str,
+        metadata: dict | None = None,
+        emotional_state: dict | None = None,
+    ):
+        """Sauvegarde un échange dans la mémoire vectorielle.
+
+        `emotional_state` (snapshot du brain) marque le souvenir de sa charge
+        affective : c'est ce qui décidera plus tard de sa saillance au rappel
+        (consolidation émotionnelle — cf. backend/emotional_memory.py).
+        """
         if not content.strip():
             return
         doc_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
         meta = {"timestamp": datetime.now().isoformat(), "type": "conversation"}
+        if emotional_state:
+            meta.update(emotional_memory.encode_metadata(emotional_state))
         if metadata:
             meta.update(metadata)
         try:
@@ -70,19 +84,44 @@ class MemoryManager:
         except Exception as e:
             print(f"[MEMORY] save_conversation error: {e}")
 
-    def search_memory(self, query: str, n_results: int = 5) -> list[dict]:
-        """Recherche sémantique dans les conversations passées."""
+    def search_memory(
+        self,
+        query: str,
+        n_results: int = 5,
+        emotional_state: dict | None = None,
+    ) -> list[dict]:
+        """Recherche dans les conversations passées.
+
+        Avec `emotional_state`, le rappel devient congruent à l'humeur : à
+        requête égale, Ada ne remonte pas tout à fait les mêmes souvenirs selon
+        son état — les souvenirs marquants et affectivement proches ressortent.
+        Sans état fourni, le comportement reste purement sémantique.
+        """
         try:
             count = self.conversations.count()
             if count == 0:
                 return []
+
+            # On élargit le filet quand un état affectif doit reclasser.
+            fetch = min(count, n_results * 3 if emotional_state else n_results)
             results = self.conversations.query(
                 query_texts=[query],
-                n_results=min(n_results, count)
+                n_results=fetch,
+                include=["documents", "metadatas", "distances"],
+            )
+            docs = results.get("documents", [[]])[0]
+            metas = results.get("metadatas", [[]])[0]
+            dists = (results.get("distances") or [[]])[0]
+
+            ranked = emotional_memory.rerank(
+                docs, metas, dists, emotional_state, n_results
             )
             return [
-                {"content": doc, "timestamp": meta.get("timestamp", "")[:16]}
-                for doc, meta in zip(results["documents"][0], results["metadatas"][0])
+                {
+                    "content": item["content"],
+                    "timestamp": (item["metadata"] or {}).get("timestamp", "")[:16],
+                }
+                for item in ranked
             ]
         except Exception as e:
             print(f"[MEMORY] search_memory error: {e}")

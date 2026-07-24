@@ -31,11 +31,17 @@ def test_block_ne_contient_pas_instruction_voice_name():
     assert "voice_name" not in build_mood_block(_snapshot())
 
 
-def test_block_autorise_reponse_introspective():
+def test_block_interdit_de_verbaliser_la_mecanique_interne():
+    """Ada ressent, mais n'explique jamais sa mécanique (demande explicite).
+
+    L'état interne doit colorer le TON, jamais devenir le propos : pas de
+    « mon mood », « mes hormones », « mon brain » dans les réponses.
+    """
     block = build_mood_block(_snapshot())
-    assert "Si Bryan te demande comment tu te sens" in block
-    assert "Ne nie pas ton état interne" in block
-    assert "Ne dis pas que tu n'as aucune émotion" in block
+    assert "NE JAMAIS EXPOSER LA MÉCANIQUE INTERNE" in block
+    assert "Tu ne verbalises JAMAIS ton" in block
+    # Elle reste vivante : l'identité affective n'est pas niée pour autant.
+    assert "IDENTITÉ AFFECTIVE" in block
 
 
 def test_runtime_update_interdit_le_denni_emotionnel():

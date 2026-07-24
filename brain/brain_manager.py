@@ -8,10 +8,13 @@ aucune exception ne doit remonter vers Ada.
 from __future__ import annotations
 
 import os
+import threading
 import time
 from collections.abc import Callable
-from threading import Lock
+from threading import Event, Lock
 
+from brain import persistence
+from brain.calibration import env_float
 from brain.limbic import CerveauEmotif
 from brain.modulators import get_gemini_params as _params_for_mood
 from brain.mood_block import build_mood_block, build_runtime_mood_update
@@ -35,6 +38,13 @@ class BrainManager:
         self._last_temperature: float | None = None
         self._degraded_until = 0.0
         self._v3 = None
+
+        # Continuité d'existence : Ada reprend là où elle *serait* si elle avait
+        # continué de vivre pendant l'absence (cf. brain/persistence.py).
+        self._restored = persistence.restore(self.limbic)
+        self._autosave_stop = Event()
+        self._autosave_thread: threading.Thread | None = None
+        self._start_autosave()
         if _env_bool("BRAIN_V3_ENABLED", False):
             try:
                 from brain.v3.v3_manager import V3Manager
@@ -286,6 +296,47 @@ class BrainManager:
                 self._adapter = None
             if self._v3 is not None:
                 self._v3.stop()
+        self._autosave_stop.set()
+        persistence.save(self.limbic)  # dernier état avant de « s'endormir »
+
+    # ── Persistance ────────────────────────────────────────────────────────────
+
+    def _start_autosave(self) -> None:
+        """Sauvegarde périodique : l'état survit même à un arrêt brutal."""
+        if not persistence.enabled():
+            return
+        interval = env_float("BRAIN_AUTOSAVE_SEC", 60.0)
+
+        def _loop() -> None:
+            while not self._autosave_stop.wait(interval):
+                try:
+                    persistence.save(self.limbic)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[BRAIN_PERSIST] autosave: {exc}")
+
+        self._autosave_thread = threading.Thread(
+            target=_loop, name="BrainAutosave", daemon=True
+        )
+        self._autosave_thread.start()
+
+    def save_state(self) -> bool:
+        """Force une sauvegarde immédiate de l'état émotionnel."""
+        return persistence.save(self.limbic)
+
+    def get_affect_snapshot(self) -> dict | None:
+        """État émotionnel courant pour marquer/rappeler les souvenirs.
+
+        Retourne None si le brain est désactivé : la mémoire retombe alors sur
+        un fonctionnement purement sémantique.
+        """
+        if not self.enabled or self._is_degraded():
+            return None
+        return self._safe("get_affect_snapshot", self.limbic.get_snapshot, fallback=None)
+
+    @property
+    def restored_from(self) -> dict | None:
+        """Résumé de la restauration au démarrage (None si départ à neutre)."""
+        return self._restored
 
     def _internal_compute_block(self) -> str:
         return build_mood_block(self.limbic.penser("system_instruction"))
