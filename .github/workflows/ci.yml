@@ -35,6 +35,7 @@ jobs:
             tests/test_emotional_memory.py \
             tests/test_idle_mind.py \
             brain/tests/test_persistence.py \
+            brain/tests/test_expectations.py \
             -q
 
   frontend:

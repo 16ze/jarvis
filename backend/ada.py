@@ -1649,6 +1649,13 @@ class AudioLoop:
         presence = bool(detections)
         confidence = max((float(d.get("confidence", 0.0)) for d in detections), default=0.0)
         movement = float(getattr(detector, "last_motion", 0.0) or 0.0)
+
+        # Codage prédictif : Ada compare cette présence à ce qu'elle attendait
+        # à cette heure. Un écart marquant devient une émotion AVEC une cause.
+        try:
+            get_brain().notify_presence(presence)
+        except Exception as e:
+            print(f"[ADA] notify_presence: {e}")
         person = str(detections[0].get("user", "unknown")).strip() if detections else "personne"
         emotion = str(detections[0].get("human_emotion", "unknown")).strip().lower() if detections else "unknown"
         emotion_confidence = float(detections[0].get("emotion_confidence", 0.0) or 0.0) if detections else 0.0

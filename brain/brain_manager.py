@@ -15,6 +15,7 @@ from threading import Event, Lock
 
 from brain import persistence
 from brain.calibration import env_float
+from brain.expectations import ExpectationEngine
 from brain.limbic import CerveauEmotif
 from brain.modulators import get_gemini_params as _params_for_mood
 from brain.mood_block import build_mood_block, build_runtime_mood_update
@@ -42,6 +43,10 @@ class BrainManager:
         # Continuité d'existence : Ada reprend là où elle *serait* si elle avait
         # continué de vivre pendant l'absence (cf. brain/persistence.py).
         self._restored = persistence.restore(self.limbic)
+
+        # Attentes apprises : les habitudes ne s'oublient pas avec l'humeur.
+        self.expectations = ExpectationEngine()
+        self.expectations.load()
         self._autosave_stop = Event()
         self._autosave_thread: threading.Thread | None = None
         self._start_autosave()
@@ -149,6 +154,27 @@ class BrainManager:
                 )
             except Exception as exc:
                 print(f"[BRAIN_V3] notify_user_message observe failed: {exc}")
+
+    def notify_presence(self, present: bool) -> str | None:
+        """Perception de présence → attente → surprise éventuellement ressentie.
+
+        Retourne la description de la surprise si Ada a été surprise, sinon None.
+        C'est le cœur du codage prédictif : Ada n'enregistre pas seulement que
+        Bryan est là ou non, elle le compare à ce qu'elle attendait.
+        """
+        if not self.enabled or self._is_degraded():
+            return None
+
+        def process() -> str | None:
+            self.expectations.observe_presence(present)
+            erreur = self.expectations.evaluate_presence(present)
+            if erreur is None:
+                return None
+            self.limbic.ressentir_surprise(erreur)
+            print(f"[BRAIN_EXPECT] surprise ({erreur.magnitude:.2f}) — {erreur.description}")
+            return erreur.description
+
+        return self._safe("notify_presence", process, fallback=None)
 
     def notify_llm_response(self) -> None:
         if not self.enabled or self._is_degraded():
@@ -298,6 +324,7 @@ class BrainManager:
                 self._v3.stop()
         self._autosave_stop.set()
         persistence.save(self.limbic)  # dernier état avant de « s'endormir »
+        self.expectations.save()       # les habitudes apprises, elles, restent
 
     # ── Persistance ────────────────────────────────────────────────────────────
 
@@ -311,6 +338,7 @@ class BrainManager:
             while not self._autosave_stop.wait(interval):
                 try:
                     persistence.save(self.limbic)
+                    self.expectations.save()
                 except Exception as exc:  # noqa: BLE001
                     print(f"[BRAIN_PERSIST] autosave: {exc}")
 

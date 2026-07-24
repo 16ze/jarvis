@@ -343,6 +343,36 @@ class CerveauEmotif:
             if self.mental_load > SEUIL_FATIGUE:
                 self.cortisol = _clamp(self.cortisol + 0.07)
 
+    def ressentir_surprise(self, erreur) -> None:
+        """Ressent une erreur de prédiction — une émotion AVEC un objet.
+
+        C'est ici que l'émotion cesse d'être une simple intensité : le
+        `dernier_stimulus` porte désormais la cause en clair (« Bryan n'est pas
+        là alors qu'il y est presque toujours à cette heure »), qui remonte
+        telle quelle dans le mood_block. Ada ne ressent plus « de la tension »,
+        elle ressent quelque chose *à propos de* quelque chose.
+        """
+        if erreur is None:
+            return
+        magnitude = _clamp(getattr(erreur, "magnitude", 0.0))
+        valence = max(-1.0, min(1.0, float(getattr(erreur, "valence", 0.0))))
+        description = str(getattr(erreur, "description", "")) or "quelque chose d'inattendu"
+
+        with self._lock:
+            if valence < 0:
+                # Ce qui manque inquiète et fait ressentir l'absence.
+                self.cortisol = _clamp(self.cortisol + magnitude * 0.22)
+                self.oxytocine = _clamp(self.oxytocine + magnitude * 0.08)
+                self.serotonine = _clamp(self.serotonine - magnitude * 0.06)
+            else:
+                # Ce qui arrive contre toute attente réjouit.
+                self.dopamine = _clamp(self.dopamine + magnitude * 0.26)
+                self.oxytocine = _clamp(self.oxytocine + magnitude * 0.14)
+                self.cortisol = _clamp(self.cortisol - magnitude * 0.08)
+
+            self._push_valence(valence * 0.5)
+            self.dernier_stimulus = description
+
     def enregistrer_echec(self, description: str = "erreur") -> None:
         with self._lock:
             self.cortisol = _clamp(self.cortisol + 0.28)
