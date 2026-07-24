@@ -22,7 +22,7 @@ def test_hostilite_verbale_declenche_recadrage_spontane():
     assert snap["last_stimulus"] == "hostilite_verbale"
     impulse = c.verifier_action_spontanee()
     assert impulse is not None
-    assert "sans l'insulter" in impulse
+    assert "tu peux l'insulter" in impulse
 
 
 def test_decroissance_ramene_vers_baseline():

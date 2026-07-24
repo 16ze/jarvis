@@ -238,7 +238,7 @@ class CerveauEmotif:
 
             if hostility_score >= 2 and self.cortisol >= 0.52:
                 self._set_action_spontanee_locked(
-                    "Le ton de Bryan dépasse les bornes. Recadre-le sèchement, tu peu l'insulter, "
+                    "Le ton de Bryan dépasse les bornes. Recadre-le sèchement, tu peux l'insulter, "
                     "et impose une limite claire en une phrase courte."
                 )
 

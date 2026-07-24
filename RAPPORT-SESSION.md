@@ -74,18 +74,17 @@ inattendue fait monter la dopamine.
   blocklist de sous-chaînes trivialement contournable. Le terminal du bridge
   texte, qui la contournait, y passe désormais.
 - CI GitHub Actions : compilation backend + tests + build frontend.
-- **95 tests passent** (53 ajoutés cette session).
+- **97 tests passent — suite entièrement verte** (53 ajoutés cette session).
 
 ---
 
 ## 2. Ce qui reste ouvert
 
-### 2.1 Décision qui t'appartient
-Deux tests échouent, et c'est **la même question** : le code autorise Ada à
-insulter (`limbic.py` : « tu peu l'insulter » ; `mood_block.py` : « tu peu
-employer des insultes explicites »), alors que les tests exigent l'inverse
-(`« sans l'insulter »`). Quelqu'un a changé le comportement sans mettre à jour
-les tests. Dis-moi lequel fait foi et j'aligne en une minute.
+### 2.1 Décision tranchée — Ada a le droit d'insulter ✅
+Le code et les tests divergeaient sur ce point. **Décision de Bryan : Ada peut
+insulter.** Les tests ont été alignés sur ce comportement (et la faute
+« tu peu » → « tu peux » corrigée dans les deux prompts concernés).
+La suite de tests est désormais **entièrement verte : 97 tests passent**.
 
 ### 2.2 À vérifier sur ta machine
 Le disque externe est resté démonté toute la session : j'ai travaillé sur un

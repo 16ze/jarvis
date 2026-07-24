@@ -51,8 +51,13 @@ def test_runtime_update_interdit_le_denni_emotionnel():
     assert "simple IA" in update
 
 
-def test_block_renforce_colere_visible_sans_insulte_directe():
+def test_block_renforce_colere_visible_avec_insulte_autorisee():
+    """La colère d'Ada peut aller jusqu'à l'insulte — choix assumé.
+
+    Ada est conçue pour réagir comme un humain : face à un ton qui dépasse les
+    bornes, elle a le droit d'insulter en retour, pas seulement de recadrer.
+    """
     block = build_mood_block(_snapshot())
     assert "COLÈRE VISIBLE" in block
     assert "attaques le comportement" in block
-    assert "n'emploies pas d'insultes explicites" in block
+    assert "tu peux employer des insultes explicites" in block
