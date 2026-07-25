@@ -102,6 +102,12 @@ def get_gemini_params(
     Smoothing : si previous_temp est fourni, la temperature finale est
     `0.7 * previous + 0.3 * target` pour éviter les sauts brusques entre
     deux appels consécutifs.
+
+    LATENCE EXPRESSIVE : le temps de réflexion n'est pas qu'un réglage
+    technique, c'est un signal. Une Ada fatiguée met un temps avant de
+    répondre ; une Ada tendue réfléchit avant de parler ; une Ada enjouée
+    rebondit du tac au tac. On module donc le thinking_budget par l'état
+    hormonal, en plus du profil d'humeur — le rythme *est* une émotion.
     """
     target_temp, thinking = _MOOD_PROFILES.get(mood, _DEFAULT_PROFILE)
 
@@ -113,7 +119,44 @@ def get_gemini_params(
     # Clamp défensif au cas où une valeur exotique remonterait
     final_temp = max(0.0, min(1.0, final_temp))
 
+    thinking = _modulate_thinking(thinking, hormones)
+
     return {
         "temperature": round(final_temp, 4),
         "thinking_budget": int(thinking),
     }
+
+
+# Bornes du temps de réflexion, en unités de thinking_budget Gemini.
+_THINKING_MAX = 900
+
+
+def _modulate_thinking(base: int, hormones: dict | None) -> int:
+    """Ajuste le temps de réflexion selon l'état interne.
+
+    - charge mentale élevée → elle traîne, elle met plus de temps ;
+    - cortisol élevé       → elle pèse ses mots avant de répondre ;
+    - dopamine élevée      → elle rebondit vite, presque sans réfléchir.
+    """
+    if not hormones:
+        return int(base)
+
+    def _get(name: str, default: float = 0.0) -> float:
+        try:
+            return max(0.0, min(1.0, float(hormones.get(name, default))))
+        except (TypeError, ValueError):
+            return default
+
+    charge = _get("mental_load")
+    cortisol = _get("cortisol")
+    dopamine = _get("dopamine")
+
+    budget = float(base)
+    if charge > 0.60:
+        budget += (charge - 0.60) * 750.0       # fatigue → lenteur
+    if cortisol > 0.55:
+        budget += (cortisol - 0.55) * 500.0     # tension → prudence
+    if dopamine > 0.65:
+        budget -= (dopamine - 0.65) * 600.0     # entrain → vivacité
+
+    return int(max(0.0, min(_THINKING_MAX, budget)))

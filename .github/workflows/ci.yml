@@ -35,9 +35,11 @@ jobs:
             tests/test_emotional_memory.py \
             tests/test_idle_mind.py \
             tests/test_appraisal.py \
+            tests/test_planner.py \
             brain/tests/test_persistence.py \
             brain/tests/test_expectations.py \
             brain/tests/test_social_learning.py \
+            brain/tests/test_circadian.py \
             -q
 
   frontend:

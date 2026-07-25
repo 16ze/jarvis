@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable
 from threading import Event, Lock
 
-from brain import persistence
+from brain import circadian, persistence
 from brain.calibration import env_float
 from brain.expectations import ExpectationEngine
 from brain.limbic import CerveauEmotif
@@ -382,6 +382,8 @@ class BrainManager:
         def _loop() -> None:
             while not self._autosave_stop.wait(interval):
                 try:
+                    # Coloration circadienne : Ada n'est pas la même à 4 h et à 14 h.
+                    circadian.apply(self.limbic)
                     persistence.save(self.limbic)
                     self.expectations.save()
                     self.social.save()
