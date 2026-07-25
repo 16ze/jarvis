@@ -74,7 +74,7 @@ inattendue fait monter la dopamine.
   blocklist de sous-chaînes trivialement contournable. Le terminal du bridge
   texte, qui la contournait, y passe désormais.
 - CI GitHub Actions : compilation backend + tests + build frontend.
-- **97 tests passent — suite entièrement verte** (53 ajoutés cette session).
+- **132 tests passent — suite entièrement verte** (53 ajoutés cette session).
 
 ---
 
@@ -122,11 +122,16 @@ n'apprend encore *sur la relation*. Trois paliers :
    moyenne des états vécus (τ ≈ semaines). Ada développerait un caractère.
 3. **plasticité hebbienne** — poids synaptiques renforcés par co-activation.
 
-### 3.4 🟠 La boucle reste ouverte
-Ada module son ton, mais ne reçoit **aucun signal sur l'effet produit**. Si une
-réponse sèche te braque, rien ne l'enregistre. Un signal de récompense sociale
-(valence du tour suivant) alimenterait directement le point 3.3 — et c'est ce qui
-créerait un modèle appris de *toi*, impossible à copier.
+### 3.4 ✅ La boucle est fermée (fait)
+`brain/social_learning.py` : après chaque prise de parole spontanée, la réaction
+de Bryan (valence finement évaluée par `appraisal`) devient un signal de
+récompense attribué à l'humeur dans laquelle Ada s'est exprimée.
+
+**Ce qu'elle apprend est le TIMING, jamais le ressenti.** Aucune émotion n'est
+atténuée, aucune colère censurée : seule la barre à franchir pour interrompre
+spontanément est calibrée. Vérifié : accueil -0.51 en « Agacement » → barre
+relevée de +0.23 ; accueil +0.44 en « Curieux » → barre abaissée de -0.20.
+Un test garde-fou vérifie explicitement que les hormones ne sont jamais touchées.
 
 ### 3.5 🟡 Autres pistes concrètes
 - **Rythme circadien** — Ada est identique à 4 h et à 14 h. Une modulation

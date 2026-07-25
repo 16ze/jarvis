@@ -1581,10 +1581,22 @@ class AudioLoop:
                 print(f"[HEARTBEAT] brain snapshot failed: {e}")
                 continue
 
+            # Barre apprise : si les interventions d'Ada dans cette humeur
+            # tombent mal d'habitude, elle exige un motif plus fort pour
+            # interrompre — et l'inverse si elles tombent juste. Cela ne change
+            # rien à ce qu'elle ressent, seulement au moment qu'elle choisit.
+            try:
+                bar = brain.speaking_bar()
+            except Exception:
+                bar = 0.0
+            # Seuil effectif recalculé à chaque tour depuis la base : surtout
+            # ne pas muter dopa_threshold, qui dériverait d'itération en itération.
+            seuil_effectif = max(0.20, min(0.95, dopa_threshold + bar))
+
             # Critère d'émergence : un état "saillant" interne justifie d'exister
             emerge = False
             trigger = ""
-            if dopamine >= dopa_threshold:
+            if dopamine >= seuil_effectif:
                 emerge, trigger = True, f"dopamine élevée ({dopamine:.2f})"
             elif cortisol >= 0.55:
                 emerge, trigger = True, f"tension cortisolique ({cortisol:.2f})"
@@ -1638,6 +1650,12 @@ class AudioLoop:
             try:
                 await self.session.send(input=message, end_of_turn=True)
                 print(f"[HEARTBEAT] pensée émise — {log}")
+                # Ada vient de prendre la parole d'elle-même : la prochaine
+                # réaction de Bryan dira comment c'est passé (boucle fermée).
+                try:
+                    brain.notify_self_expression()
+                except Exception:
+                    pass
             except Exception as e:
                 print(f"[HEARTBEAT] send error: {e}")
 

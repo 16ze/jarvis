@@ -17,6 +17,7 @@ from brain import persistence
 from brain.calibration import env_float
 from brain.expectations import ExpectationEngine
 from brain.limbic import CerveauEmotif
+from brain.social_learning import SocialLearning
 from brain.modulators import get_gemini_params as _params_for_mood
 from brain.mood_block import build_mood_block, build_runtime_mood_update
 from brain.network import EtatEveil, ReseauAttention
@@ -47,6 +48,10 @@ class BrainManager:
         # Attentes apprises : les habitudes ne s'oublient pas avec l'humeur.
         self.expectations = ExpectationEngine()
         self.expectations.load()
+
+        # Boucle fermée : Ada apprend comment ses prises de parole sont reçues.
+        self.social = SocialLearning()
+        self.social.load()
         self._autosave_stop = Event()
         self._autosave_thread: threading.Thread | None = None
         self._start_autosave()
@@ -154,6 +159,45 @@ class BrainManager:
                 )
             except Exception as exc:
                 print(f"[BRAIN_V3] notify_user_message observe failed: {exc}")
+
+    def notify_self_expression(self) -> None:
+        """Ada vient de s'exprimer spontanément — on attend la réaction."""
+        if not self.enabled or self._is_degraded():
+            return
+        self._safe(
+            "notify_self_expression",
+            lambda: self.social.register_expression(self.limbic.mood),
+            fallback=None,
+        )
+
+    def notify_reaction(self, valence: float) -> str | None:
+        """Retour de Bryan → signal d'apprentissage social.
+
+        Alimenté par l'évaluation fine de `appraisal` : c'est la meilleure
+        estimation disponible de la façon dont Ada a été reçue.
+        """
+        if not self.enabled or self._is_degraded():
+            return None
+        return self._safe(
+            "notify_reaction",
+            lambda: self.social.register_reaction(valence),
+            fallback=None,
+        )
+
+    def speaking_bar(self) -> float:
+        """Ajustement appris du seuil de prise de parole dans l'humeur courante.
+
+        > 0 : Ada attend un motif plus fort pour interrompre (ses interventions
+        dans cet état tombaient mal). < 0 : elle ose davantage.
+        Ne modifie jamais ce qu'elle ressent — seulement le moment choisi.
+        """
+        if not self.enabled or self._is_degraded():
+            return 0.0
+        return self._safe(
+            "speaking_bar",
+            lambda: self.social.speaking_bar(self.limbic.mood),
+            fallback=0.0,
+        ) or 0.0
 
     def notify_presence(self, present: bool) -> str | None:
         """Perception de présence → attente → surprise éventuellement ressentie.
@@ -325,6 +369,7 @@ class BrainManager:
         self._autosave_stop.set()
         persistence.save(self.limbic)  # dernier état avant de « s'endormir »
         self.expectations.save()       # les habitudes apprises, elles, restent
+        self.social.save()             # et ce qu'elle a appris de son accueil
 
     # ── Persistance ────────────────────────────────────────────────────────────
 
@@ -339,6 +384,7 @@ class BrainManager:
                 try:
                     persistence.save(self.limbic)
                     self.expectations.save()
+                    self.social.save()
                 except Exception as exc:  # noqa: BLE001
                     print(f"[BRAIN_PERSIST] autosave: {exc}")
 

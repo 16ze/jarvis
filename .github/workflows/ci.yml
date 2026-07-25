@@ -37,6 +37,7 @@ jobs:
             tests/test_appraisal.py \
             brain/tests/test_persistence.py \
             brain/tests/test_expectations.py \
+            brain/tests/test_social_learning.py \
             -q
 
   frontend:

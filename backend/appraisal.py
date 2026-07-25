@@ -215,6 +215,20 @@ async def appraise_and_apply(text: str, brain=None) -> float:
                 f"[APPRAISAL] correction {correction:+.2f} "
                 f"(valence {appraisal.valence:+.2f}) — {appraisal.cause}"
             )
+
+        # Boucle fermée : si Ada s'est exprimée spontanément juste avant, cette
+        # réaction dit comment elle a été reçue. C'est le meilleur signal
+        # d'apprentissage social disponible (valence finement évaluée).
+        try:
+            credite = brain.notify_reaction(appraisal.valence)
+            if credite:
+                print(
+                    f"[SOCIAL] accueil de « {credite} » mis à jour "
+                    f"(retour {appraisal.valence:+.2f})"
+                )
+        except Exception:
+            pass
+
         return correction
     except Exception as exc:  # noqa: BLE001
         print(f"[APPRAISAL] application impossible : {exc}")
