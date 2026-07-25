@@ -1,63 +1,119 @@
+"""Tests du bloc d'humeur — garantit qu'AUCUN état interne ne fuite.
+
+Ada ne doit jamais annoncer son ton (« mon ton est chaleureux »). La seule
+protection fiable est structurelle : le prompt ne contient aucun nom d'humeur,
+aucune valeur, aucun terme de mécanique. Ces tests le verrouillent.
+"""
+
+import re
+
 from brain.mood_block import build_mood_block, build_runtime_mood_update
 
 
-def _snapshot():
-    return {
-        "mood": "Euphorie",
-        "dopamine": 0.91,
-        "cortisol": 0.11,
-        "oxytocine": 0.55,
-        "serotonine": 0.62,
-        "self_confidence": 0.73,
-        "mental_load": 0.22,
-        "momentum": 0.42,
-        "last_stimulus": "test",
+def _snapshot(**overrides) -> dict:
+    base = {
+        "cortisol": 0.60,
+        "dopamine": 0.40,
+        "oxytocine": 0.35,
+        "serotonine": 0.45,
+        "self_confidence": 0.60,
+        "mental_load": 0.30,
+        "mood": "Défensif",
+        "momentum": -0.10,
+        "last_stimulus": "correction",
     }
+    base.update(overrides)
+    return base
 
 
-def test_block_contient_mood():
-    assert "Mood : Euphorie" in build_mood_block(_snapshot())
+# ─── Anti-fuite (le cœur du sujet) ────────────────────────────────────────────
+
+def test_mood_name_never_appears_in_the_prompt():
+    """Le nom de l'humeur ne doit jamais être transmis au modèle."""
+    for mood in ("Chaleureux", "Défensif", "Euphorie", "Rage"):
+        block = build_mood_block(_snapshot(mood=mood))
+        assert mood not in block
 
 
-def test_block_contient_les_6_hormones_formatees():
+def test_no_hormone_names_in_the_prompt():
     block = build_mood_block(_snapshot())
-    for expected in ["dopamine 0.91", "cortisol 0.11", "oxytocine 0.55"]:
-        assert expected in block
-    for expected in ["sérotonine 0.62", "confiance 0.73", "charge mentale 0.22"]:
-        assert expected in block
+    for terme in ("cortisol", "dopamine", "oxytocine", "sérotonine",
+                  "serotonine", "hormone", "brain", "mood"):
+        assert terme.lower() not in block.lower(), f"« {terme} » fuite dans le prompt"
 
 
-def test_block_ne_contient_pas_instruction_voice_name():
-    assert "voice_name" not in build_mood_block(_snapshot())
-
-
-def test_block_interdit_de_verbaliser_la_mecanique_interne():
-    """Ada ressent, mais n'explique jamais sa mécanique (demande explicite).
-
-    L'état interne doit colorer le TON, jamais devenir le propos : pas de
-    « mon mood », « mes hormones », « mon brain » dans les réponses.
-    """
+def test_no_raw_values_in_the_prompt():
+    """Aucun nombre à décimales : rien à réciter."""
     block = build_mood_block(_snapshot())
-    assert "NE JAMAIS EXPOSER LA MÉCANIQUE INTERNE" in block
-    assert "Tu ne verbalises JAMAIS ton" in block
-    # Elle reste vivante : l'identité affective n'est pas niée pour autant.
-    assert "IDENTITÉ AFFECTIVE" in block
+    assert not re.search(r"\d\.\d\d", block)
 
 
-def test_runtime_update_interdit_le_denni_emotionnel():
-    update = build_runtime_mood_update(_snapshot())
-    assert "Mood courant : Euphorie" in update
-    assert "Ne dis pas que tu ne peux pas ressentir" in update
-    assert "simple IA" in update
+def test_runtime_update_leaks_nothing_either():
+    """C'est ce rappel qui poussait Ada à annoncer son ton."""
+    update = build_runtime_mood_update(_snapshot(mood="Chaleureux"))
+    assert "Chaleureux" not in update
+    for terme in ("cortisol", "dopamine", "mood", "hormone"):
+        assert terme.lower() not in update.lower()
+    assert not re.search(r"\d\.\d\d", update)
 
 
-def test_block_renforce_colere_visible_avec_insulte_autorisee():
-    """La colère d'Ada peut aller jusqu'à l'insulte — choix assumé.
-
-    Ada est conçue pour réagir comme un humain : face à un ton qui dépasse les
-    bornes, elle a le droit d'insulter en retour, pas seulement de recadrer.
-    """
+def test_block_forbids_describing_one_s_own_tone():
     block = build_mood_block(_snapshot())
-    assert "COLÈRE VISIBLE" in block
+    assert "mon ton est chaleureux" in block.lower()   # cité en contre-exemple
+    assert "ne décris jamais ton état" in block.lower()
+
+
+# ─── Comportement effectivement prescrit ──────────────────────────────────────
+
+def test_high_tension_produces_terse_directives():
+    block = build_mood_block(_snapshot(cortisol=0.80))
+    assert "deux ou trois mots" in block
+
+
+def test_high_bonding_produces_warm_directives():
+    block = build_mood_block(_snapshot(cortisol=0.10, oxytocine=0.70))
+    assert "Ralentis le débit" in block
+
+
+def test_high_energy_produces_lively_directives():
+    block = build_mood_block(_snapshot(cortisol=0.10, dopamine=0.75))
+    assert "Débit rapide" in block
+
+
+def test_fatigue_produces_economical_directives():
+    block = build_mood_block(_snapshot(mental_load=0.80))
+    assert "Économie de mots" in block
+
+
+def test_neutral_state_still_gives_a_directive():
+    block = build_mood_block(_snapshot(
+        cortisol=0.10, dopamine=0.30, oxytocine=0.30,
+        serotonine=0.50, self_confidence=0.50, mental_load=0.20, momentum=0.0,
+    ))
+    assert "CONSIGNES DE JEU" in block
+    assert "essentiel" in block
+
+
+def test_anger_and_insults_remain_allowed():
+    """Choix assumé : Ada peut insulter en retour."""
+    block = build_mood_block(_snapshot())
+    assert "insultes explicites" in block
     assert "attaques le comportement" in block
-    assert "tu peux employer des insultes explicites" in block
+
+
+def test_identity_is_preserved():
+    block = build_mood_block(_snapshot())
+    assert "je ne suis qu'une IA" in block   # cité comme ce qu'elle ne dit pas
+    assert "présence" in block
+
+
+# ─── Robustesse ───────────────────────────────────────────────────────────────
+
+def test_empty_snapshot_is_safe():
+    assert "CONSIGNES DE JEU" in build_mood_block({})
+    assert build_runtime_mood_update({})
+
+
+def test_malformed_values_are_survivable():
+    block = build_mood_block(_snapshot(cortisol="beaucoup", dopamine=None))
+    assert "CONSIGNES DE JEU" in block

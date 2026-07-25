@@ -313,6 +313,15 @@ def is_local_first_task(task: str) -> bool:
     if re.search(r"^(?:écris|ecris|écrire|ecrire|decrir|décrir|decrire|décrire|rédige|redige|tape|saisis|colle)\s+", tl):
         return True
 
+    # Fermeture d'app : toujours en local. Passée par la boucle vision, elle
+    # tentait un clic droit sur le Dock, échouait, et gardait le verrou pendant
+    # tout le timeout — bloquant en cascade les demandes suivantes.
+    if re.search(
+        r"^(?:ferme|fermer|quitte|quitter|close|quit|arrête|arrete|éteins|eteins)\s+\S+",
+        tl,
+    ):
+        return True
+
     return False
 
 
@@ -1256,6 +1265,54 @@ end tell'''
 
         return None
 
+    async def _close_app_local(self, target_raw: str) -> tuple[bool, str]:
+        """Ferme une app par AppleScript — fiable, sans vision ni clic.
+
+        Le clic droit sur le Dock (chemin vision) échouait presque toujours.
+        Ici on demande directement à l'app de quitter, avec repli sur le nom
+        de bundle résolu par Spotlight pour les noms localisés (« Localiser »).
+        """
+        cible = target_raw.strip().strip("'\"«»")
+        cible = re.sub(
+            r"^(?:l'|la\s+|le\s+|les\s+|mon\s+|ma\s+|mes\s+)", "", cible, flags=re.IGNORECASE
+        ).strip()
+        app_name = _KNOWN_APPS.get(cible.lower(), cible)
+
+        async def _quit(nom: str) -> bool:
+            try:
+                await asyncio.to_thread(
+                    _run_osascript,
+                    f'tell application "{_osascript_escape(nom)}" to quit',
+                )
+                return True
+            except Exception:
+                return False
+
+        if await _quit(app_name):
+            await asyncio.sleep(0.5)
+            return True, app_name
+
+        # Nom localisé (« Localiser ») → résoudre le vrai nom de bundle.
+        chemin = await self._find_app_path(cible)
+        if chemin:
+            reel = os.path.splitext(os.path.basename(chemin))[0]
+            if await _quit(reel):
+                await asyncio.sleep(0.5)
+                return True, reel
+
+        # Dernier recours : terminer le processus proprement via System Events.
+        try:
+            script = (
+                f'tell application "System Events" to '
+                f'if exists (process "{_osascript_escape(app_name)}") then '
+                f'tell process "{_osascript_escape(app_name)}" to keystroke "q" using command down'
+            )
+            await asyncio.to_thread(_run_osascript, script)
+            await asyncio.sleep(0.5)
+            return True, app_name
+        except Exception:
+            return False, app_name
+
     async def _local_interaction_path(
         self, task: str, cb: Optional[Callable]
     ) -> Optional[str]:
@@ -1264,6 +1321,20 @@ end tell'''
         recipient = self._extract_recipient(t)
         subject = self._extract_subject(t)
         title = self._extract_title(t)
+
+        # ── Fermeture d'application (avant tout le reste) ──────────────────────
+        fermeture = re.search(
+            r"^(?:ferme|fermer|quitte|quitter|close|quit|arrête|arrete|éteins|eteins)\s+"
+            r"(?:l'?app(?:lication)?\s+|le\s+|la\s+|les\s+)?[«\"']?([a-zA-Z0-9À-ÿ\s\.\-]+?)[«\"']?\s*$",
+            t,
+            re.IGNORECASE,
+        )
+        if fermeture:
+            cible = fermeture.group(1).strip()
+            if cb:
+                await cb({"image": None, "log": f"[PC] Fermeture de {cible}"})
+            ok, nom = await self._close_app_local(cible)
+            return f"{nom} fermé." if ok else f"Impossible de fermer {nom}."
 
         open_and_write = re.search(
             r"^(?:ouvre?|ouvrir|ouvrire|lance?|démarre?|demarre?|open|start|launch)\s+"
