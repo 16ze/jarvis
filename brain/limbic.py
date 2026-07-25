@@ -95,6 +95,8 @@ class CerveauEmotif:
         self._journal: list[EntreeJournal] = []
         self._lock = threading.Lock()
         self._valences_recentes: list[float] = []
+        # Dernier jugement de la voie rapide (lexique), corrigé par la voie lente.
+        self._derniere_valence_brute: float = 0.0
 
     def update(
         self,
@@ -160,6 +162,9 @@ class CerveauEmotif:
         valence = _clamp(valence, -1.0, 1.0)
 
         with self._lock:
+            # Mémorisée pour la voie lente : l'appraisal corrigera cet écart
+            # (cf. reevaluer()). Voie rapide = jugement grossier et immédiat.
+            self._derniere_valence_brute = valence
             moy = self._valence_momentum()
             if valence * moy > 0:
                 mf = 1.0 + abs(moy) * _MOMENTUM_AMP_MAX
@@ -342,6 +347,65 @@ class CerveauEmotif:
             self.dernier_stimulus = "appel_llm"
             if self.mental_load > SEUIL_FATIGUE:
                 self.cortisol = _clamp(self.cortisol + 0.07)
+
+    def reevaluer(self, appraisal) -> float:
+        """VOIE LENTE — réévaluation fine qui corrige le jugement grossier.
+
+        Le cerveau humain traite l'émotion par deux chemins (LeDoux) : une voie
+        rapide et sommaire (amygdale) qui réagit immédiatement, et une voie
+        lente et contextuelle (cortex) qui affine ou corrige quelques centaines
+        de millisecondes plus tard — « en fait, il plaisantait ».
+
+        `analyser_texte()` est la voie rapide : un comptage de mots, incapable
+        de voir une négation ou une ironie. Cette méthode est la voie lente :
+        elle applique la DIFFÉRENCE entre l'évaluation fine et le jugement
+        brut, sans jamais recompter ce qui l'a déjà été.
+
+        Retourne la correction appliquée (utile pour les tests et le débogage).
+        """
+        if appraisal is None:
+            return 0.0
+
+        fine = max(-1.0, min(1.0, float(getattr(appraisal, "valence", 0.0))))
+        arousal = _clamp(getattr(appraisal, "arousal", 0.0))
+        certitude = _clamp(getattr(appraisal, "certainty", 1.0))
+        cause = str(getattr(appraisal, "cause", "") or "").strip()
+
+        with self._lock:
+            delta = (fine - self._derniere_valence_brute) * certitude
+            # En dessous, la voie rapide avait vu juste : rien à corriger.
+            if abs(delta) < 0.12:
+                if cause:
+                    self.dernier_stimulus = cause
+                return 0.0
+
+            # L'intensité de la correction suit l'activation perçue.
+            poids = 0.5 + 0.5 * arousal
+
+            if delta > 0:
+                # Moins grave que ce que les mots laissaient croire.
+                self.dopamine = _clamp(self.dopamine + delta * 0.18 * poids)
+                self.oxytocine = _clamp(self.oxytocine + delta * 0.12 * poids)
+                self.serotonine = _clamp(self.serotonine + delta * 0.10 * poids)
+                self.cortisol = _clamp(self.cortisol - delta * 0.20 * poids)
+            else:
+                # Plus dur que ce que les mots laissaient croire.
+                amp = abs(delta)
+                self.cortisol = _clamp(self.cortisol + amp * 0.24 * poids)
+                self.serotonine = _clamp(self.serotonine - amp * 0.12 * poids)
+                self.oxytocine = _clamp(self.oxytocine - amp * 0.08 * poids)
+                self.self_confidence = _clamp(self.self_confidence - amp * 0.06 * poids)
+                # L'enthousiasme déclenché à tort par les mots retombe : c'est
+                # tout l'intérêt de la voie lente sur un sarcasme.
+                self.dopamine = _clamp(self.dopamine - amp * 0.16 * poids)
+
+            self._push_valence(delta * 0.4)
+            self._derniere_valence_brute = fine  # la voie lente fait foi
+            # La cause donne son OBJET à l'émotion (comme pour la surprise).
+            if cause:
+                self.dernier_stimulus = cause
+
+        return round(delta, 4)
 
     def ressentir_surprise(self, erreur) -> None:
         """Ressent une erreur de prédiction — une émotion AVEC un objet.

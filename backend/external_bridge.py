@@ -1831,6 +1831,13 @@ class TextAgent:
         user_block = f"\n\n{bryan_ctx}" if bryan_ctx else ""
         brain = get_brain()
         brain.notify_user_message(text)
+        # Voie lente : réévaluation fine en tâche de fond (négation, ironie).
+        try:
+            from appraisal import appraise_and_apply
+
+            asyncio.create_task(appraise_and_apply(text, brain))
+        except Exception as _e:
+            print(f"[BRIDGE] appraisal non lancé : {_e}")
         mood_block = brain.get_mood_block() or ""
         system = ADA_SYSTEM_PROMPT + mood_block + memory_block + user_block
         original_text = text  # conservé pour le fallback LLM

@@ -34,6 +34,7 @@ jobs:
             tests/test_tool_consistency.py \
             tests/test_emotional_memory.py \
             tests/test_idle_mind.py \
+            tests/test_appraisal.py \
             brain/tests/test_persistence.py \
             brain/tests/test_expectations.py \
             -q

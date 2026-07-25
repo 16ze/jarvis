@@ -2491,6 +2491,19 @@ class AudioLoop:
                                         except Exception:
                                             pass  # la rêverie ne doit jamais gêner
                                         brain = get_brain()
+                                        # VOIE LENTE : le LLM réévalue le message
+                                        # (négation, ironie, taquinerie) et corrige
+                                        # le jugement grossier du lexique — en tâche
+                                        # de fond, pour ne jamais retarder la voix.
+                                        try:
+                                            from appraisal import appraise_and_apply
+
+                                            _bg_task(
+                                                appraise_and_apply(delta, brain),
+                                                "appraisal",
+                                            )
+                                        except Exception as _e:
+                                            print(f"[ADA] appraisal non lancé : {_e}")
                                         brain.notify_user_message(
                                             delta,
                                             audio_features=dict(self._audio_features),
