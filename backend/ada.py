@@ -505,6 +505,27 @@ run_terminal_tool = {
     },
 }
 
+execute_plan_tool = {
+    "name": "execute_plan",
+    "description": (
+        "Décompose un objectif COMPLEXE en plusieurs étapes, les exécute une à une "
+        "en vérifiant chacune, et répare celles qui échouent. À utiliser quand une "
+        "demande nécessite plusieurs outils enchaînés (ex : « cherche la météo et "
+        "note-la », « trouve X puis envoie-le à Y »). Pour une action simple qui "
+        "tient en un seul outil, appelle cet outil directement — pas execute_plan."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "objective": {
+                "type": "STRING",
+                "description": "L'objectif complet à accomplir, formulé clairement.",
+            },
+        },
+        "required": ["objective"],
+    },
+}
+
 web_search_tool = {
     "name": "web_search",
     "description": "Recherche sur le web et renvoie des résultats récents (titres, liens, extraits). Utilise cet outil dès que Bryan pose une question d'actualité, sur un fait récent, un prix, une info en ligne, ou quoi que ce soit qui nécessite le web. Rapide et fiable — à préférer à advanced_web_navigation qui est lourd.",
@@ -780,6 +801,7 @@ tools = [
             generate_cad,
             run_terminal_tool,
             web_search_tool,
+            execute_plan_tool,
             open_screen_tool,
             read_emails_tool,
             send_email_tool,
@@ -821,6 +843,14 @@ for _t in tools[0]["function_declarations"]:
     else:
         print(f"[ADA] WARNING: outil en doublon retiré → {_name}")
 tools = [{"function_declarations": _deduped}]
+
+# Univers d'outils que le planificateur peut enchaîner (planner.py). Dérivé des
+# déclarations réelles : impossible qu'il propose un outil qui n'existe pas.
+_ALL_TOOL_NAMES = {
+    (t.get("name") if isinstance(t, dict) else getattr(t, "name", None))
+    for t in _deduped
+}
+_ALL_TOOL_NAMES.discard(None)
 print(
     f"[ADA] {len(_deduped)} tools voix chargés (exclu: {len(_VOICE_EXCLUDED)} outils non-vocaux)"
 )
@@ -2305,6 +2335,50 @@ class AudioLoop:
         "cad", "documents", "workspace", "settings", "home",
     }
 
+    async def _run_plan_and_report(self, objective: str) -> None:
+        """Exécute un plan en tâche de fond puis rapporte le résultat à la voix."""
+        result = await self.handle_execute_plan(objective)
+        try:
+            if self.session:
+                await self.session.send(
+                    input=f"System Notification: Plan terminé.\nRésultat : {result}",
+                    end_of_turn=True,
+                )
+        except Exception as e:
+            print(f"[PLANNER] compte rendu vocal impossible : {e}")
+
+    async def handle_execute_plan(self, objective: str) -> str:
+        """Exécution délibérative d'un objectif multi-étapes (planner.py).
+
+        L'exécuteur injecté est `_execute_text_tool` : le planificateur réutilise
+        donc EXACTEMENT le même dispatch que le reste d'Ada — aucun chemin
+        d'exécution parallèle, donc aucune divergence possible.
+        """
+        objective = (objective or "").strip()
+        if not objective:
+            return "Aucun objectif fourni."
+
+        try:
+            from planner import Planner
+        except Exception as exc:  # noqa: BLE001
+            return f"Planificateur indisponible : {exc}"
+
+        async def _executor(tool: str, tool_args: dict) -> str:
+            return await self._execute_text_tool(tool, tool_args or {})
+
+        async def _progress(message: str) -> None:
+            if self.on_terminal_output:
+                self.on_terminal_output({"command": "[PLAN]", "output": message})
+
+        # Outils réellement exécutables par le dispatch texte.
+        outils = sorted(_ALL_TOOL_NAMES - {"execute_plan"})
+
+        try:
+            planner = Planner(executor=_executor, on_progress=_progress)
+            return await planner.run(objective, outils)
+        except Exception as exc:  # noqa: BLE001
+            return f"Planification interrompue : {exc}"
+
     def handle_open_screen(self, screen: str) -> str:
         """Demande à l'UI d'ouvrir un écran (navigation pilotée par Ada)."""
         s = (screen or "").strip().lower()
@@ -2663,6 +2737,7 @@ class AudioLoop:
                                     "generate_cad",
                                     "run_terminal",
                                     "web_search",
+                                    "execute_plan",
                                     "open_screen",
                                     "read_emails",
                                     "send_email",
@@ -2776,6 +2851,31 @@ class AudioLoop:
                                             },
                                         )
                                         function_responses.append(function_response)
+
+                                    elif fc.name == "execute_plan":
+                                        objective = fc.args.get("objective", "")
+                                        print(
+                                            f"[ADA DEBUG] [TOOL] Tool Call: 'execute_plan' objective='{objective[:60]}'"
+                                        )
+                                        # Exécution en tâche de fond : un plan
+                                        # multi-étapes est long, la voix ne doit
+                                        # pas rester bloquée dessus.
+                                        _bg_task(
+                                            self._run_plan_and_report(objective),
+                                            "execute_plan",
+                                        )
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={
+                                                    "result": (
+                                                        "Plan lancé. Je te tiens au courant "
+                                                        "au fur et à mesure."
+                                                    )
+                                                },
+                                            )
+                                        )
 
                                     elif fc.name == "run_terminal":
                                         command = fc.args.get("command", "")
@@ -5713,6 +5813,9 @@ class AudioLoop:
                     args.get("query", ""), int(args.get("max_results", 6) or 6)
                 )
                 return _truncate_tool_response(result)
+            # ── PLANIFICATION (tâches multi-étapes) ───────────────────────────
+            elif name == "execute_plan":
+                return await self.handle_execute_plan(args.get("objective", ""))
             # ── NAVIGATION UI (Ada ouvre un écran) ────────────────────────────
             elif name == "open_screen":
                 return self.handle_open_screen(args.get("screen", ""))
