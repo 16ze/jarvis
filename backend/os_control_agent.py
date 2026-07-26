@@ -346,6 +346,24 @@ def is_local_first_task(task: str) -> bool:
     ):
         return True
 
+    # Actions système natives (réglages ciblés, fenêtres, média, capture,
+    # luminosité, verrouillage) — cf. backend/mac_routines.py. Aucune n'a
+    # besoin de regarder l'écran : elles doivent donc s'exécuter hors verrou.
+    if re.search(
+        r"\b(réglages?|reglages?|préférences?|preferences?|paramètres?|parametres?)\b"
+        r"|\bplein[- ]écran\b|\bplein[- ]ecran\b"
+        r"|\b(réduis|reduis|minimise)\b.*\bfen[êe]tre\b"
+        r"|\bferme\s+(?:cette\s+|la\s+)?fen[êe]tre\b"
+        r"|\bmasque\s+(?:tout|les autres)\b"
+        r"|\b(capture|screenshot)\b.*\b[ée]cran\b|\bfais une capture\b"
+        r"|\bluminosit[ée]\b"
+        r"|\bverrouille?\b.*\b([ée]cran|mac|session)\b"
+        r"|\b(piste|morceau|chanson|titre)\s+(suivante?|pr[ée]c[ée]dente?)\b"
+        r"|\bmets? en pause\b|\breprends la lecture\b",
+        tl,
+    ):
+        return True
+
     return False
 
 
@@ -1345,6 +1363,20 @@ end tell'''
         recipient = self._extract_recipient(t)
         subject = self._extract_subject(t)
         title = self._extract_title(t)
+
+        # ── Routines macOS natives (réglages, fenêtres, média, capture…) ──────
+        # Tout ce qui peut être fait sans regarder l'écran doit l'être : c'est
+        # instantané et fiable, là où la boucle vision est lente et hasardeuse.
+        try:
+            import mac_routines
+
+            natif = await mac_routines.route(t)
+            if natif is not None:
+                if cb:
+                    await cb({"image": None, "log": f"[PC] {natif}"})
+                return natif
+        except Exception as e:
+            print(f"[OsControl] routine native indisponible : {e}")
 
         # ── Fermeture d'application (avant tout le reste) ──────────────────────
         fermeture = re.search(

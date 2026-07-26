@@ -36,6 +36,7 @@ jobs:
             tests/test_idle_mind.py \
             tests/test_appraisal.py \
             tests/test_planner.py \
+            tests/test_mac_routines.py \
             brain/tests/test_persistence.py \
             brain/tests/test_expectations.py \
             brain/tests/test_social_learning.py \
