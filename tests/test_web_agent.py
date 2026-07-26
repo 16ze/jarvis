@@ -8,6 +8,7 @@ import os
 from web_agent import WebAgent
 
 
+@pytest.mark.skip(reason="API disparue : web_agent Playwright remplacé par execute_pc_task / browser_control. Test conservé au cas où l'agent serait relancé.")
 class TestWebAgentInit:
     """Test WebAgent initialization."""
     
@@ -26,6 +27,7 @@ class TestWebAgentInit:
         assert hasattr(agent, 'context')
 
 
+@pytest.mark.skip(reason="API disparue : web_agent Playwright remplacé par execute_pc_task / browser_control. Test conservé au cas où l'agent serait relancé.")
 class TestCoordinateDenormalization:
     """Test coordinate conversion functions."""
     

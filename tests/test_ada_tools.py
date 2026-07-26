@@ -25,6 +25,8 @@ class TestToolDefinitions:
         assert 'prompt' in generate_cad['parameters']['properties']
         print(f"generate_cad tool: {generate_cad['name']}")
     
+    @pytest.mark.skip(reason="Fonctionnalité supprimée du projet (run_web_agent / kasa_agent remplacé par tuya_agent).")
+    
     def test_run_web_agent_tool_schema(self):
         """Test run_web_agent tool has correct schema."""
         from ada import run_web_agent
@@ -178,6 +180,8 @@ class TestAgentImports:
         from ada import WebAgent
         assert WebAgent is not None
         print("WebAgent imported")
+    
+    @pytest.mark.skip(reason="Fonctionnalité supprimée du projet (run_web_agent / kasa_agent remplacé par tuya_agent).")
     
     def test_kasa_agent_import(self):
         """Test KasaAgent is imported."""
