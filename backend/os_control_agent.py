@@ -477,8 +477,22 @@ class OsControlAgent:
         except Exception:
             ui_elements = ""
         ui_block = f"\n\nACCESSIBLE UI ELEMENTS (use these exact names with click_element):\n{ui_elements}\n" if ui_elements and "Aucun" not in ui_elements else ""
+
+        # Expérience acquise : ne pas reproposer ce qui a déjà échoué pour ce
+        # type de tâche (cf. backend/action_memory.py).
+        conseil = ""
+        try:
+            from action_memory import get_action_memory
+
+            appris = get_action_memory().advice(task)
+            if appris:
+                conseil = f"\n\n{appris}\n"
+                print(f"[ACTION_MEM] conseil injecté pour « {task[:40]} »")
+        except Exception as e:
+            print(f"[ACTION_MEM] conseil indisponible : {e}")
+
         prompt = (
-            f"Task to accomplish: {task}\n{ui_block}\n"
+            f"Task to accomplish: {task}\n{ui_block}{conseil}\n"
             "Analyze the screenshot carefully. "
             "Generate the COMPLETE action sequence needed. "
             "PREFER click_element (by accessible name) over coordinate clicks. "
@@ -2057,6 +2071,31 @@ end timeout'''
                 except Exception:
                     pass
 
+    @staticmethod
+    def _memoriser_approches(task: str, plan: list[dict], reussi: bool) -> None:
+        """Retient les approches employées et leur issue. Ne lève jamais."""
+        try:
+            from action_memory import get_action_memory
+
+            approches = []
+            for action in plan or []:
+                nom = str(action.get("action", "")).strip()
+                if not nom:
+                    continue
+                # Un clic par nom d'élément est une approche distincte d'un clic
+                # par coordonnées : on veut pouvoir déconseiller l'un sans l'autre.
+                if nom == "click_element":
+                    cible = str(action.get("text", ""))[:30]
+                    approches.append(f"click_element({cible})" if cible else nom)
+                else:
+                    approches.append(nom)
+
+            memoire = get_action_memory()
+            memoire.record_plan(task, approches, reussi)
+            memoire.save()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[ACTION_MEM] mémorisation impossible : {exc}")
+
     async def _plan_execute_verify(
         self, task: str, cb: Optional[Callable], stop: asyncio.Event
     ) -> str:
@@ -2117,8 +2156,14 @@ end timeout'''
                 await cb({"image": b64_2, "log": "[PC] Vérification..."})
 
             verification = await self._verify(task, raw2)
+            reussi = bool(verification.get("success", False))
 
-            if verification.get("success", False):
+            # Mémoire procédurale : on retient quelles approches ont été
+            # employées et si elles ont abouti, pour ne plus reproposer
+            # ce qui échoue systématiquement (cf. action_memory.py).
+            self._memoriser_approches(task, plan, reussi)
+
+            if reussi:
                 evidence = verification.get("evidence", "")
                 return f"✓ {evidence}"
 
