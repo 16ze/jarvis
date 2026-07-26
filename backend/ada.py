@@ -2335,6 +2335,36 @@ class AudioLoop:
         "cad", "documents", "workspace", "settings", "home",
     }
 
+    async def _announce_diagnostic(self) -> None:
+        """Dit à Bryan ce qui est cassé chez Ada, au démarrage.
+
+        Les vérifications sont lentes (caméra, AppleScript) : elles tournent
+        hors du thread principal et n'empêchent jamais le démarrage.
+        """
+        try:
+            import self_diagnostic
+
+            issues = await self_diagnostic.run_checks_async()
+            rapport = self_diagnostic.detailed_report(issues)
+            print(rapport)
+            if self.on_terminal_output:
+                for ligne in rapport.splitlines():
+                    self.on_terminal_output({"command": "[DIAG]", "output": ligne})
+
+            phrase = self_diagnostic.spoken_summary(issues)
+            if not phrase or not self.session:
+                return
+            await self.session.send(
+                input=(
+                    "System Notification: diagnostic de démarrage.\n"
+                    f"Dis à Bryan, en une phrase naturelle et sans dramatiser : « {phrase} »\n"
+                    "N'énumère pas les solutions techniques sauf s'il te les demande."
+                ),
+                end_of_turn=True,
+            )
+        except Exception as e:
+            print(f"[DIAG] auto-diagnostic impossible : {e}")
+
     async def _run_plan_and_report(self, objective: str) -> None:
         """Exécute un plan en tâche de fond puis rapporte le résultat à la voix."""
         result = await self.handle_execute_plan(objective)
@@ -5357,6 +5387,11 @@ class AudioLoop:
                             await self.session.send(
                                 input=start_message, end_of_turn=True
                             )
+
+                        # Auto-diagnostic : Ada signale elle-même ce qui ne
+                        # marche pas chez elle (caméra refusée, jeton expiré…)
+                        # au lieu d'échouer silencieusement plus tard.
+                        _bg_task(self._announce_diagnostic(), "self_diagnostic")
 
                         # Sync Project State
                         if self.on_project_update and self.project_manager:

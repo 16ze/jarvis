@@ -32,7 +32,14 @@ load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 MODEL = "gemini-2.5-flash"
-TIMEOUT_SEC = 90.0
+# Plafond de la boucle vision. 90 s était trop long : une tâche impossible
+# (ex. fermer une app par clic droit sur le Dock) gardait le verrou tout ce
+# temps et bloquait EN CASCADE toutes les demandes suivantes — c'est ce qui
+# faisait échouer les tâches « du premier coup ». Surchargeable via l'env.
+TIMEOUT_SEC = float(os.getenv("OS_CONTROL_TIMEOUT_SEC", "35"))
+
+# Attente maximale qu'une tâche précédente libère le verrou avant d'abandonner.
+LOCK_WAIT_SEC = float(os.getenv("OS_CONTROL_LOCK_WAIT_SEC", "6"))
 
 _SPECIAL_KEY_CODES = {
     "return": 36, "enter": 36,
@@ -104,6 +111,23 @@ _KNOWN_APPS = {
     "find my": "FindMy",
     "findmy": "FindMy",
 }
+
+# Sites courants ouverts directement dans Safari (source unique, partagée par le
+# chemin local hors verrou et le fast-path).
+_WEB_SITES = {
+    "instagram": "https://www.instagram.com",
+    "youtube": "https://www.youtube.com",
+    "twitter": "https://www.x.com",
+    "x": "https://www.x.com",
+    "facebook": "https://www.facebook.com",
+    "gmail": "https://mail.google.com",
+    "google": "https://www.google.com",
+    "github": "https://www.github.com",
+    "notion": "https://www.notion.so",
+    "linkedin": "https://www.linkedin.com",
+    "whatsapp web": "https://web.whatsapp.com",
+}
+
 
 _NEW_DOCUMENT_APPS = {
     "Notes",
@@ -1336,6 +1360,42 @@ end tell'''
             ok, nom = await self._close_app_local(cible)
             return f"{nom} fermé." if ok else f"Impossible de fermer {nom}."
 
+        # ── Ouverture simple « ouvre X » (sans suite) ──────────────────────────
+        # Traitée ici pour s'exécuter HORS VERROU : c'est la commande la plus
+        # fréquente, elle ne doit jamais attendre derrière une boucle vision.
+        ouverture = re.search(
+            r"^(?:ouvre?|ouvrir|ouvrire|lance?|démarre?|demarre?|open|start|launch|active?)\s+"
+            r"(?:l'?app(?:lication)?\s+|le\s+|la\s+|les\s+)?"
+            r"[«\"']?([a-zA-Z0-9À-ÿ\s\.\-]+?)[«\"']?\s*$",
+            t,
+            re.IGNORECASE,
+        )
+        if ouverture:
+            cible = ouverture.group(1).strip()
+            # Garde-fou : « ouvre X et écris Y » ne doit PAS être capturé ici.
+            # Le jeu de caractères autorise les espaces, donc on vérifie qu'aucune
+            # action ne s'est glissée dans le nom capturé.
+            suite = re.search(
+                r"\b(et|puis|pour|avec|écris|ecris|tape|cherche|trouve|envoie|"
+                r"crée|cree|ajoute|va|navigue)\b",
+                cible,
+                re.IGNORECASE,
+            )
+            if not suite:
+                site = _WEB_SITES.get(cible.lower())
+                if site:
+                    await asyncio.to_thread(
+                        subprocess.run, ["open", "-a", "Safari", site],
+                        capture_output=True, timeout=10,
+                    )
+                    return f"Safari ouvert sur {site}."
+                if cb:
+                    await cb({"image": None, "log": f"[PC] Ouverture de {cible}"})
+                ok, nom = await self._open_app_local(cible)
+                if ok:
+                    return f"{nom} ouvert."
+                # Échec → on laisse la suite du fast-path / la vision tenter.
+
         open_and_write = re.search(
             r"^(?:ouvre?|ouvrir|ouvrire|lance?|démarre?|demarre?|open|start|launch)\s+"
             r"(?:l'?app(?:lication)?\s+)?[«\"']?([a-zA-Z0-9À-ÿ\s\.\-]+?)[«\"']?"
@@ -1795,17 +1855,7 @@ end timeout'''
 
         # ── Ouverture d'app directe (AVANT website nav pour éviter l'ambiguïté "ouvre X") ──
         # Sites connus → Safari. Apps connues → open -a. Sinon → vision loop.
-        WEB_SITES = {
-            "instagram": "https://www.instagram.com",
-            "youtube": "https://www.youtube.com",
-            "twitter": "https://www.x.com",
-            "facebook": "https://www.facebook.com",
-            "gmail": "https://mail.google.com",
-            "google": "https://www.google.com",
-            "github": "https://www.github.com",
-            "notion": "https://www.notion.so",
-            "linkedin": "https://www.linkedin.com",
-        }
+        WEB_SITES = _WEB_SITES
         app_m = re.search(
             r"^(?:ouvre?|ouvrir|ouvrire|lance?|démarre?|demarre?|open|start|launch|active?)\s+"
             r"(?:l'?app(?:lication)?\s+)?[«\"']?([a-zA-Z0-9À-ÿ\s\.\-]+?)[«\"']?"
@@ -1897,13 +1947,30 @@ end timeout'''
     # ── Point d'entrée principal ───────────────────────────────────────────────
 
     async def run(self, task: str, step_callback: Optional[Callable] = None) -> str:
+        # ── Chemin local d'abord, SANS prendre le verrou ──────────────────────
+        # Une routine locale (ouvrir/fermer une app, régler le volume, envoyer un
+        # message) dure quelques centaines de ms et n'utilise ni l'écran ni le
+        # LLM. La faire attendre derrière une boucle vision qui patine était la
+        # cause des « ça ne marche pas du premier coup » : on la sort donc du
+        # verrou, elle ne peut plus être bloquée par quoi que ce soit.
+        if is_local_first_task(task):
+            try:
+                self._sw, self._sh = await asyncio.to_thread(_get_screen_size)
+                direct = await self._local_interaction_path(task.strip(), step_callback)
+                if direct is not None:
+                    print(f"[OsControl] ✔ local (hors verrou) : {task[:60]}")
+                    return direct
+            except Exception as e:
+                print(f"[OsControl] chemin local direct échoué : {e}")
+
         # Stop proprement toute tâche précédente et ATTENDRE sa libération réelle
         # (sinon la 2e demande se bloque et l'utilisateur croit à une perte de
         # connexion). Attente bornée : au-delà, message clair plutôt qu'un blocage.
         if self._lock.locked():
             print("[OsControl] Tâche précédente active → arrêt demandé")
             self._global_stop.set()
-            for _ in range(25):  # jusqu'à ~5s
+            attente = max(1, int(LOCK_WAIT_SEC / 0.2))
+            for _ in range(attente):
                 await asyncio.sleep(0.2)
                 if not self._lock.locked():
                     break
