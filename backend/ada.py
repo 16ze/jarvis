@@ -1734,7 +1734,12 @@ class AudioLoop:
         # Codage prédictif : Ada compare cette présence à ce qu'elle attendait
         # à cette heure. Un écart marquant devient une émotion AVEC une cause.
         try:
-            get_brain().notify_presence(presence)
+            brain = get_brain()
+            brain.notify_presence(presence)
+            # Théorie de l'esprit : l'émotion lue sur le visage renseigne sur
+            # l'état de Bryan (fatigue, tension) — cf. brain/user_state.py.
+            if presence and emotion and emotion != "unknown":
+                brain.notify_user_emotion(emotion, emotion_confidence)
         except Exception as e:
             print(f"[ADA] notify_presence: {e}")
         person = str(detections[0].get("user", "unknown")).strip() if detections else "personne"

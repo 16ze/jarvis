@@ -219,6 +219,12 @@ async def appraise_and_apply(text: str, brain=None) -> float:
         # Boucle fermée : si Ada s'est exprimée spontanément juste avant, cette
         # réaction dit comment elle a été reçue. C'est le meilleur signal
         # d'apprentissage social disponible (valence finement évaluée).
+        # L'évaluation fine renseigne aussi sur l'état de Bryan lui-même.
+        try:
+            brain.notify_user_appraisal(appraisal.valence, appraisal.arousal)
+        except Exception:
+            pass
+
         try:
             credite = brain.notify_reaction(appraisal.valence)
             if credite:

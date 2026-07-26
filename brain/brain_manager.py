@@ -18,6 +18,7 @@ from brain.calibration import env_float
 from brain.expectations import ExpectationEngine
 from brain.limbic import CerveauEmotif
 from brain.social_learning import SocialLearning
+from brain.user_state import UserStateModel, enabled as user_state_enabled
 from brain.modulators import get_gemini_params as _params_for_mood
 from brain.mood_block import build_mood_block, build_runtime_mood_update
 from brain.network import EtatEveil, ReseauAttention
@@ -52,6 +53,9 @@ class BrainManager:
         # Boucle fermée : Ada apprend comment ses prises de parole sont reçues.
         self.social = SocialLearning()
         self.social.load()
+
+        # Théorie de l'esprit : Ada se fait une idée de l'état de Bryan.
+        self.user_state = UserStateModel()
         self._autosave_stop = Event()
         self._autosave_thread: threading.Thread | None = None
         self._start_autosave()
@@ -104,7 +108,8 @@ class BrainManager:
             return None
         return self._safe(
             "get_runtime_mood_update",
-            lambda: build_runtime_mood_update(self.limbic.get_snapshot()),
+            lambda: build_runtime_mood_update(self.limbic.get_snapshot())
+            + self._bloc_etat_bryan(),
             fallback=None,
         )
 
@@ -138,6 +143,9 @@ class BrainManager:
 
         def notify() -> None:
             before = self.limbic.get_snapshot()
+            if user_state_enabled():
+                self.user_state.observe_message(text)
+                self._appliquer_contagion()
             self.limbic.analyser_texte(text)
             after = self.limbic.get_snapshot()
             self.reseau.tick_text(abs(after["momentum"]))
@@ -159,6 +167,53 @@ class BrainManager:
                 )
             except Exception as exc:
                 print(f"[BRAIN_V3] notify_user_message observe failed: {exc}")
+
+    def _appliquer_contagion(self) -> None:
+        """L'état de Bryan déteint légèrement sur celui d'Ada.
+
+        Contagion émotionnelle : phénomène réel, ici volontairement faible —
+        Ada est influencée par la tension de l'autre, jamais pilotée par elle.
+        """
+        try:
+            deltas = self.user_state.contagion()
+            if not deltas:
+                return
+            for hormone, delta in deltas.items():
+                actuel = getattr(self.limbic, hormone, None)
+                if actuel is None:
+                    continue
+                setattr(self.limbic, hormone, max(0.0, min(1.0, actuel + delta)))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[USER_STATE] contagion impossible : {exc}")
+
+    def notify_user_emotion(self, emotion: str, confidence: float = 0.0) -> None:
+        """Émotion lue sur le visage de Bryan (MediaPipe)."""
+        if not self.enabled or self._is_degraded() or not user_state_enabled():
+            return
+        self._safe(
+            "notify_user_emotion",
+            lambda: self.user_state.observe_face(emotion, confidence),
+            fallback=None,
+        )
+
+    def notify_user_appraisal(self, valence: float, arousal: float = 0.0) -> None:
+        """Évaluation fine d'un échange → renseigne aussi sur l'état de Bryan."""
+        if not self.enabled or self._is_degraded() or not user_state_enabled():
+            return
+
+        def process() -> None:
+            self.user_state.observe_appraisal(valence, arousal)
+            self._appliquer_contagion()
+
+        self._safe("notify_user_appraisal", process, fallback=None)
+
+    def get_user_state(self) -> dict:
+        """État estimé de Bryan — pour l'écran Activité et le débogage."""
+        if not self.enabled or not user_state_enabled():
+            return {}
+        return self._safe(
+            "get_user_state", self.user_state.get_debug_state, fallback={}
+        ) or {}
 
     def notify_self_expression(self) -> None:
         """Ada vient de s'exprimer spontanément — on attend la réaction."""
@@ -415,7 +470,27 @@ class BrainManager:
         return self._restored
 
     def _internal_compute_block(self) -> str:
-        return build_mood_block(self.limbic.penser("system_instruction"))
+        bloc = build_mood_block(self.limbic.penser("system_instruction"))
+        return bloc + self._bloc_etat_bryan()
+
+    def _bloc_etat_bryan(self) -> str:
+        """Consignes tirées de l'état estimé de Bryan (théorie de l'esprit).
+
+        Comme pour l'humeur d'Ada : que des manières d'être, jamais de mesure.
+        Elle peut remarquer qu'il est fatigué, elle n'annonce pas un diagnostic.
+        """
+        if not user_state_enabled():
+            return ""
+        try:
+            lignes = self.user_state.directives()
+        except Exception:
+            return ""
+        if not lignes:
+            return ""
+        consignes = "\n".join(f"- {ligne}" for ligne in lignes)
+        return f"\nCE QUE TU PERÇOIS DE LUI :\n{consignes}\n"
+
+
 
     def _is_degraded(self) -> bool:
         return time.monotonic() < self._degraded_until
