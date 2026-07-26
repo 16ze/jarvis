@@ -573,6 +573,17 @@ async def connect(sid, environ, auth=None):
                 asyncio.create_task(start_audio(sid, {"muted": False}))
 
 @sio.event
+async def browser_result(sid, data):
+    """Réponse du navigateur intégré à une commande d'Ada."""
+    try:
+        from browser_bridge import get_bridge
+
+        get_bridge().resolve(data or {})
+    except Exception as exc:
+        print(f"[SERVER] browser_result: {exc}")
+
+
+@sio.event
 async def disconnect(sid):
     print(f"Client disconnected: {sid}")
 
@@ -788,6 +799,18 @@ async def start_audio(sid, data=None):
     def on_os_navigate(screen):
         print(f"[SERVER] os_navigate → {screen}")
         asyncio.create_task(sio.emit('os_navigate', {'screen': screen}))
+
+    # Pont vers le navigateur intégré : Ada agit sur le web par commandes
+    # structurées plutôt que par vision (cf. backend/browser_bridge.py).
+    try:
+        from browser_bridge import get_bridge
+
+        async def _emit_browser(event: str, payload: dict) -> None:
+            await sio.emit(event, payload)
+
+        get_bridge().set_emitter(_emit_browser)
+    except Exception as exc:
+        print(f"[SERVER] pont navigateur indisponible : {exc}")
 
     # Callback to send Error to frontend
     def on_error(msg):

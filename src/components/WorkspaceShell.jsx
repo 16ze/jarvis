@@ -420,6 +420,7 @@ const AdaSearchView = ({ socket, researchResult, workspaceStatus }) => {
                     <PageTabContent
                         key={activeTab.id}
                         tab={activeTab}
+                        socket={socket}
                         onTitleChange={(title) => updateTab(activeTab.id, { title })}
                         onUrlChange={(url) => updateTab(activeTab.id, { url })}
                         onSaveAsNote={() => savePageAsNote(activeTab)}
@@ -570,7 +571,7 @@ const SearchTabContent = ({
     );
 };
 
-const PageTabContent = ({ tab, onTitleChange, onUrlChange, onSaveAsNote }) => {
+const PageTabContent = ({ tab, socket, onTitleChange, onUrlChange, onSaveAsNote }) => {
     const [currentUrl, setCurrentUrl] = useState(tab.url);
     const [loading, setLoading] = useState(true);
     const [failed, setFailed] = useState(null);   // message d'échec → repli externe
@@ -620,6 +621,96 @@ const PageTabContent = ({ tab, onTitleChange, onUrlChange, onSaveAsNote }) => {
             view.removeEventListener('did-fail-load', onFail);
         };
     }, [canEmbed, onTitleChange, onUrlChange]);
+
+    // ── Pilotage par Ada (cf. backend/browser_bridge.py) ──────────────────────
+    // Ada envoie des commandes structurées ; on les exécute ici sur le webview
+    // et on renvoie le résultat. Aucune exécution de JS arbitraire venant du
+    // modèle : chaque action correspond à un extrait figé, écrit ici.
+    useEffect(() => {
+        if (!socket || !canEmbed) return undefined;
+
+        const handle = async ({ id, action, ...params } = {}) => {
+            const view = webviewRef.current;
+            const reply = (ok, data = '', error = '') =>
+                socket.emit('browser_result', { id, ok, data, error });
+            if (!view) return reply(false, '', 'aucune page ouverte');
+
+            const js = {
+                read: `(() => (document.body?.innerText || '').slice(0, 6000))()`,
+                click: `(() => {
+                    const cible = ${JSON.stringify(String(params.text || '').toLowerCase())};
+                    const noeuds = [...document.querySelectorAll(
+                        'a,button,input[type=submit],input[type=button],[role=button],[role=link]')];
+                    const el = noeuds.find(n => (
+                        (n.innerText || n.value || n.getAttribute('aria-label') || '')
+                    ).trim().toLowerCase().includes(cible));
+                    if (!el) return 'INTROUVABLE';
+                    el.scrollIntoView({block:'center'});
+                    el.click();
+                    return 'CLIQUE';
+                })()`,
+                fill: `(() => {
+                    const cible = ${JSON.stringify(String(params.field || '').toLowerCase())};
+                    const valeur = ${JSON.stringify(String(params.value ?? ''))};
+                    const champs = [...document.querySelectorAll('input,textarea,select')]
+                        .filter(c => c.type !== 'hidden');
+                    const décrit = (c) => {
+                        const lab = c.labels && c.labels[0] ? c.labels[0].innerText : '';
+                        return [lab, c.placeholder, c.name, c.id, c.getAttribute('aria-label'),
+                                c.type].filter(Boolean).join(' ').toLowerCase();
+                    };
+                    const el = champs.find(c => décrit(c).includes(cible));
+                    if (!el) return 'INTROUVABLE';
+                    const proto = el instanceof HTMLTextAreaElement
+                        ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+                    el.focus();
+                    if (setter) setter.call(el, valeur); else el.value = valeur;
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    return 'REMPLI';
+                })()`,
+                submit: `(() => {
+                    const actif = document.activeElement;
+                    const form = (actif && actif.form) || document.querySelector('form');
+                    if (form) { form.requestSubmit ? form.requestSubmit() : form.submit(); return 'VALIDE'; }
+                    return 'AUCUN_FORMULAIRE';
+                })()`,
+            };
+
+            const libellés = {
+                INTROUVABLE: 'élément introuvable sur la page',
+                CLIQUE: 'Élément cliqué.',
+                REMPLI: 'Champ rempli.',
+                VALIDE: 'Formulaire validé.',
+                AUCUN_FORMULAIRE: 'aucun formulaire sur la page',
+            };
+
+            try {
+                if (action === 'navigate') {
+                    const url = normalizeHttpUrl(String(params.url || ''));
+                    if (!url) return reply(false, '', 'URL invalide');
+                    view.loadURL(url);
+                    return reply(true, `Page ouverte : ${url}`);
+                }
+                if (action === 'back') { view.goBack(); return reply(true, 'Retour effectué.'); }
+                if (action === 'url') return reply(true, view.getURL?.() || '');
+
+                const code = js[action];
+                if (!code) return reply(false, '', `action non supportée : ${action}`);
+                const res = await view.executeJavaScript(code, true);
+                if (res === 'INTROUVABLE' || res === 'AUCUN_FORMULAIRE') {
+                    return reply(false, '', libellés[res]);
+                }
+                return reply(true, libellés[res] ?? String(res ?? ''));
+            } catch (e) {
+                return reply(false, '', String(e?.message || e));
+            }
+        };
+
+        socket.on('browser_command', handle);
+        return () => socket.off('browser_command', handle);
+    }, [canEmbed, socket]);
 
     const goBack = () => { try { webviewRef.current?.goBack(); } catch { /* ignore */ } };
     const reload = () => {

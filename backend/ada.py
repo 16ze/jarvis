@@ -505,6 +505,38 @@ run_terminal_tool = {
     },
 }
 
+browser_control_tool = {
+    "name": "browser_control",
+    "description": (
+        "Pilote le navigateur intégré d'Ada pour agir sur une page web : ouvrir "
+        "une URL, lire le contenu, cliquer un lien ou un bouton, remplir un champ, "
+        "valider un formulaire. BEAUCOUP plus fiable que execute_pc_task pour tout "
+        "ce qui est web (connexion, inscription, formulaire, lecture d'article) : "
+        "utilise-le en priorité dès qu'il s'agit d'une page web."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "action": {
+                "type": "STRING",
+                "description": (
+                    "navigate (ouvre une URL) | read (lit le texte de la page) | "
+                    "click (clique un élément par son libellé) | fill (remplit un "
+                    "champ) | submit (valide le formulaire) | back | url"
+                ),
+            },
+            "url": {"type": "STRING", "description": "Pour navigate : l'adresse à ouvrir."},
+            "text": {"type": "STRING", "description": "Pour click : le libellé de l'élément."},
+            "field": {
+                "type": "STRING",
+                "description": "Pour fill : le champ visé (libellé, placeholder ou nom).",
+            },
+            "value": {"type": "STRING", "description": "Pour fill : la valeur à saisir."},
+        },
+        "required": ["action"],
+    },
+}
+
 execute_plan_tool = {
     "name": "execute_plan",
     "description": (
@@ -802,6 +834,7 @@ tools = [
             run_terminal_tool,
             web_search_tool,
             execute_plan_tool,
+            browser_control_tool,
             open_screen_tool,
             read_emails_tool,
             send_email_tool,
@@ -2335,6 +2368,39 @@ class AudioLoop:
         "cad", "documents", "workspace", "settings", "home",
     }
 
+    async def handle_browser_control(self, args: dict) -> str:
+        """Pilote le navigateur intégré (cf. backend/browser_bridge.py).
+
+        Ouvre d'abord l'écran Workspace si nécessaire : le webview n'existe que
+        lorsqu'il est monté, et une commande envoyée dans le vide échouerait.
+        """
+        try:
+            import browser_bridge
+        except Exception as exc:  # noqa: BLE001
+            return f"Navigateur intégré indisponible : {exc}"
+
+        action = str(args.get("action", "")).strip().lower()
+        if action not in browser_bridge.ACTIONS:
+            return (
+                f"Action « {action} » inconnue. Disponibles : "
+                f"{', '.join(sorted(browser_bridge.ACTIONS))}."
+            )
+
+        # S'assurer que l'écran du navigateur est ouvert avant d'agir.
+        if action == "navigate" and self.on_os_navigate:
+            try:
+                self.on_os_navigate("workspace")
+                await asyncio.sleep(1.2)  # laisser le webview se monter
+            except Exception:
+                pass
+
+        params = {
+            cle: args[cle]
+            for cle in ("url", "text", "field", "value")
+            if args.get(cle) not in (None, "")
+        }
+        return await browser_bridge.run(action, **params)
+
     async def _announce_diagnostic(self) -> None:
         """Dit à Bryan ce qui est cassé chez Ada, au démarrage.
 
@@ -2768,6 +2834,7 @@ class AudioLoop:
                                     "run_terminal",
                                     "web_search",
                                     "execute_plan",
+                                    "browser_control",
                                     "open_screen",
                                     "read_emails",
                                     "send_email",
@@ -2881,6 +2948,23 @@ class AudioLoop:
                                             },
                                         )
                                         function_responses.append(function_response)
+
+                                    elif fc.name == "browser_control":
+                                        print(
+                                            f"[ADA DEBUG] [TOOL] Tool Call: 'browser_control' {dict(fc.args)}"
+                                        )
+                                        output = await self.handle_browser_control(
+                                            dict(fc.args)
+                                        )
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={
+                                                    "result": _truncate_tool_response(output)
+                                                },
+                                            )
+                                        )
 
                                     elif fc.name == "execute_plan":
                                         objective = fc.args.get("objective", "")
@@ -5848,6 +5932,9 @@ class AudioLoop:
                     args.get("query", ""), int(args.get("max_results", 6) or 6)
                 )
                 return _truncate_tool_response(result)
+            # ── NAVIGATEUR INTÉGRÉ (agir sur le web sans vision) ──────────────
+            elif name == "browser_control":
+                return await self.handle_browser_control(args)
             # ── PLANIFICATION (tâches multi-étapes) ───────────────────────────
             elif name == "execute_plan":
                 return await self.handle_execute_plan(args.get("objective", ""))
