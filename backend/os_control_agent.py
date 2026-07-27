@@ -346,6 +346,17 @@ def is_local_first_task(task: str) -> bool:
     ):
         return True
 
+    # Opérations sur les fichiers (cf. backend/mac_files.py) : recherche,
+    # ouverture, rangement, renommage, corbeille, espace disque.
+    if re.search(
+        r"\b(fichiers?|documents?|dossiers?)\b"
+        r"|\b(espace|place)\s+(disque|libre)\b|\bdisque\s+plein\b"
+        r"|\brenomme\b|\bcorbeille\b"
+        r"|\bsur quoi j'?ai travaill",
+        tl,
+    ):
+        return True
+
     # Actions système natives (réglages ciblés, fenêtres, média, capture,
     # luminosité, verrouillage) — cf. backend/mac_routines.py. Aucune n'a
     # besoin de regarder l'écran : elles doivent donc s'exécuter hors verrou.
@@ -1382,9 +1393,14 @@ end tell'''
         # Tout ce qui peut être fait sans regarder l'écran doit l'être : c'est
         # instantané et fiable, là où la boucle vision est lente et hasardeuse.
         try:
+            import mac_files
             import mac_routines
 
-            natif = await mac_routines.route(t)
+            # Fichiers d'abord : « ouvre le fichier X » ne doit pas être capté
+            # par l'ouverture d'application.
+            natif = await mac_files.route(t)
+            if natif is None:
+                natif = await mac_routines.route(t)
             if natif is not None:
                 if cb:
                     await cb({"image": None, "log": f"[PC] {natif}"})

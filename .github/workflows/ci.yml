@@ -40,6 +40,7 @@ jobs:
             tests/test_action_memory.py \
             tests/test_browser_bridge.py \
             tests/test_safe_git.py \
+            tests/test_mac_files.py \
             brain/tests/test_persistence.py \
             brain/tests/test_expectations.py \
             brain/tests/test_social_learning.py \
