@@ -2729,14 +2729,23 @@ class AudioLoop:
                                             audio_features=dict(self._audio_features),
                                         )
                                         mood_update = brain.get_runtime_mood_update()
+                                        # Contexte machine : Ada sait dans quelle
+                                        # app et sur quel document Bryan travaille,
+                                        # sans avoir à le demander.
+                                        try:
+                                            import machine_context as _mctx
+
+                                            contexte = await _mctx.prompt_block()
+                                            if contexte:
+                                                mood_update = (mood_update or "") + contexte
+                                        except Exception as _e:
+                                            print(f"[ADA] contexte machine indisponible : {_e}")
                                         if mood_update and self.session:
                                             try:
-                                                dedupe_key = "\n".join(
-                                                    line
-                                                    for line in mood_update.splitlines()
-                                                    if line.startswith("Mood courant :")
-                                                    or line.startswith("Dernier stimulus :")
-                                                ) or mood_update
+                                                # La clé de déduplication porte sur
+                                                # l'ensemble : les anciens marqueurs
+                                                # (« Mood courant : ») n'existent plus.
+                                                dedupe_key = mood_update
                                                 if dedupe_key != self._last_injected_mood:
                                                     self._last_injected_mood = dedupe_key
                                                     await self.session.send(

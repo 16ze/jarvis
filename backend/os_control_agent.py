@@ -346,6 +346,16 @@ def is_local_first_task(task: str) -> bool:
     ):
         return True
 
+    # Questions sur l'état de la machine (cf. backend/machine_context.py).
+    if re.search(
+        r"\bqu'?est-ce que je fais\b|\bsur quoi je (suis|travaille)\b"
+        r"|\bje fais quoi\b|\bo[\u00f9u] j'?en suis\b"
+        r"|\bquelles? (apps?|applications?)\b|\bje suis dans quoi\b"
+        r"|\bbatterie\b|\bautonomie\b",
+        tl,
+    ):
+        return True
+
     # Opérations sur les fichiers (cf. backend/mac_files.py) : recherche,
     # ouverture, rangement, renommage, corbeille, espace disque.
     if re.search(
@@ -1395,10 +1405,14 @@ end tell'''
         try:
             import mac_files
             import mac_routines
+            import machine_context
 
-            # Fichiers d'abord : « ouvre le fichier X » ne doit pas être capté
-            # par l'ouverture d'application.
-            natif = await mac_files.route(t)
+            # Questions sur l'état de la machine d'abord (« qu'est-ce que je
+            # fais ? »), puis fichiers — « ouvre le fichier X » ne doit pas
+            # être capté par l'ouverture d'application — puis système.
+            natif = await machine_context.route(t)
+            if natif is None:
+                natif = await mac_files.route(t)
             if natif is None:
                 natif = await mac_routines.route(t)
             if natif is not None:
