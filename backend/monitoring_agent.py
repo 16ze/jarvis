@@ -41,12 +41,14 @@ Usage depuis ada.py :
 import asyncio
 import json
 import os
+
+import models
 import re
 from typing import Optional
 
 from google import genai
 
-SUB_MODEL = "gemini-2.0-flash-lite"
+SUB_MODEL = models.get("fast")
 _client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 

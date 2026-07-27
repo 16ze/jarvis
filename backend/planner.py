@@ -32,12 +32,14 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+
+import models
 import re
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-_MODEL = os.getenv("PLANNER_MODEL", "gemini-2.5-flash")
+_MODEL = os.getenv("PLANNER_MODEL", models.get("reasoning"))
 MAX_STEPS = int(os.getenv("PLANNER_MAX_STEPS", "12"))
 MAX_REPAIRS = int(os.getenv("PLANNER_MAX_REPAIRS", "2"))
 

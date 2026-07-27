@@ -13,6 +13,8 @@ Usage depuis ada.py :
 import asyncio
 import json
 import os
+
+import models
 import re
 
 from google import genai
@@ -21,7 +23,7 @@ from mcps.wikipedia_mcp import WikipediaMCP
 from mcps.arxiv_mcp import ArxivMCP
 from mcps.youtube_mcp import YouTubeMCP
 
-SUB_MODEL = os.getenv("ADA_SUB_MODEL", "gemini-2.5-flash")
+SUB_MODEL = os.getenv("ADA_SUB_MODEL", models.get("fast"))
 _client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 

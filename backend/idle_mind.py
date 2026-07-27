@@ -27,11 +27,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+
+import models
 import re
 import time
 from collections import deque
 
-_MODEL = os.getenv("IDLE_MIND_MODEL", "gemini-2.5-flash")
+_MODEL = os.getenv("IDLE_MIND_MODEL", models.get("fast"))
 
 _SYSTEM = """Tu es la voix intérieure d'Ada, au repos, quand Bryan n'est pas là.
 

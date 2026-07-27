@@ -8,13 +8,15 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+import models
+
 load_dotenv()
 
 class CadAgent:
     def __init__(self, on_thought=None, on_status=None):
         self.client = genai.Client(http_options={"api_version": "v1beta"}, api_key=os.getenv("GEMINI_API_KEY"))
         # Using Gemini 2.5 Pro for thinking/streaming support
-        self.model = "gemini-3-pro-preview"
+        self.model = models.get("reasoning")
         self.on_thought = on_thought  # Callback for streaming thoughts 
         self.on_status = on_status  # Callback for retry status info
         
@@ -154,6 +156,7 @@ export_stl(result_part, 'output.stl')
                 
                 # 4. Execute Locally
                 import subprocess
+
                 import sys
                 
                 # Use the current Python interpreter (unified environment with build123d + mediapipe)

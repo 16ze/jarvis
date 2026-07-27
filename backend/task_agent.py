@@ -17,12 +17,14 @@ Usage depuis ada.py :
 import asyncio
 import json
 import os
+
+import models
 import re
 import subprocess
 
 from google import genai
 
-SUB_MODEL = "gemini-2.0-flash-lite"
+SUB_MODEL = models.get("fast")
 _MAX_ITERATIONS = 10
 _gemini_key = os.getenv("GEMINI_API_KEY")
 if not _gemini_key:

@@ -22,7 +22,9 @@ from __future__ import annotations
 import asyncio
 import os
 
-MODEL = os.getenv("KNOWLEDGE_MODEL", "gemini-2.5-flash")
+import models
+
+MODEL = os.getenv("KNOWLEDGE_MODEL", models.get("reasoning"))
 TIMEOUT_SEC = float(os.getenv("KNOWLEDGE_TIMEOUT_SEC", "30"))
 # Budget de réflexion : c'est lui qui fait la différence sur les questions de fond.
 THINKING_BUDGET = int(os.getenv("KNOWLEDGE_THINKING_BUDGET", "2048"))

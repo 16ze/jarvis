@@ -17,6 +17,8 @@ import base64
 import io
 import json
 import os
+
+import models
 import re
 import subprocess
 import urllib.parse
@@ -31,7 +33,7 @@ from google.genai import types
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-MODEL = "gemini-2.5-flash"
+MODEL = models.get("vision")
 # Plafond de la boucle vision. 90 s était trop long : une tâche impossible
 # (ex. fermer une app par clic droit sur le Dock) gardait le verrou tout ce
 # temps et bloquait EN CASCADE toutes les demandes suivantes — c'est ce qui

@@ -31,10 +31,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+
+import models
 import re
 from dataclasses import dataclass
 
-_MODEL = os.getenv("APPRAISAL_MODEL", "gemini-2.5-flash")
+_MODEL = os.getenv("APPRAISAL_MODEL", models.get("fast"))
 _TIMEOUT_SEC = float(os.getenv("APPRAISAL_TIMEOUT_SEC", "6"))
 _MIN_CHARS = int(os.getenv("APPRAISAL_MIN_CHARS", "8"))
 
