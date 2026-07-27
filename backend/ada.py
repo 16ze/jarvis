@@ -505,6 +505,28 @@ run_terminal_tool = {
     },
 }
 
+correspondence_tool = {
+    "name": "correspondence",
+    "description": (
+        "Traite la correspondance de Bryan : lit les messages en attente (mails "
+        "ou Instagram), rédige une réponse pour chacun dans SA voix, et les lui "
+        "soumet. RIEN N'EST ENVOYÉ sans son accord explicite. "
+        "action='prepare' pour lire et rédiger ; action='send' quand il approuve "
+        "(which='all' ou les numéros, ex. '1,3') ; action='discard' pour tout "
+        "abandonner. Utilise cet outil pour « réponds à mes mails », « réponds à "
+        "mes messages Instagram »."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "action": {"type": "STRING", "description": "prepare | send | discard"},
+            "channel": {"type": "STRING", "description": "mail | instagram (pour prepare)"},
+            "which": {"type": "STRING", "description": "all, ou numéros séparés par des virgules"},
+        },
+        "required": ["action"],
+    },
+}
+
 think_deeply_tool = {
     "name": "think_deeply",
     "description": (
@@ -862,6 +884,7 @@ tools = [
             execute_plan_tool,
             browser_control_tool,
             think_deeply_tool,
+            correspondence_tool,
             open_screen_tool,
             read_emails_tool,
             send_email_tool,
@@ -1125,6 +1148,7 @@ class AudioLoop:
         )
         self.sleep_mode = False  # Mode veille : audio OK, Ada silencieuse
         self.on_sleep_mode_changed = None  # callback(sleeping: bool) → frontend
+        self._correspondance = None  # assistant de correspondance (paresseux)
         self._sleep_audio_buffer = bytearray()  # Buffer audio accumulé en mode veille
 
         self.chat_buffer = {"sender": None, "text": ""}  # For aggregating chunks
@@ -2433,6 +2457,61 @@ class AudioLoop:
         }
         return await browser_bridge.run(action, **params)
 
+    async def handle_correspondence(self, args: dict) -> str:
+        """Traite la correspondance — sans jamais envoyer sans accord.
+
+        Le cycle est en deux temps volontairement séparés : `prepare` lit et
+        rédige, `send` n'agit que sur des brouillons déjà soumis à Bryan. Aucun
+        chemin ne permet de lire et d'envoyer dans le même appel.
+        """
+        try:
+            import correspondence as corr
+        except Exception as exc:  # noqa: BLE001
+            return f"Assistant de correspondance indisponible : {exc}"
+
+        if self._correspondance is None:
+            async def _navigateur(action: str, **params) -> str:
+                return await self.handle_browser_control({"action": action, **params})
+
+            self._correspondance = corr.CorrespondenceAssistant(
+                google_agent=self.google_agent,
+                browser=_navigateur,
+            )
+
+        assistant = self._correspondance
+        action = str(args.get("action", "prepare")).strip().lower()
+
+        if action == "discard":
+            return assistant.discard()
+
+        if action == "send":
+            brut = str(args.get("which", "all")).strip().lower()
+            if brut in ("all", "tout", "toutes", "tous", ""):
+                indices = None
+            else:
+                indices = [int(x) for x in re.findall(r"\d+", brut)] or None
+            return await assistant.send(indices)
+
+        # prepare : lire puis rédiger
+        canal = str(args.get("channel", "mail")).strip().lower()
+        if canal.startswith("insta"):
+            messages = await assistant.fetch_instagram()
+            if not messages:
+                return ("Je n'ai pas pu lire tes messages Instagram — vérifie que "
+                        "tu es connecté dans le navigateur d'Ada.")
+        else:
+            messages = await assistant.fetch_mail()
+            if not messages:
+                return "Aucun message non lu, ou l'accès Gmail a expiré."
+
+        contexte = ""
+        try:
+            contexte = memory.get_startup_context() or ""
+        except Exception:
+            pass
+        await assistant.draft_all(messages, contexte[:600])
+        return assistant.to_review()
+
     async def _announce_diagnostic(self) -> None:
         """Dit à Bryan ce qui est cassé chez Ada, au démarrage.
 
@@ -2877,6 +2956,7 @@ class AudioLoop:
                                     "execute_plan",
                                     "browser_control",
                                     "think_deeply",
+                                    "correspondence",
                                     "open_screen",
                                     "read_emails",
                                     "send_email",
@@ -2990,6 +3070,16 @@ class AudioLoop:
                                             },
                                         )
                                         function_responses.append(function_response)
+
+                                    elif fc.name == "correspondence":
+                                        print(f"[ADA DEBUG] [TOOL] correspondence {dict(fc.args)}")
+                                        sortie = await self.handle_correspondence(dict(fc.args))
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id, name=fc.name,
+                                                response={"result": _truncate_tool_response(sortie)},
+                                            )
+                                        )
 
                                     elif fc.name == "think_deeply":
                                         question = fc.args.get("question", "")
@@ -5989,6 +6079,9 @@ class AudioLoop:
                     args.get("query", ""), int(args.get("max_results", 6) or 6)
                 )
                 return _truncate_tool_response(result)
+            # ── CORRESPONDANCE (mails, Instagram) ────────────────────────────
+            elif name == "correspondence":
+                return await self.handle_correspondence(args)
             # ── RÉFLEXION DE FOND (questions, explications, procédures) ───────
             elif name == "think_deeply":
                 import knowledge as _kn

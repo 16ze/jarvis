@@ -50,6 +50,7 @@ jobs:
             brain/tests/test_decision_bias.py \
             tests/test_reliability.py \
             brain/tests/test_temperament.py \
+            tests/test_correspondence.py \
             -q
 
   frontend:
