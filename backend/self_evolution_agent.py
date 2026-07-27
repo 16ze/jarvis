@@ -9,6 +9,8 @@ import asyncio
 import json
 import os
 import subprocess
+
+import safe_git
 import sys
 import tempfile
 from pathlib import Path
@@ -56,10 +58,7 @@ class SelfEvolutionAgent:
                 capture_output=True
             )
             if diff.returncode != 0:
-                subprocess.run(
-                    ["git", "-C", str(JARVIS_ROOT), "add", "-A"],
-                    capture_output=True
-                )
+                safe_git.add_all_safe(JARVIS_ROOT)
                 r = subprocess.run(
                     ["git", "-C", str(JARVIS_ROOT), "commit", "-m",
                      "chore: auto-backup before Ada self-evolution"],
@@ -72,8 +71,7 @@ class SelfEvolutionAgent:
 
     def _git_commit(self, message: str) -> str:
         try:
-            subprocess.run(["git", "-C", str(JARVIS_ROOT), "add", "-A"],
-                           capture_output=True)
+            safe_git.add_all_safe(JARVIS_ROOT)
             r = subprocess.run(
                 ["git", "-C", str(JARVIS_ROOT), "commit", "-m", message],
                 capture_output=True, text=True

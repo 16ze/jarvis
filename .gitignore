@@ -55,6 +55,14 @@ out/
 .DS_Store
 Thumbs.db
 
+# Sauvegardes de jetons et secrets — les agents d'auto-correction font
+# `git add -A` et ont déjà tenté de publier un token OAuth (bloqué par GitHub).
+backend/*.json.old
+backend/*.bak
+backend/.env.bak*
+*.token
+.spotify_token
+
 # Google OAuth — tokens personnels
 backend/google_credentials.json
 backend/google_token.json

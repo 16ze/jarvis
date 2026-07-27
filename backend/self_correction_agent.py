@@ -9,6 +9,8 @@ Sécurité :
 
 import os
 import subprocess
+
+import safe_git
 import tempfile
 from pathlib import Path
 
@@ -77,10 +79,7 @@ class SelfCorrectionAgent:
                 capture_output=True
             )
             if result.returncode != 0:
-                subprocess.run(
-                    ["git", "-C", str(JARVIS_ROOT), "add", "-A"],
-                    capture_output=True
-                )
+                safe_git.add_all_safe(JARVIS_ROOT)
                 r = subprocess.run(
                     ["git", "-C", str(JARVIS_ROOT), "commit", "-m", "chore: auto-backup before Ada self-correction"],
                     capture_output=True, text=True
@@ -132,7 +131,7 @@ class SelfCorrectionAgent:
     def git_commit(self, message: str) -> str:
         """Commit tous les changements dans le repo jarvis."""
         try:
-            subprocess.run(["git", "-C", str(JARVIS_ROOT), "add", "-A"], capture_output=True)
+            safe_git.add_all_safe(JARVIS_ROOT)
             result = subprocess.run(
                 ["git", "-C", str(JARVIS_ROOT), "commit", "-m", message],
                 capture_output=True, text=True

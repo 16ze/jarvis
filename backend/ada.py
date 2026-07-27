@@ -505,6 +505,32 @@ run_terminal_tool = {
     },
 }
 
+think_deeply_tool = {
+    "name": "think_deeply",
+    "description": (
+        "Réfléchit en profondeur à une question et renvoie une réponse construite. "
+        "À utiliser dès que Bryan demande une explication, une procédure, un avis "
+        "technique, une comparaison ou un raisonnement (« comment on fait… », "
+        "« explique-moi… », « pourquoi… », « quel est le mieux entre… »). "
+        "Ta voix est rapide mais superficielle : cet outil te donne la profondeur. "
+        "Pour une info RÉCENTE (prix, actualité, version), utilise web_search à la place."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "question": {
+                "type": "STRING",
+                "description": "La question, reformulée clairement et complètement.",
+            },
+            "contexte": {
+                "type": "STRING",
+                "description": "Contexte utile éventuel (ce que fait Bryan, contraintes).",
+            },
+        },
+        "required": ["question"],
+    },
+}
+
 browser_control_tool = {
     "name": "browser_control",
     "description": (
@@ -835,6 +861,7 @@ tools = [
             web_search_tool,
             execute_plan_tool,
             browser_control_tool,
+            think_deeply_tool,
             open_screen_tool,
             read_emails_tool,
             send_email_tool,
@@ -2840,6 +2867,7 @@ class AudioLoop:
                                     "web_search",
                                     "execute_plan",
                                     "browser_control",
+                                    "think_deeply",
                                     "open_screen",
                                     "read_emails",
                                     "send_email",
@@ -2953,6 +2981,21 @@ class AudioLoop:
                                             },
                                         )
                                         function_responses.append(function_response)
+
+                                    elif fc.name == "think_deeply":
+                                        question = fc.args.get("question", "")
+                                        print(f"[ADA DEBUG] [TOOL] think_deeply: '{question[:60]}'")
+                                        import knowledge as _kn
+                                        reponse = await _kn.think(
+                                            question, fc.args.get("contexte", "")
+                                        )
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={"result": _truncate_tool_response(reponse)},
+                                            )
+                                        )
 
                                     elif fc.name == "browser_control":
                                         print(
@@ -5937,6 +5980,13 @@ class AudioLoop:
                     args.get("query", ""), int(args.get("max_results", 6) or 6)
                 )
                 return _truncate_tool_response(result)
+            # ── RÉFLEXION DE FOND (questions, explications, procédures) ───────
+            elif name == "think_deeply":
+                import knowledge as _kn
+                reponse = await _kn.think(
+                    args.get("question", ""), args.get("contexte", "")
+                )
+                return _truncate_tool_response(reponse)
             # ── NAVIGATEUR INTÉGRÉ (agir sur le web sans vision) ──────────────
             elif name == "browser_control":
                 return await self.handle_browser_control(args)
