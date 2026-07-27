@@ -2130,13 +2130,25 @@ end timeout'''
         self, task: str, cb: Optional[Callable], stop: asyncio.Event
     ) -> str:
         """
-        Boucle Plan → Execute → Verify avec max 3 tentatives.
+        Boucle Plan → Execute → Verify. Le nombre de tentatives suit l'état
+        interne d'Ada (persévérance) plutôt qu'une constante.
         C'est le cœur du comportement "humain senior".
         """
+        # Persévérance issue de l'état interne : confiante elle insiste, épuisée
+        # elle s'arrête plutôt que de s'acharner (cf. brain/decision_bias.py).
+        max_tentatives = 3
+        try:
+            from brain.brain_manager import get_brain
+
+            max_tentatives = int(get_brain().get_decision_bias().tentatives_max)
+        except Exception as exc:
+            print(f"[OsControl] biais de décision indisponible : {exc}")
+        max_tentatives = max(1, min(5, max_tentatives))
+
         attempt = 0
         last_error = ""
 
-        while attempt < 3:
+        while attempt < max_tentatives:
             if stop.is_set() or self._global_stop.is_set():
                 return "Tâche interrompue."
 
@@ -2205,7 +2217,7 @@ end timeout'''
 
             attempt += 1
 
-        return f"Tâche non complétée après 3 tentatives. Dernier état: {last_error}"
+        return f"Tâche non complétée après {max_tentatives} tentative(s). Dernier état: {last_error}"
 
     def _start_hotkey_listener(self, stop_event: asyncio.Event):
         try:

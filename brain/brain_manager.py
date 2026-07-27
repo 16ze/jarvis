@@ -19,6 +19,7 @@ from brain.expectations import ExpectationEngine
 from brain.limbic import CerveauEmotif
 from brain.social_learning import SocialLearning
 from brain.user_state import UserStateModel, enabled as user_state_enabled
+from brain import decision_bias
 from brain.modulators import get_gemini_params as _params_for_mood
 from brain.mood_block import build_mood_block, build_runtime_mood_update
 from brain.network import EtatEveil, ReseauAttention
@@ -214,6 +215,41 @@ class BrainManager:
         return self._safe(
             "get_user_state", self.user_state.get_debug_state, fallback={}
         ) or {}
+
+    def get_decision_bias(self):
+        """Inflexions de conduite déduites de l'état interne (et de celui de Bryan).
+
+        C'est ici que l'émotion cesse d'être décorative : elle influence le
+        nombre de tentatives, la prudence et l'initiative — de vrais actes.
+        """
+        if not self.enabled or self._is_degraded():
+            return decision_bias.compute(None)
+
+        def calcul():
+            tension = None
+            try:
+                if user_state_enabled():
+                    etat = self.user_state.current()
+                    if etat.is_reliable:
+                        tension = etat.tension
+            except Exception:
+                pass
+            return decision_bias.compute(self.limbic.get_snapshot(), tension)
+
+        return self._safe("get_decision_bias", calcul,
+                          fallback=decision_bias.compute(None))
+
+    def _bloc_conduite(self) -> str:
+        """Consignes de conduite injectées dans les instructions."""
+        try:
+            tension = None
+            if user_state_enabled():
+                etat = self.user_state.current()
+                if etat.is_reliable:
+                    tension = etat.tension
+            return decision_bias.prompt_block(self.limbic.get_snapshot(), tension)
+        except Exception:
+            return ""
 
     def notify_self_expression(self) -> None:
         """Ada vient de s'exprimer spontanément — on attend la réaction."""
@@ -471,7 +507,7 @@ class BrainManager:
 
     def _internal_compute_block(self) -> str:
         bloc = build_mood_block(self.limbic.penser("system_instruction"))
-        return bloc + self._bloc_etat_bryan()
+        return bloc + self._bloc_etat_bryan() + self._bloc_conduite()
 
     def _bloc_etat_bryan(self) -> str:
         """Consignes tirées de l'état estimé de Bryan (théorie de l'esprit).
