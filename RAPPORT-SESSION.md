@@ -203,3 +203,57 @@ inscriptions, et ça exploite la session isolée déjà en place.
 3. **La boucle de feedback** (§3.4) — le seul mécanisme qui fait qu'Ada
    s'améliore *avec le temps passé auprès de toi*, et donc le seul actif qui ne
    se copie pas.
+
+---
+
+# Réévaluation — session « 100 % » (2026-07-27)
+
+## Ce qui a été livré ce jour
+
+| Étape | Livrable | Vérification |
+|---|---|---|
+| 1 | `mac_files.py` — recherche, ouverture, rangement, renommage, corbeille, disque | 9/9 opérations testées en réel |
+| 2 | `machine_context.py` — app active, document, apps ouvertes, batterie, disque, réseau | testé en direct + injecté dans les instructions |
+| 3 | `decision_bias.py` — l'émotion influence prudence, persévérance, initiative | effet réel sur le nombre de tentatives |
+| 4 | Campagne de test réel | **14/14 commandes natives réussies (100 %)** |
+
+Bugs trouvés **par les tests réels**, pas par relecture :
+- `mkdir(True, True)` passait `True` comme mode de permissions → dossiers non inscriptibles ;
+- corbeille via AppleScript/Finder : expiration systématique → `~/.Trash` direct ;
+- « dis**charging** » contient « charging » → batterie en décharge annoncée « en charge » ;
+- clé de déduplication référençant un marqueur supprimé.
+
+## Score réévalué
+
+| Axe | Avant | Après | Pourquoi |
+|---|---|---|---|
+| Présence continue, vie intérieure | 80 % | **80 %** | inchangé, déjà abouti |
+| Simulation émotionnelle | 75 % | **85 %** | influence désormais les actes, plus seulement le ton |
+| Vue sur le PC | 60 % | **85 %** | sait l'app, le document, l'état machine ; manque le contenu des documents |
+| Exécution précise | 45 % | **70 %** | 100 % sur le chemin natif ; la boucle vision reste le maillon faible |
+| Intelligence / répondre juste | 50 % | **65 %** | voie de réflexion ajoutée ; plafonnée par l'accès modèle |
+| Confiance pour tout confier | 35 % | **45 %** | fondations bien meilleures, mais la confiance s'accumule à l'usage |
+
+**Global : ~55 % → ~72 %**
+
+## Pourquoi pas 100 %
+
+Trois plafonds que le code ne peut pas franchir aujourd'hui :
+
+1. **La validation en usage réel.** Tout est testé au niveau des routines, rien
+   à la voix avec le vrai micro et la vraie caméra. Tant qu'Ada n'a pas tourné
+   une journée entière, les chiffres restent théoriques.
+2. **L'accès modèle.** Les modèles « pro » renvoient 404 sur la clé actuelle ;
+   Ada raisonne avec `gemini-2.5-flash`. Lever ce plafond demande un compte
+   Google AI facturé — pas du code.
+3. **La confiance.** Elle ne se code pas : elle s'accumule à chaque tâche
+   réussie du premier coup. C'est le seul axe où le temps est irremplaçable.
+
+## Ce qui ferait encore bouger l'aiguille
+
+- **Couvrir la boucle vision** : chaque commande fréquente qui n'a pas de
+  routine native est un risque d'échec. La liste des dix commandes les plus
+  utilisées de Bryan permettrait de finir le travail.
+- **Lecture du contenu des documents** (pas seulement leur nom) — Ada saurait
+  alors de quoi parle ce sur quoi tu travailles.
+- **Permissions macOS** : caméra (Terminal), et jeton Google à renouveler.
