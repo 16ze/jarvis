@@ -353,7 +353,8 @@ def is_local_first_task(task: str) -> bool:
         r"\bqu'?est-ce que je fais\b|\bsur quoi je (suis|travaille)\b"
         r"|\bje fais quoi\b|\bo[\u00f9u] j'?en suis\b"
         r"|\bquelles? (apps?|applications?)\b|\bje suis dans quoi\b"
-        r"|\bbatterie\b|\bautonomie\b",
+        r"|\bbatterie\b|\bautonomie\b"
+        r"|\btu es fiable\b|\btu te d[ée]brouilles\b|\bton taux\b|\btu r[ée]ussis\b",
         tl,
     ):
         return True
@@ -1420,6 +1421,15 @@ end tell'''
             if natif is not None:
                 if cb:
                     await cb({"image": None, "log": f"[PC] {natif}"})
+                try:
+                    import reliability
+
+                    echec = str(natif).lower().startswith(
+                        ("échec", "echec", "introuvable", "impossible", "aucun")
+                    )
+                    reliability.record(t, not echec, outil="routine_native")
+                except Exception:
+                    pass
                 return natif
         except Exception as e:
             print(f"[OsControl] routine native indisponible : {e}")
@@ -2206,6 +2216,13 @@ end timeout'''
             # employées et si elles ont abouti, pour ne plus reproposer
             # ce qui échoue systématiquement (cf. action_memory.py).
             self._memoriser_approches(task, plan, reussi)
+            try:
+                import reliability
+
+                reliability.record(task, reussi, outil="execute_pc_task",
+                                   detail=str(verification.get("evidence", ""))[:150])
+            except Exception:
+                pass
 
             if reussi:
                 evidence = verification.get("evidence", "")

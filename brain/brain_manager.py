@@ -475,6 +475,9 @@ class BrainManager:
                 try:
                     # Coloration circadienne : Ada n'est pas la même à 4 h et à 14 h.
                     circadian.apply(self.limbic)
+                    # Dérive de tempérament : sur des semaines, son point
+                    # d'équilibre se déplace vers ce qu'elle vit réellement.
+                    self.limbic.derive_temperament()
                     persistence.save(self.limbic)
                     self.expectations.save()
                     self.social.save()

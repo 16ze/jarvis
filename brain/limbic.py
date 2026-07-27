@@ -97,6 +97,11 @@ class CerveauEmotif:
         self._valences_recentes: list[float] = []
         # Dernier jugement de la voie rapide (lexique), corrigé par la voie lente.
         self._derniere_valence_brute: float = 0.0
+        # TEMPÉRAMENT : point d'équilibre propre à Ada. Il part de la baseline
+        # commune mais dérive très lentement vers ce qu'elle vit réellement —
+        # c'est ainsi qu'un caractère se forme, sur des semaines et non des
+        # minutes (cf. derive_temperament()).
+        self.temperament: dict[str, float] = dict(BASELINE)
 
     def update(
         self,
@@ -522,7 +527,7 @@ class CerveauEmotif:
         moy = self._valence_momentum()
         for hormone, rate in DECAY.items():
             val = getattr(self, hormone)
-            base = BASELINE[hormone]
+            base = self.temperament.get(hormone, BASELINE[hormone])
 
             if hormone == "dopamine":
                 if moy > 0.15:
@@ -543,6 +548,25 @@ class CerveauEmotif:
 
             nouveau = val + (base - val) * rate
             setattr(self, hormone, round(_clamp(nouveau), 4))
+
+    def derive_temperament(self, taux: float = 0.0008) -> None:
+        """Fait dériver le point d'équilibre vers ce qui est réellement vécu.
+
+        Taux volontairement minuscule : à raison d'un appel par minute, il faut
+        des semaines pour déplacer sensiblement le tempérament. C'est le but —
+        un caractère qui changerait en une soirée ne serait pas un caractère.
+
+        Bornes strictes autour de la baseline d'origine : Ada peut devenir plus
+        confiante ou plus prudente, jamais méconnaissable.
+        """
+        with self._lock:
+            for hormone, origine in BASELINE.items():
+                vecu = getattr(self, hormone, origine)
+                actuel = self.temperament.get(hormone, origine)
+                nouveau = actuel + (vecu - actuel) * taux
+                # Au plus 0.15 d'écart avec le tempérament d'origine.
+                nouveau = max(origine - 0.15, min(origine + 0.15, nouveau))
+                self.temperament[hormone] = round(_clamp(nouveau), 4)
 
     def _push_valence(self, v: float) -> None:
         self._valences_recentes.append(_clamp(v, -1.0, 1.0))

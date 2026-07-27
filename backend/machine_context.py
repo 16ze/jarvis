@@ -243,6 +243,17 @@ async def route(task: str) -> str | None:
             return "Je ne vois aucune application ouverte."
         return f"{len(c.apps_ouvertes)} ouvertes : " + ", ".join(c.apps_ouvertes[:10]) + "."
 
+    # Fiabilité : Ada rend compte honnêtement de ses propres résultats.
+    if re.search(r"\btu es fiable\b|\btu te débrouilles\b|\btu te debrouilles\b|"
+                 r"\btes r[ée]sultats\b|\bton taux\b|\btu r[ée]ussis\b|"
+                 r"\bcombien.*(r[ée]ussi|[ée]chou)|\btu progresses\b", tl):
+        try:
+            import reliability
+
+            return reliability.get_tracker().to_speech()
+        except Exception:
+            return None
+
     if re.search(r"\bbatterie\b|\bautonomie\b|\bcombien de batterie\b", tl):
         c = await get_context(force=True)
         return c.batterie.capitalize() + "." if c.batterie else "Je ne lis pas l'état de la batterie."

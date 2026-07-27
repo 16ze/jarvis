@@ -48,6 +48,8 @@ jobs:
             brain/tests/test_circadian.py \
             brain/tests/test_user_state.py \
             brain/tests/test_decision_bias.py \
+            tests/test_reliability.py \
+            brain/tests/test_temperament.py \
             -q
 
   frontend:

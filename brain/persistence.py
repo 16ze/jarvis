@@ -82,6 +82,9 @@ def capture(limbic) -> dict:
         "saved_at": time.time(),
         "hormones": {h: float(snap[h]) for h in _HORMONES},
         "valences": list(getattr(limbic, "_valences_recentes", [])),
+        # Le tempérament est un ACQUIS : il ne décroît pas pendant l'absence,
+        # contrairement aux hormones. On le restaure tel quel.
+        "temperament": dict(getattr(limbic, "temperament", {}) or {}),
         "last_stimulus": str(snap.get("last_stimulus", ""))[:120],
         "mood_at_save": snap.get("mood", ""),
     }
@@ -154,6 +157,13 @@ def restore(limbic) -> dict | None:
         valences = [float(v) for v in data.get("valences", []) if isinstance(v, (int, float))]
         if valences and elapsed < 1800.0:  # au-delà de 30 min, le fil est rompu
             limbic._valences_recentes = valences[-6:]
+
+        temperament = data.get("temperament") or {}
+        if isinstance(temperament, dict) and temperament:
+            limbic.temperament = {
+                str(k): float(v) for k, v in temperament.items()
+                if isinstance(v, (int, float))
+            }
 
         limbic.dernier_stimulus = "reveil"
 

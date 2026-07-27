@@ -279,6 +279,13 @@ class Planner:
             if not ok:
                 plan.status = "failed"
                 self._save(plan)
+                try:
+                    import reliability
+
+                    reliability.record(plan.objective, False, outil="execute_plan",
+                                       detail=step.result[:150])
+                except Exception:
+                    pass
                 await self._progress(f"✗ Échec à l'étape {step.id}")
                 return (
                     f"Bloquée à l'étape {step.id} sur {len(plan.steps)} : "
@@ -287,6 +294,12 @@ class Planner:
 
         plan.status = "done"
         self._save(plan)
+        try:
+            import reliability
+
+            reliability.record(plan.objective, True, outil="execute_plan")
+        except Exception:
+            pass
         await self._progress(f"✓ Terminé ({plan.summary()})")
         dernier = plan.steps[-1].result if plan.steps else ""
         return f"Fait — {plan.summary()}. {dernier[:400]}"
