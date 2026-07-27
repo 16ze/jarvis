@@ -24,9 +24,21 @@ def get_google_services():
     if os.path.exists(TOKEN_FILE):
         creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
     if not creds or not creds.valid:
+        rafraichi = False
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+                rafraichi = True
+            except Exception as exc:
+                # Google révoque les refresh tokens des applications restées en
+                # mode « Test » (après 7 jours). Sans ce repli, on restait
+                # bloqué ici : l'échec du rafraîchissement remontait sans jamais
+                # proposer de se réautoriser.
+                print(
+                    f"[GOOGLE] rafraîchissement refusé ({exc}) — "
+                    "nouvelle autorisation nécessaire."
+                )
+        if not rafraichi:
             if not os.path.exists(CREDENTIALS_FILE):
                 raise FileNotFoundError(
                     f"Google credentials not found. Please place your OAuth2 credentials at: {CREDENTIALS_FILE}"
