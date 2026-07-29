@@ -94,17 +94,9 @@ def test_neutral_state_still_gives_a_directive():
     assert "essentiel" in block
 
 
-def test_anger_and_insults_remain_allowed():
-    """Choix assumé : Ada peut insulter en retour."""
-    block = build_mood_block(_snapshot())
-    assert "insultes explicites" in block
-    assert "attaques le comportement" in block
-
-
-def test_identity_is_preserved():
-    block = build_mood_block(_snapshot())
-    assert "je ne suis qu'une IA" in block   # cité comme ce qu'elle ne dit pas
-    assert "présence" in block
+# L'identité et le droit d'insulter vivent désormais dans backend/prompts.py
+# (le bloc d'humeur ne porte plus que les consignes de JEU). Ils sont vérifiés
+# dans tests/test_prompts.py — voir ce fichier.
 
 
 # ─── Robustesse ───────────────────────────────────────────────────────────────

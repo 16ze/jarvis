@@ -925,15 +925,65 @@ for _t in tools[0]["function_declarations"]:
         _deduped.append(_t)
     else:
         print(f"[ADA] WARNING: outil en doublon retiré → {_name}")
-tools = [{"function_declarations": _deduped}]
+# ── SURFACE D'OUTILS EXPOSÉE À LA VOIX ───────────────────────────────────────
+# 99 outils étaient déclarés au modèle vocal. Or celui-ci est optimisé pour la
+# latence, pas pour le raisonnement : lui faire choisir parmi 99 possibilités à
+# chaque phrase dégradait massivement la sélection — d'où des tâches « faites à
+# moitié » ou à côté.
+#
+# On ne retire RIEN des capacités : on réduit seulement ce que la VOIX voit.
+# Tout le reste (Spotify, caméra PTZ, santé, cartes, Drive, Sheets…) demeure
+# accessible via execute_plan, dont le planificateur est un modèle texte qui,
+# lui, gère parfaitement les 99 outils.
+_VOICE_ESSENTIAL = {
+    # Contrôle de la machine
+    "execute_pc_task", "stop_pc_task", "run_terminal", "describe_screen",
+    # Correspondance et communication
+    "correspondence", "read_emails", "send_email", "telegram_send_message",
+    # Savoir et recherche
+    "think_deeply", "web_search", "run_research",
+    # Web
+    "browser_control",
+    # Orchestration : la porte vers TOUS les autres outils
+    "execute_plan",
+    # Mémoire
+    "search_memory", "remember", "search_documents",
+    # Agenda et rappels
+    "list_events", "create_event", "reminder_set",
+    # Maison
+    "control_light", "list_smart_devices",
+    # Création
+    "generate_cad",
+    # Interface et veille
+    "open_screen", "ada_sleep", "ada_wake",
+}
 
-# Univers d'outils que le planificateur peut enchaîner (planner.py). Dérivé des
-# déclarations réelles : impossible qu'il propose un outil qui n'existe pas.
+
+def _restreindre_voix(declarations: list) -> list:
+    """Ne garde que l'essentiel, sauf demande explicite du contraire."""
+    if os.getenv("ADA_ALL_VOICE_TOOLS", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return declarations
+    gardees = []
+    for d in declarations:
+        nom = d.get("name") if isinstance(d, dict) else getattr(d, "name", None)
+        if nom in _VOICE_ESSENTIAL:
+            gardees.append(d)
+    return gardees or declarations
+
+
+# Univers COMPLET des outils — capturé AVANT la restriction vocale. C'est ce
+# que le planificateur peut enchaîner : il ne perd donc aucune capacité, même
+# pour les outils que la voix ne voit plus directement.
 _ALL_TOOL_NAMES = {
     (t.get("name") if isinstance(t, dict) else getattr(t, "name", None))
     for t in _deduped
 }
 _ALL_TOOL_NAMES.discard(None)
+
+_deduped = _restreindre_voix(_deduped)
+tools = [{"function_declarations": _deduped}]
+print(f"[ADA] surface vocale : {len(_deduped)} outils essentiels sur "
+      f"{len(_ALL_TOOL_NAMES)} (le reste reste joignable via execute_plan)")
 print(
     f"[ADA] {len(_deduped)} tools voix chargés (exclu: {len(_VOICE_EXCLUDED)} outils non-vocaux)"
 )
