@@ -645,118 +645,87 @@ class OsControlAgent:
             return self._app_cible
         return await self._get_front_app()
 
-    async def _get_ui_elements(self) -> str:
-        """Liste les éléments UI accessibles de la fenêtre avant : tous types
-        (boutons, onglets, lignes, liens, champs, textes…), pas seulement les
-        boutons — indispensable pour les apps SwiftUI (Localiser, Réglages…).
-        Les libellés retournés sont directement utilisables avec click_element."""
+    async def _get_ui_elements(self, profondeur: int = 4) -> str:
+        """Liste les éléments cliquables de la fenêtre de l'app CIBLE.
+
+        `entire contents` — utilisé auparavant — renvoie 0 élément sur la
+        plupart des applications modernes (TextEdit, Réglages, apps SwiftUI).
+        L'accessibilité paraissait donc morte, et le planificateur retombait sur
+        des coordonnées devinées. Un parcours RÉCURSIF de `UI elements`, lui,
+        fonctionne : 15 éléments là où `entire contents` en trouvait 0.
+        """
         app = await self._app_de_travail()
         script = f'''
-with timeout of 8 seconds
+with timeout of 10 seconds
 tell application "System Events"
     tell process "{_osascript_escape(app)}"
-        set out to ""
-        set n to 0
-        set elems to entire contents of window 1
-        repeat with e in elems
-            set n to n + 1
-            if n > 400 then exit repeat
-            set lbl to ""
+        set sortie to ""
+        set compteur to 0
+
+        set aVoir to {{}}
+        try
+            set aVoir to UI elements of window 1
+        on error
             try
-                set lbl to (description of e) as text
+                set aVoir to UI elements of front window
             end try
-            if lbl is "" or lbl is "groupe" or lbl is "group" or lbl is "image" then
+        end try
+
+        repeat with niveau from 1 to {profondeur}
+            set suivants to {{}}
+            repeat with e in aVoir
+                if compteur > 300 then exit repeat
+                set etiquette to ""
                 try
-                    set lbl to (name of e) as text
+                    set etiquette to (description of e) as text
                 end try
-            end if
-            if lbl is not "" and lbl is not "missing value" and lbl is not "groupe" and lbl is not "group" and lbl is not "image" then
-                -- « kind » est une propriété réservée de process : ne pas l'utiliser comme variable
-                set roleTxt to ""
+                if etiquette is "" or etiquette is "missing value" then
+                    try
+                        set etiquette to (name of e) as text
+                    end try
+                end if
+                if etiquette is "" or etiquette is "missing value" then
+                    try
+                        set etiquette to (title of e) as text
+                    end try
+                end if
+                set genre to ""
                 try
-                    set roleTxt to (role description of e) as text
+                    set genre to (role description of e) as text
                 end try
-                set out to out & roleTxt & ": " & lbl & linefeed
-            end if
+                if etiquette is not "" and etiquette is not "missing value" then
+                    if genre is "" then set genre to "élément"
+                    set sortie to sortie & genre & ": " & etiquette & linefeed
+                    set compteur to compteur + 1
+                end if
+                try
+                    set enfants to UI elements of e
+                    if (count of enfants) > 0 then set suivants to suivants & enfants
+                end try
+            end repeat
+            if (count of suivants) is 0 then exit repeat
+            set aVoir to suivants
         end repeat
-        return out
+
+        return sortie
     end tell
 end tell
 end timeout'''
         try:
             r = await asyncio.to_thread(_run_osascript, script)
-            lines, seen = [], set()
-            for line in (r or "").splitlines():
-                line = line.strip()
-                if line and line not in seen:
-                    seen.add(line)
-                    lines.append(line)
-            listing = "\n".join(lines[:150])
-            if listing:
-                return f"UI ({app}):\n{listing}"
-        except Exception as e:
-            print(f"[OsControl] get_ui_elements (riche) erreur : {e}")
-        # Fallback minimal : boutons de la fenêtre + toolbar
-        try:
-            script = f'''
-tell application "System Events"
-    tell process "{_osascript_escape(app)}"
-        set res to ""
-        try
-            repeat with btn in every button of window 1
-                try
-                    set d to description of btn
-                    if d is not "" then set res to res & "BTN:" & d & "\\n"
-                end try
-            end repeat
-        end try
-        try
-            repeat with btn in every button of toolbar 1 of window 1
-                try
-                    set d to description of btn
-                    if d is not "" then set res to res & "TB:" & d & "\\n"
-                end try
-            end repeat
-        end try
-        return res
-    end tell
-end tell'''
-            r = await asyncio.to_thread(_run_osascript, script)
             if r.strip():
-                return f"UI ({app}):\n{r}"
-            # Une fenêtre sans contenu énumérable arrive sur certaines apps
-            # SwiftUI : on le dit, plutôt que de laisser croire à un écran vide.
+                lignes = [l for l in r.splitlines() if l.strip()]
+                # Dédoublonnage : les hiérarchies répètent souvent les libellés.
+                vues, uniques = set(), []
+                for l in lignes:
+                    if l not in vues:
+                        vues.add(l)
+                        uniques.append(l)
+                return f"UI ({app}) :\n" + "\n".join(uniques[:80])
             return (f"Aucun élément exposé par {app} (interface non inspectable). "
                     "Utilise les coordonnées avec prudence.")
         except Exception as e:
             return _diagnostic_accessibilite(app, e)
-
-    async def _find_app_path(self, display_name: str) -> str:
-        """Trouve le chemin .app d'une app par son NOM AFFICHÉ (localisé), via
-        Spotlight. Gère les noms français (« Localiser » → FindMy.app) et toute
-        app installée. Retourne le chemin ou "".
-        """
-        safe = display_name.replace("'", "").replace('"', "")
-        query = (
-            "kMDItemContentType == 'com.apple.application-bundle' && "
-            f"kMDItemDisplayName == '{safe}*'wc"
-        )
-        try:
-            r = await asyncio.to_thread(
-                subprocess.run, ["mdfind", query],
-                capture_output=True, text=True, timeout=8,
-            )
-        except Exception:
-            return ""
-        paths = [p for p in (r.stdout or "").splitlines() if p.strip().endswith(".app")]
-        if not paths:
-            return ""
-        # Préférer les apps dans /Applications ou /System/Applications (vraies apps)
-        paths.sort(key=lambda p: (
-            0 if p.startswith(("/System/Applications", "/Applications")) else 1,
-            len(p),
-        ))
-        return paths[0]
 
     async def _open_app_local(self, target_raw: str) -> tuple[bool, str]:
         target_clean = target_raw.strip().strip("'\"«»")

@@ -1018,6 +1018,27 @@ _mood_block_voice = get_brain().get_mood_block() or ""
 from prompts import SYSTEM_INSTRUCTION_BASE
 
 
+def _bloc_date() -> str:
+    """Date et heure courantes pour le mode VOIX.
+
+    Le bloc existait uniquement côté texte : en voix, Ada n'avait aucune notion
+    du jour ni de l'heure et répondait donc n'importe quoi quand on lui posait
+    la question. Recalculé à chaque connexion Live.
+    """
+    import datetime as _d
+
+    jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+    mois = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+            "août", "septembre", "octobre", "novembre", "décembre"]
+    maintenant = _d.datetime.now()
+    return (
+        f"\n\nMAINTENANT : {jours[maintenant.weekday()]} {maintenant.day} "
+        f"{mois[maintenant.month - 1]} {maintenant.year}, il est "
+        f"{maintenant.strftime('%H:%M')}. Fie-toi à cette heure, jamais à une "
+        f"autre source.\n"
+    )
+
+
 def _build_voice_config(mood_block: str | None = None) -> types.LiveConnectConfig:
     """Construit la config Live API avec un mood frais.
 
@@ -1031,7 +1052,7 @@ def _build_voice_config(mood_block: str | None = None) -> types.LiveConnectConfi
         # Réactiver si l'affichage texte des réponses Ada est nécessaire dans l'UI
         # output_audio_transcription={},
         input_audio_transcription={},
-        system_instruction=SYSTEM_INSTRUCTION_BASE + mood,
+        system_instruction=SYSTEM_INSTRUCTION_BASE + _bloc_date() + mood,
         tools=tools,
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
