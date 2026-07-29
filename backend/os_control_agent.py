@@ -270,6 +270,44 @@ Return ONLY a valid JSON array of actions (same format as before).
 """
 
 
+def _cible_de_la_tache(task: str) -> str | None:
+    """Devine l'application visée par une demande.
+
+    « écris dans TextEdit », « dans Safari clique sur… », « ouvre Notes et… » :
+    toutes désignent une app précise. La verrouiller évite d'agir dans celle qui
+    se trouve devant par hasard.
+    """
+    t = (task or "").lower()
+    for alias, nom in sorted(_KNOWN_APPS.items(), key=lambda x: -len(x[0])):
+        if re.search(rf"\b{re.escape(alias)}\b", t):
+            return nom
+    return None
+
+
+def _diagnostic_accessibilite(app: str, erreur: Exception) -> str:
+    """Traduit une erreur AppleScript en cause ACTIONNABLE.
+
+    Ces échecs étaient jusqu'ici avalés en « Aucun élément UI accessible », ce
+    qui poussait le planificateur à deviner des coordonnées sur une capture
+    dégradée — d'où des exécutions approximatives attribuées à tort au modèle.
+    La cause réelle est presque toujours une permission macOS manquante.
+    """
+    texte = str(erreur)
+    if "-1743" in texte or "Non autorisé" in texte or "not allowed" in texte.lower():
+        return (f"PERMISSION MANQUANTE : je n'ai pas le droit de piloter {app}. "
+                "Réglages Système → Confidentialité et sécurité → Automatisation → "
+                "autoriser Terminal à contrôler cette application. "
+                "En attendant, je ne peux pas inspecter son interface.")
+    if "-1719" in texte or "Index non valable" in texte or "invalid index" in texte.lower():
+        return (f"{app} n'a aucune fenêtre ouverte pour l'instant — "
+                "ouvre-en une avant d'agir dedans.")
+    if "-600" in texte or "pas ouverte" in texte:
+        return f"{app} n'est pas lancée."
+    if "timed out" in texte.lower() or "timeout" in texte.lower():
+        return f"{app} ne répond pas assez vite pour être inspectée."
+    return f"Interface de {app} non inspectable : {texte[:120]}"
+
+
 def _run_osascript(script: str) -> str:
     r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
     if r.returncode != 0:
@@ -399,6 +437,9 @@ class OsControlAgent:
         self._current_task = ""
         self._sw, self._sh = 1440, 900  # mis à jour au premier run
         self._need_user_question = None  # question posée via l'action ask_user
+        # Application CIBLE de la tâche en cours. Sans elle, l'inspection et les
+        # clics visaient l'app au premier plan — donc parfois la mauvaise.
+        self._app_cible: str | None = None
 
     def stop(self):
         self._global_stop.set()
@@ -583,12 +624,33 @@ class OsControlAgent:
         except Exception:
             return "Unknown"
 
+    async def _app_de_travail(self) -> str:
+        """Application dans laquelle agir — la CIBLE, pas celle qui est devant.
+
+        Sans ce verrouillage, une tâche « écris dans TextEdit » lancée pendant
+        que Safari est au premier plan inspectait Safari et cliquait dedans.
+        C'est la cause structurelle des exécutions « à côté ».
+        """
+        if self._app_cible:
+            try:
+                devant = await self._get_front_app()
+                if devant.lower() != self._app_cible.lower():
+                    await asyncio.to_thread(
+                        _run_osascript,
+                        f'tell application "{_osascript_escape(self._app_cible)}" to activate',
+                    )
+                    await asyncio.sleep(0.6)
+            except Exception:
+                pass
+            return self._app_cible
+        return await self._get_front_app()
+
     async def _get_ui_elements(self) -> str:
         """Liste les éléments UI accessibles de la fenêtre avant : tous types
         (boutons, onglets, lignes, liens, champs, textes…), pas seulement les
         boutons — indispensable pour les apps SwiftUI (Localiser, Réglages…).
         Les libellés retournés sont directement utilisables avec click_element."""
-        app = await self._get_front_app()
+        app = await self._app_de_travail()
         script = f'''
 with timeout of 8 seconds
 tell application "System Events"
@@ -660,9 +722,14 @@ tell application "System Events"
     end tell
 end tell'''
             r = await asyncio.to_thread(_run_osascript, script)
-            return f"UI ({app}):\n{r}" if r.strip() else f"Aucun élément UI accessible dans {app}."
+            if r.strip():
+                return f"UI ({app}):\n{r}"
+            # Une fenêtre sans contenu énumérable arrive sur certaines apps
+            # SwiftUI : on le dit, plutôt que de laisser croire à un écran vide.
+            return (f"Aucun élément exposé par {app} (interface non inspectable). "
+                    "Utilise les coordonnées avec prudence.")
         except Exception as e:
-            return f"get_ui_elements erreur: {e}"
+            return _diagnostic_accessibilite(app, e)
 
     async def _find_app_path(self, display_name: str) -> str:
         """Trouve le chemin .app d'une app par son NOM AFFICHÉ (localisé), via
@@ -1574,7 +1641,7 @@ end tell'''
         latérale, lien, case… Recherche d'abord les chemins rapides (boutons),
         puis récursivement dans toute la fenêtre (SwiftUI compris)."""
         try:
-            app = process or await self._get_front_app()
+            app = process or await self._app_de_travail()
             safe = _osascript_escape(name)
             script = f'''
 with timeout of 10 seconds
@@ -2070,6 +2137,9 @@ end timeout'''
             self._reset()
             self._current_task = task
             self._sw, self._sh = await asyncio.to_thread(_get_screen_size)
+            self._app_cible = _cible_de_la_tache(task)
+            if self._app_cible:
+                print(f"[OsControl] app cible verrouillée : {self._app_cible}")
             print(f"[OsControl] ▶ {task[:80]} (écran {self._sw}×{self._sh})")
 
             if step_callback:
