@@ -484,7 +484,7 @@ class OsControlAgent:
         self._type_max_anim = int(os.getenv("OS_CONTROL_TYPE_MAX_ANIM", "120"))     # au-delà → coller
         # OS_CONTROL_MODE : "plan" (rafale planifiée, défaut, le plus fiable) ou
         #   "step" (observe→agis→ré-observe à chaque action, comme Claude).
-        self._mode = os.getenv("OS_CONTROL_MODE", "step").lower()
+        self._mode = os.getenv("OS_CONTROL_MODE", "plan").lower()
         self._step_max = int(os.getenv("OS_CONTROL_MAX_STEPS", "20"))
 
     def stop(self):

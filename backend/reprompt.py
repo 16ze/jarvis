@@ -15,7 +15,7 @@ concerné : il n'y a pas de texte à reformuler avant le modèle.
 import asyncio
 import os
 
-_ENABLED = os.getenv("JARVIS_REPROMPT", "true").lower() in ("1", "true", "yes", "on")
+_ENABLED = os.getenv("JARVIS_REPROMPT", "false").lower() in ("1", "true", "yes", "on")
 _MODEL = os.getenv("JARVIS_REPROMPT_MODEL", "gemini-2.5-flash")
 _MIN_LEN = int(os.getenv("JARVIS_REPROMPT_MIN_LEN", "12"))
 _GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

@@ -1039,6 +1039,31 @@ def _bloc_date() -> str:
     )
 
 
+# Filtres de sécurité Gemini au plus permissif que l'API autorise (assistant
+# personnel de Bryan). NB IMPORTANT : Google applique EN PLUS une sécurité
+# serveur de base, NON désactivable côté code — ceci n'enlève que la couche
+# configurable, pas les garde-fous intrinsèques du modèle.
+# OFF par défaut : la config Gemini d'origine (connue pour marcher) est conservée.
+# Mettre JARVIS_PERMISSIVE_SAFETY=true pour abaisser les filtres configurables —
+# à n'activer qu'après avoir confirmé que la voix se connecte toujours.
+if os.getenv("JARVIS_PERMISSIVE_SAFETY", "false").lower() in ("1", "true", "yes", "on"):
+    try:
+        _PERMISSIVE_SAFETY = [
+            types.SafetySetting(category=_c, threshold=types.HarmBlockThreshold.BLOCK_NONE)
+            for _c in (
+                types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            )
+        ]
+    except Exception as _e:
+        print(f"[SAFETY] réglage permissif indisponible: {_e}")
+        _PERMISSIVE_SAFETY = None
+else:
+    _PERMISSIVE_SAFETY = None
+
+
 def _build_voice_config(mood_block: str | None = None) -> types.LiveConnectConfig:
     """Construit la config Live API avec un mood frais.
 
@@ -1046,11 +1071,9 @@ def _build_voice_config(mood_block: str | None = None) -> types.LiveConnectConfi
     (Live API ne supporte pas le hot-swap du system_instruction).
     """
     mood = mood_block if mood_block is not None else (get_brain().get_mood_block() or "")
-    return types.LiveConnectConfig(
+    _base_kwargs = dict(
         response_modalities=["AUDIO"],
         # output_audio_transcription désactivé — overhead inutile, réduit la latence
-        # Réactiver si l'affichage texte des réponses Ada est nécessaire dans l'UI
-        # output_audio_transcription={},
         input_audio_transcription={},
         system_instruction=SYSTEM_INSTRUCTION_BASE + _bloc_date() + mood,
         tools=tools,
@@ -1060,6 +1083,14 @@ def _build_voice_config(mood_block: str | None = None) -> types.LiveConnectConfi
             )
         ),
     )
+    # Défensif : un SDK plus ancien sans le champ safety_settings ne doit pas
+    # casser le démarrage de la voix.
+    if _PERMISSIVE_SAFETY:
+        try:
+            return types.LiveConnectConfig(safety_settings=_PERMISSIVE_SAFETY, **_base_kwargs)
+        except TypeError:
+            pass
+    return types.LiveConnectConfig(**_base_kwargs)
 
 
 # Config initiale pour process_text_message (mode texte Telegram/WhatsApp).
@@ -5863,6 +5894,7 @@ class AudioLoop:
                     system_instruction=system,
                     tools=text_tools,
                     temperature=_brain_params["temperature"],
+                    safety_settings=_PERMISSIVE_SAFETY,
                     thinking_config=types.ThinkingConfig(
                         thinking_budget=_brain_params["thinking_budget"]
                     ),
