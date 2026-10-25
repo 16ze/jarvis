@@ -83,36 +83,16 @@ class KnowledgeEngine:
         if not self.enabled:
             return ""
 
-        client = self._get_client()
-        if client is None:
-            return "Je n'ai pas accès à mon moteur de réflexion (clé Gemini absente)."
-
         prompt = question if not contexte else f"{question}\n\nContexte : {contexte}"
 
+        # Cerveau hybride : Claude si dispo (raisonnement « comme Claude »), repli
+        # Gemini — géré par llm_router. La voix reste Gemini Live (ailleurs).
         try:
-            from google.genai import types
-
-            config = types.GenerateContentConfig(
-                system_instruction=_SYSTEM,
-                temperature=0.4,
-                max_output_tokens=1400,
-            )
-            # Le budget de réflexion n'est pas supporté par tous les modèles :
-            # on l'active si possible, sans jamais bloquer la réponse.
-            try:
-                config.thinking_config = types.ThinkingConfig(
-                    thinking_budget=THINKING_BUDGET
-                )
-            except Exception:
-                pass
-
-            response = await asyncio.wait_for(
-                client.aio.models.generate_content(
-                    model=MODEL, contents=prompt, config=config
-                ),
+            import llm_router
+            texte = (await asyncio.wait_for(
+                llm_router.think(_SYSTEM, prompt, max_tokens=1400, temperature=0.4),
                 timeout=TIMEOUT_SEC,
-            )
-            texte = (response.text or "").strip()
+            )).strip()
             return texte or "Je n'ai pas réussi à formuler de réponse utile."
         except asyncio.TimeoutError:
             return "Ma réflexion a pris trop de temps — reformule ou demande plus court."

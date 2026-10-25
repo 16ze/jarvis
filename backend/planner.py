@@ -394,19 +394,10 @@ class Planner:
             pass
 
     async def _ask(self, client, system: str, prompt: str) -> str:
+        # Cerveau hybride : planification sur Claude si dispo, repli Gemini.
         try:
-            from google.genai import types
-
-            response = await client.aio.models.generate_content(
-                model=_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system,
-                    temperature=0.2,
-                    max_output_tokens=1200,
-                ),
-            )
-            return response.text or ""
+            import llm_router
+            return await llm_router.think(system, prompt, max_tokens=1200, temperature=0.2)
         except Exception as exc:  # noqa: BLE001
             print(f"[PLANNER] appel modèle échoué : {exc}")
             return ""
