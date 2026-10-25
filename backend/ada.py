@@ -729,6 +729,24 @@ run_task_tool = {
     },
 }
 
+code_task_tool = {
+    "name": "code_task",
+    "description": (
+        "Agent de codage AUTONOME (niveau Claude Code / Codex) : lit un dépôt, cherche, "
+        "édite des fichiers, lance des commandes et des tests, lit les erreurs et itère "
+        "jusqu'à l'objectif. Utilise pour écrire/corriger du code, refactorer, ajouter "
+        "une fonctionnalité, faire passer des tests, déboguer un projet."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "objective": {"type": "STRING", "description": "Ce qu'il faut coder / corriger / accomplir"},
+            "project_path": {"type": "STRING", "description": "Chemin absolu du dossier projet (optionnel; défaut = JARVIS_ROOT)"},
+        },
+        "required": ["objective"],
+    },
+}
+
 anticipate_tool = {
     "name": "anticipate",
     "description": (
@@ -905,6 +923,7 @@ tools = [
             search_documents_tool,
             run_research_tool,
             run_task_tool,
+            code_task_tool,
             anticipate_tool,
             start_monitoring_tool,
             stop_monitoring_tool,
@@ -941,7 +960,7 @@ _VOICE_ESSENTIAL = {
     # Correspondance et communication
     "correspondence", "read_emails", "send_email", "telegram_send_message",
     # Savoir et recherche
-    "think_deeply", "web_search", "run_research",
+    "think_deeply", "web_search", "run_research", "code_task",
     # Web
     "browser_control",
     # Orchestration : la porte vers TOUS les autres outils
@@ -4165,6 +4184,19 @@ class AudioLoop:
                                         )
 
                                     # ─── SUB-AGENT ROUTING ─────────────────────────────────────────────
+                                    elif fc.name == "code_task":
+                                        from dev_agent import DevAgent
+                                        objective = fc.args.get("objective", "")
+                                        project = fc.args.get("project_path", "")
+                                        print(f"[SUB-AGENT] code_task: '{objective[:60]}'")
+                                        result_str = await DevAgent().run(objective, project)
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={"result": result_str},
+                                            )
+                                        )
                                     elif fc.name == "run_research":
                                         query = fc.args.get("query", "")
                                         print(f"[SUB-AGENT] run_research: '{query}'")
@@ -5965,6 +5997,12 @@ class AudioLoop:
         """Dispatch d'outils pour le mode texte (Telegram/WhatsApp/etc.)."""
         print(f"[ADA TEXT] Tool: {name}")
         try:
+            # ── DEV AGENT (codage autonome, niveau Claude Code / Codex) ───────
+            if name == "code_task":
+                from dev_agent import DevAgent
+                return await DevAgent().run(
+                    args.get("objective", ""), args.get("project_path", "")
+                )
             # ── GMAIL ─────────────────────────────────────────────────────────
             if name == "read_emails":
                 return await asyncio.to_thread(

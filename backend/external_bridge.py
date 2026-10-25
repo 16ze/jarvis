@@ -1568,6 +1568,9 @@ class TextAgent:
             return result
 
         # ── SUB-AGENTS ────────────────────────────────────────────────────────
+        elif name == "code_task":
+            from dev_agent import DevAgent
+            return await DevAgent().run(args.get("objective", ""), args.get("project_path", ""))
         elif name == "run_research" and self._research:
             return await self._research.run(args.get("query", ""))
         elif name == "run_task" and self._task:
