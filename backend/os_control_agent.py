@@ -43,6 +43,10 @@ TIMEOUT_SEC = float(os.getenv("OS_CONTROL_TIMEOUT_SEC", "35"))
 # Attente maximale qu'une tâche précédente libère le verrou avant d'abandonner.
 LOCK_WAIT_SEC = float(os.getenv("OS_CONTROL_LOCK_WAIT_SEC", "6"))
 
+# Boucle pas-à-pas (observe→agis→ré-observe) : plus d'appels modèle, donc plafond
+# de temps plus large que le mode "plan en rafale".
+STEP_TIMEOUT_SEC = float(os.getenv("OS_CONTROL_STEP_TIMEOUT_SEC", "150"))
+
 _SPECIAL_KEY_CODES = {
     "return": 36, "enter": 36,
     "escape": 53, "esc": 53,
@@ -269,6 +273,36 @@ Focus on what went wrong and take a different approach.
 Return ONLY a valid JSON array of actions (same format as before).
 """
 
+_STEP_SYSTEM = """You are an expert Mac operator controlling the computer ONE STEP AT A TIME,
+exactly like a careful human: look at the CURRENT screenshot, decide the single
+best next action, then you will observe the result before deciding again.
+
+RELIABILITY — PREFER ACCESSIBILITY OVER COORDINATES:
+- Prefer "click_element" with the exact accessible label when a named element exists.
+- Use coordinate "click" (0-1000 scale, 0,0=top-left) only when no named element matches.
+
+Return ONLY ONE JSON object for the SINGLE next action (no markdown, no array):
+  {"action":"done","evidence":"what on screen proves the task is complete"}   ← if already accomplished
+  {"action":"open_app","text":"App display name","reason":"..."}
+  {"action":"click_element","text":"exact accessible label","reason":"..."}
+  {"action":"click","x":0-1000,"y":0-1000,"reason":"..."}
+  {"action":"double_click","x":0-1000,"y":0-1000,"reason":"..."}
+  {"action":"right_click","x":0-1000,"y":0-1000,"reason":"..."}
+  {"action":"type","text":"text to type","reason":"..."}
+  {"action":"hotkey","text":"return|escape|cmd+l|cmd+a|cmd+v|tab","reason":"..."}
+  {"action":"scroll","x":0-1000,"y":500,"delta":3,"reason":"..."}
+  {"action":"run_shell","text":"shell command","reason":"..."}
+  {"action":"wait","duration":1.0,"reason":"..."}
+  {"action":"ask_user","text":"precise question in French","reason":"..."}   ← credentials/2FA/captcha/choice
+
+RULES:
+- Exactly ONE action per answer. Never return a list.
+- Return "done" as soon as the screenshot clearly shows the task is accomplished.
+- NEVER use hotkey "cmd+space"/"command+space" (Spotlight is FORBIDDEN). Use "open_app" instead.
+- For text input: make sure the field is focused (click it) BEFORE a "type" action.
+- If a step needs info only the user has, use "ask_user" instead of guessing.
+"""
+
 
 def _cible_de_la_tache(task: str) -> str | None:
     """Devine l'application visée par une demande.
@@ -440,6 +474,18 @@ class OsControlAgent:
         # Application CIBLE de la tâche en cours. Sans elle, l'inspection et les
         # clics visaient l'app au premier plan — donc parfois la mauvaise.
         self._app_cible: str | None = None
+
+        # ── Animation & mode de contrôle (configurables sans toucher au code) ──
+        # OS_CONTROL_ANIMATE : glisse le curseur + frappe caractère par caractère
+        #   (effet visuel « comme Claude »). true par défaut.
+        self._animate = os.getenv("OS_CONTROL_ANIMATE", "true").lower() in ("1", "true", "yes", "on")
+        self._anim_duration = float(os.getenv("OS_CONTROL_ANIM_DURATION", "0.45"))  # durée du glissement
+        self._type_cps = float(os.getenv("OS_CONTROL_TYPE_CPS", "22"))              # caractères/seconde
+        self._type_max_anim = int(os.getenv("OS_CONTROL_TYPE_MAX_ANIM", "120"))     # au-delà → coller
+        # OS_CONTROL_MODE : "plan" (rafale planifiée, défaut, le plus fiable) ou
+        #   "step" (observe→agis→ré-observe à chaque action, comme Claude).
+        self._mode = os.getenv("OS_CONTROL_MODE", "plan").lower()
+        self._step_max = int(os.getenv("OS_CONTROL_MAX_STEPS", "20"))
 
     def stop(self):
         self._global_stop.set()
@@ -1673,6 +1719,60 @@ end timeout'''
         except Exception as e:
             return f"click_element erreur: {e}"
 
+    # ── Animation (glissement curseur + frappe caractère par caractère) ────────
+
+    async def _move_cursor_smooth(self, tx: int, ty: int, duration: float | None = None) -> None:
+        """Glisse le curseur jusqu'à (tx, ty) avec une accélération douce
+        (ease-in-out), pour un rendu « humain » plutôt qu'une téléportation.
+        No-op si l'animation est désactivée ou pynput indisponible."""
+        if not self._animate:
+            return
+        try:
+            from pynput.mouse import Controller
+        except Exception:
+            return
+        dur = self._anim_duration if duration is None else duration
+        m = Controller()
+        try:
+            sx, sy = m.position
+        except Exception:
+            return
+        dist = ((tx - sx) ** 2 + (ty - sy) ** 2) ** 0.5
+        if dist < 2:
+            return
+        steps = max(8, min(60, int(dur * 120)))
+        for i in range(1, steps + 1):
+            t = i / steps
+            # ease-in-out cubique
+            e = 4 * t * t * t if t < 0.5 else 1 - ((-2 * t + 2) ** 3) / 2
+            try:
+                m.position = (sx + (tx - sx) * e, sy + (ty - sy) * e)
+            except Exception:
+                break
+            await asyncio.sleep(dur / steps)
+
+    async def _type_animated(self, text: str) -> bool:
+        """Frappe caractère par caractère (effet visuel). Retourne False si
+        l'animation est désactivée/indisponible ou le texte trop long — dans ce
+        cas l'appelant retombe sur le collage (robuste pour l'Unicode)."""
+        if not self._animate or len(text) > self._type_max_anim:
+            return False
+        try:
+            from pynput.keyboard import Controller
+        except Exception:
+            return False
+        try:
+            import random
+            kb = Controller()
+            delay = 1.0 / max(1.0, self._type_cps)
+            for ch in text:
+                await asyncio.to_thread(kb.type, ch)
+                await asyncio.sleep(delay * random.uniform(0.6, 1.4))
+            return True
+        except Exception as e:
+            print(f"[OsControl] frappe animée échouée ({e}) → repli collage")
+            return False
+
     # ── Exécution d'une action ─────────────────────────────────────────────────
 
     # Combinaisons de touches ABSOLUMENT interdites — jamais exécutées quoi que Gemini dise
@@ -1734,9 +1834,27 @@ end timeout'''
         try:
             if action in ("click", "double_click", "right_click") and nx is not None:
                 lx, ly = lp(nx, ny)
+                # Déplacement visible du curseur (no-op si animation désactivée).
+                await self._move_cursor_smooth(lx, ly)
+
+                if self._animate:
+                    # Clic via pynput à la position courante — cohérent avec le
+                    # glissement et visuellement « humain ».
+                    def _click_pynput():
+                        from pynput.mouse import Button, Controller
+                        m = Controller()
+                        m.position = (lx, ly)
+                        btn = Button.right if action == "right_click" else Button.left
+                        m.click(btn, 2 if action == "double_click" else 1)
+                    try:
+                        await asyncio.to_thread(_click_pynput)
+                        await asyncio.sleep(0.3)
+                        return f"{action}({lx},{ly})"
+                    except Exception as e:
+                        print(f"[OsControl] clic animé échoué ({e}) → repli osascript")
+
+                # Repli (ou mode non animé) : comportement d'origine.
                 if action == "right_click":
-                    # « click at … using {control down} » ne compile pas dans
-                    # System Events → clic droit via pynput (fiable).
                     def _right_click():
                         from pynput.mouse import Button, Controller
                         m = Controller()
@@ -1772,13 +1890,17 @@ end timeout'''
                 return f"[NEED_USER] {text}"
 
             elif action == "type" and text:
-                await asyncio.to_thread(
-                    lambda: subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
-                )
-                await asyncio.to_thread(
-                    _run_osascript,
-                    'tell application "System Events" to keystroke "v" using command down'
-                )
+                # Frappe animée caractère par caractère si possible, sinon collage
+                # (cmd+V) — robuste pour les textes longs et l'Unicode.
+                typed_animated = await self._type_animated(text)
+                if not typed_animated:
+                    await asyncio.to_thread(
+                        lambda: subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
+                    )
+                    await asyncio.to_thread(
+                        _run_osascript,
+                        'tell application "System Events" to keystroke "v" using command down'
+                    )
                 await asyncio.sleep(0.2)
                 return f"typed: {text[:50]}"
 
@@ -2133,14 +2255,20 @@ end timeout'''
             watcher = asyncio.create_task(_watch())
             listener = self._start_hotkey_listener(local_stop)
 
+            # Choix de la boucle de contrôle : "step" (observe→agis→ré-observe,
+            # comme Claude) ou "plan" (rafale planifiée, défaut).
+            if self._mode == "step":
+                loop_coro = self._step_by_step_loop(task, step_callback, local_stop)
+                loop_timeout = STEP_TIMEOUT_SEC
+            else:
+                loop_coro = self._plan_execute_verify(task, step_callback, local_stop)
+                loop_timeout = TIMEOUT_SEC
+
             try:
-                result = await asyncio.wait_for(
-                    self._plan_execute_verify(task, step_callback, local_stop),
-                    timeout=TIMEOUT_SEC,
-                )
+                result = await asyncio.wait_for(loop_coro, timeout=loop_timeout)
                 return result
             except asyncio.TimeoutError:
-                return f"Timeout {int(TIMEOUT_SEC)}s."
+                return f"Timeout {int(loop_timeout)}s."
             except Exception as e:
                 return f"Erreur: {e}"
             finally:
@@ -2276,6 +2404,84 @@ end timeout'''
             attempt += 1
 
         return f"Tâche non complétée après {max_tentatives} tentative(s). Dernier état: {last_error}"
+
+    async def _step_by_step_loop(
+        self, task: str, cb: Optional[Callable], stop: asyncio.Event
+    ) -> str:
+        """Boucle observe→agis→ré-observe : une capture, UNE action décidée par
+        le modèle, puis on recommence — comme le fait Claude. Plus réactif aux
+        changements d'écran que le mode "plan en rafale", au prix d'appels modèle
+        supplémentaires. Borné par self._step_max et le timeout de run()."""
+        history: list[str] = []
+        for step in range(1, self._step_max + 1):
+            if stop.is_set() or self._global_stop.is_set():
+                return "Tâche interrompue."
+
+            raw, b64 = await self._screenshot()
+            if cb:
+                await cb({"image": b64, "log": f"[PC] Observation {step}/{self._step_max}…"})
+
+            try:
+                ui_elements = await asyncio.wait_for(self._get_ui_elements(), timeout=4)
+            except Exception:
+                ui_elements = ""
+            ui_block = (
+                f"\nACCESSIBLE UI ELEMENTS (use these exact names with click_element):\n{ui_elements}\n"
+                if ui_elements and "Aucun" not in ui_elements else ""
+            )
+            hist = "\n".join(f"- {h}" for h in history[-8:]) or "(aucune action encore)"
+            prompt = (
+                f"Task: {task}\n{ui_block}\nActions already performed:\n{hist}\n\n"
+                "Look at the CURRENT screenshot. If the task is already fully "
+                'accomplished, return {"action":"done","evidence":"..."}. '
+                "Otherwise return the SINGLE next action as a JSON object."
+            )
+            resraw = await self._call_gemini(_STEP_SYSTEM, prompt, raw)
+            try:
+                decision = _parse_json_response(resraw)
+                if isinstance(decision, list):
+                    decision = decision[0] if decision else None
+            except Exception as e:
+                print(f"[OsControl] step parse erreur: {e}\nRaw: {resraw[:200]}")
+                decision = None
+
+            if not isinstance(decision, dict) or not decision.get("action"):
+                return "Impossible de déterminer la prochaine action."
+
+            act = decision.get("action")
+            if act == "done":
+                evidence = decision.get("evidence", "tâche accomplie")
+                self._memoriser_approches(task, history and [{"action": "step"}] or [], True)
+                try:
+                    import reliability
+                    reliability.record(task, True, outil="execute_pc_task",
+                                       detail=str(evidence)[:150])
+                except Exception:
+                    pass
+                return f"✓ {evidence}"
+
+            reason = decision.get("reason", act)
+            if cb:
+                await cb({"image": b64, "log": f"[PC] {step}. {reason}"})
+
+            result = await self._exec_action(decision)
+            print(f"[OsControl] step {step}: {act} → {result}")
+
+            if result.startswith("[NEED_USER]"):
+                question = result[len("[NEED_USER]"):].strip()
+                return f"BESOIN_UTILISATEUR: {question}"
+            if result.startswith("[BLOQUÉ]") and cb:
+                await cb({"image": None, "log": f"[PC] ⛔ {result}"})
+
+            history.append(f"{act} ({reason}) → {result[:60]}")
+            await asyncio.sleep(0.5)
+
+        try:
+            import reliability
+            reliability.record(task, False, outil="execute_pc_task", detail="max steps atteint")
+        except Exception:
+            pass
+        return f"Tâche non complétée après {self._step_max} étapes."
 
     def _start_hotkey_listener(self, stop_event: asyncio.Event):
         try:
