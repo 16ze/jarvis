@@ -2413,6 +2413,14 @@ end timeout'''
         changements d'écran que le mode "plan en rafale", au prix d'appels modèle
         supplémentaires. Borné par self._step_max et le timeout de run()."""
         history: list[str] = []
+        # Fiabilité : injecter l'expérience acquise (ne pas reproposer ce qui a
+        # déjà échoué pour ce type de tâche — cf. action_memory.py).
+        try:
+            from action_memory import get_action_memory
+            conseil = get_action_memory().advice(task)
+        except Exception:
+            conseil = ""
+        conseil_block = f"\n{conseil}\n" if conseil else ""
         for step in range(1, self._step_max + 1):
             if stop.is_set() or self._global_stop.is_set():
                 return "Tâche interrompue."
@@ -2431,7 +2439,7 @@ end timeout'''
             )
             hist = "\n".join(f"- {h}" for h in history[-8:]) or "(aucune action encore)"
             prompt = (
-                f"Task: {task}\n{ui_block}\nActions already performed:\n{hist}\n\n"
+                f"Task: {task}\n{ui_block}{conseil_block}\nActions already performed:\n{hist}\n\n"
                 "Look at the CURRENT screenshot. If the task is already fully "
                 'accomplished, return {"action":"done","evidence":"..."}. '
                 "Otherwise return the SINGLE next action as a JSON object."
@@ -2450,15 +2458,26 @@ end timeout'''
 
             act = decision.get("action")
             if act == "done":
-                evidence = decision.get("evidence", "tâche accomplie")
-                self._memoriser_approches(task, history and [{"action": "step"}] or [], True)
-                try:
-                    import reliability
-                    reliability.record(task, True, outil="execute_pc_task",
-                                       detail=str(evidence)[:150])
-                except Exception:
-                    pass
-                return f"✓ {evidence}"
+                # Fiabilité : vérification indépendante AVANT d'accepter la
+                # complétion — le modèle ne s'auto-déclare pas « fini » à tort.
+                verif = await self._verify(task, raw)
+                if verif.get("success"):
+                    evidence = verif.get("evidence") or decision.get("evidence", "tâche accomplie")
+                    self._memoriser_approches(task, [{"action": "step"}], True)
+                    try:
+                        import reliability
+                        reliability.record(task, True, outil="execute_pc_task",
+                                           detail=str(evidence)[:150])
+                    except Exception:
+                        pass
+                    return f"✓ {evidence}"
+                # « done » revendiqué mais non confirmé visuellement → on continue
+                # (la boucle reste bornée par self._step_max, pas de blocage).
+                history.append(f"done revendiqué mais vérif KO: {verif.get('remaining', '')[:60]}")
+                if cb:
+                    await cb({"image": b64, "log": "[PC] complétion non confirmée, je continue…"})
+                await asyncio.sleep(0.3)
+                continue
 
             reason = decision.get("reason", act)
             if cb:

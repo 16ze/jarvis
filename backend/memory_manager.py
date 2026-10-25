@@ -8,6 +8,7 @@ Gère 4 types de mémoire :
 """
 
 import json
+import re
 import chromadb
 from datetime import datetime
 from pathlib import Path
@@ -47,6 +48,10 @@ class MemoryManager:
                 "facts": []
             })
 
+        # Dé-duplication : dernier contenu de conversation enregistré
+        # (évite les doublons consécutifs / boucles).
+        self._last_conv_content = None
+
     # ─── HELPERS ────────────────────────────────────────────────────────────
 
     def _write_procedural(self, data: dict):
@@ -73,6 +78,11 @@ class MemoryManager:
         """
         if not content.strip():
             return
+        # Dé-duplication : ignorer un contenu identique au précédent.
+        norm_content = content.strip()
+        if norm_content == self._last_conv_content:
+            return
+        self._last_conv_content = norm_content
         doc_id = f"conv_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
         meta = {"timestamp": datetime.now().isoformat(), "type": "conversation"}
         if emotional_state:
@@ -208,12 +218,77 @@ class MemoryManager:
 
     def add_procedural(self, category: str, item: str):
         """Ajoute un fait au profil de Bryan. Catégories: preferences | habits | goals | facts"""
+        item = (item or "").strip()
+        if not item:
+            return
         data = self._read_procedural()
         if category not in data:
             data[category] = []
-        if item not in data[category]:
+        norm = self._normalize(item)
+        if all(self._normalize(x) != norm for x in data[category]):
             data[category].append(item)
             self._write_procedural(data)
+
+    @staticmethod
+    def _normalize(s: str) -> str:
+        return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+    def dedupe_procedural(self) -> None:
+        """Nettoie le profil : retire les doublons normalisés dans chaque catégorie."""
+        try:
+            data = self._read_procedural()
+            changed = False
+            for cat, items in list(data.items()):
+                if not isinstance(items, list):
+                    continue
+                seen, cleaned = set(), []
+                for it in items:
+                    n = self._normalize(it)
+                    if n and n not in seen:
+                        seen.add(n)
+                        cleaned.append(it)
+                if len(cleaned) != len(items):
+                    data[cat] = cleaned
+                    changed = True
+            if changed:
+                self._write_procedural(data)
+        except Exception as e:
+            print(f"[MEMORY] dedupe_procedural error: {e}")
+
+    # Déclencheurs explicites de mémorisation — phrases de Bryan UNIQUEMENT.
+    # Prudent par conception : on ne mémorise que sur intention claire, pour ne
+    # jamais stocker une info inventée ou une erreur.
+    _AUTO_RULES = [
+        (re.compile(r"\b(?:retiens|souviens[- ]toi|note)\s+(?:bien\s+)?(?:que\s+|:\s*)?(.+)", re.I), "facts"),
+        (re.compile(r"\bn['e ]oublie\s+pas\s+(?:que\s+|:\s*)?(.+)", re.I), "facts"),
+        (re.compile(r"\bje\s+pr[ée]f[èe]re\s+(.+)", re.I), "preferences"),
+        (re.compile(r"\bje\s+d[ée]teste\s+(.+)", re.I), "preferences"),
+        (re.compile(r"\bj['e ]habite\s+(?:à|a|au|en)\s+(.+)", re.I), "facts"),
+        (re.compile(r"\bje\s+travaille\s+(?:chez|à|a|au|en|pour)\s+(.+)", re.I), "facts"),
+        (re.compile(r"\bmon\s+objectif\s+(?:est\s+|:\s*)?(.+)", re.I), "goals"),
+        (re.compile(r"\bmon\s+anniversaire\s+(?:est\s+|:\s*|c['e]st\s+)?(.+)", re.I), "facts"),
+    ]
+
+    def auto_remember(self, text: str) -> None:
+        """Mémorisation automatique PRUDENTE : n'extrait des faits durables que
+        des phrases de Bryan (jamais d'Ada) et seulement sur déclencheur
+        explicite — ne jamais enregistrer une info inventée ou une erreur."""
+        if not text or not text.strip():
+            return
+        # Format attendu : "<émetteur>: <texte>" (cf. append_to_session).
+        prefix, sep, body = text.partition(":")
+        if not sep or not prefix.strip().lower().startswith("bryan"):
+            return  # on ignore les tours d'Ada et tout ce qui n'est pas de Bryan
+        body = body.strip()
+        if not body:
+            return
+        for rx, cat in self._AUTO_RULES:
+            m = rx.search(body)
+            if m:
+                fait = m.group(1).strip().rstrip(" .!?,;")
+                if 2 <= len(fait) <= 160:
+                    self.add_procedural(cat, fait)
+                break
 
     def get_procedural(self) -> dict:
         return self._read_procedural()
@@ -224,6 +299,11 @@ class MemoryManager:
         """Ajoute un échange au fichier de la dernière session (ring buffer de 30 entrées)."""
         if not text.strip():
             return
+        # Mémorisation automatique prudente (faits durables énoncés par Bryan).
+        try:
+            self.auto_remember(text)
+        except Exception as e:
+            print(f"[MEMORY] auto_remember error: {e}")
         path = MEMORY_DIR / "last_session.json"
         try:
             data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
@@ -262,6 +342,7 @@ class MemoryManager:
 
     def get_startup_context(self) -> str:
         """Génère le bloc de contexte à injecter au démarrage de la session."""
+        self.dedupe_procedural()  # nettoyage des doublons du profil à chaque démarrage
         lines = []
 
         # Profil Bryan
