@@ -159,8 +159,7 @@ class DevAgent:
     # ── Boucle principale ────────────────────────────────────────────────────
     async def run(self, objective: str, project_path: str = "",
                   step_callback: Optional[Callable] = None) -> str:
-        if self._client is None:
-            return "Erreur DevAgent : GEMINI_API_KEY non configurée."
+        import llm_router
         root = Path(project_path or os.getenv("JARVIS_ROOT") or os.getcwd()).expanduser()
         if not root.is_dir():
             return f"Erreur DevAgent : dossier projet introuvable : {root}"
@@ -177,13 +176,9 @@ class DevAgent:
                 "Donne la PROCHAINE action (un seul objet JSON)."
             )
             try:
-                resp = await asyncio.to_thread(
-                    self._client.models.generate_content,
-                    model=MODEL,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(system_instruction=_SYSTEM, temperature=0.1),
-                )
-                raw = (resp.text or "").strip()
+                # Cerveau hybride : Claude si dispo (intelligence « comme Codex »),
+                # sinon repli Gemini — géré par llm_router.
+                raw = (await llm_router.think(_SYSTEM, prompt, temperature=0.1)).strip()
                 m = re.search(r"\{.*\}", raw, re.S)
                 action = json.loads(m.group(0)) if m else None
             except Exception as e:
