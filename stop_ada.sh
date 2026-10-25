@@ -32,6 +32,19 @@ if pgrep -f "$JARVIS_ROOT" >/dev/null 2>&1; then
     sleep 1
 fi
 
+# 3bis. Filet de sécurité DÉCISIF : tuer ce qui écoute encore sur les ports.
+#    Lancé via start_ada.sh (osascript → Terminal → conda → python server.py),
+#    le backend n'expose ni le chemin projet ni le chemin complet dans argv :
+#    les pkill ci-dessus le ratent. On tue donc par PORT, ce qui ne rate jamais.
+for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
+    pids=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null)
+    if [ -n "$pids" ]; then
+        echo "   → port $port occupé, arrêt forcé (PID: $(echo "$pids" | tr '\n' ' '))"
+        echo "$pids" | xargs kill -9 2>/dev/null
+    fi
+done
+sleep 1
+
 # 4. Vérification par les ports : c'est le seul contrôle qui compte vraiment.
 restants=0
 for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
