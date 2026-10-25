@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, session, shell, systemPreferences } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, session, shell, systemPreferences, screen } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -114,6 +114,9 @@ function createWindow() {
 
     loadFrontend();
 
+    // Vignette flottante Jarvis (fenêtre overlay indépendante, toujours au-dessus).
+    createWidgetWindow();
+
     // ── Sécurité du navigateur intégré ────────────────────────────────────────
     // Le <webview> affiche du web arbitraire : on lui retire tout privilège
     // avant même son attachement. Sans ça, activer webviewTag serait dangereux
@@ -132,6 +135,110 @@ function createWindow() {
 
     mainWindow.on('closed', () => {
         mainWindow = null;
+    });
+}
+
+// ─── VIGNETTE FLOTTANTE (mini-robot Jarvis + mini-chat) ──────────────────────
+let widgetWindow = null;
+let widgetDrag = null; // { offX, offY } pendant un déplacement
+const WIDGET_COLLAPSED = { width: 92, height: 92 };
+const WIDGET_EXPANDED = { width: 360, height: 560 };
+const WIDGET_STATE_FILE = path.join(app.getPath('userData'), 'widget-state.json');
+let widgetSaveTimer = null;
+
+function loadWidgetPos() {
+    try {
+        const raw = JSON.parse(require('fs').readFileSync(WIDGET_STATE_FILE, 'utf8'));
+        if (Number.isFinite(raw.x) && Number.isFinite(raw.y)) return { x: raw.x, y: raw.y };
+    } catch { /* pas d'état sauvegardé */ }
+    return null;
+}
+
+function saveWidgetPos(x, y) {
+    clearTimeout(widgetSaveTimer);
+    widgetSaveTimer = setTimeout(() => {
+        try { require('fs').writeFileSync(WIDGET_STATE_FILE, JSON.stringify({ x, y })); } catch { /* best effort */ }
+    }, 400);
+}
+
+function clampToDisplay(b) {
+    const disp = screen.getDisplayMatching(b) || screen.getPrimaryDisplay();
+    const wa = disp.workArea;
+    const x = Math.min(Math.max(b.x, wa.x), wa.x + wa.width - b.width);
+    const y = Math.min(Math.max(b.y, wa.y), wa.y + wa.height - b.height);
+    return { x: Math.round(x), y: Math.round(y), width: b.width, height: b.height };
+}
+
+function createWidgetWindow() {
+    if (widgetWindow) return;
+    const isDev = process.env.NODE_ENV !== 'production';
+
+    const primary = screen.getPrimaryDisplay().workArea;
+    const saved = loadWidgetPos();
+    const start = saved || {
+        x: primary.x + primary.width - WIDGET_COLLAPSED.width - 24,
+        y: primary.y + 28,
+    };
+    const startBounds = clampToDisplay({ ...start, ...WIDGET_COLLAPSED });
+
+    widgetWindow = new BrowserWindow({
+        ...startBounds,
+        frame: false,
+        transparent: true,
+        resizable: false,
+        maximizable: false,
+        minimizable: false,
+        fullscreenable: false,
+        skipTaskbar: true,
+        hasShadow: false,
+        alwaysOnTop: true,
+        backgroundColor: '#00000000',
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false,
+            backgroundThrottling: false,
+        },
+        show: false,
+    });
+
+    widgetWindow.setAlwaysOnTop(true, 'floating');
+    if (process.platform === 'darwin') {
+        widgetWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    }
+
+    const loadPromise = isDev
+        ? widgetWindow.loadURL('http://localhost:5173/widget.html')
+        : widgetWindow.loadFile(path.join(__dirname, '../dist/widget.html'));
+    loadPromise
+        .then(() => { if (widgetWindow) widgetWindow.show(); })
+        .catch((err) => console.error(`[Widget] Échec du chargement : ${err.message}`));
+
+    widgetWindow.on('closed', () => { widgetWindow = null; });
+}
+
+function registerWidgetIpc() {
+    // Déplacement : le renderer envoie la position écran du curseur, Electron
+    // calcule la nouvelle position de la fenêtre (il connaît l'écran et les bornes).
+    ipcMain.on('widget:drag-start', () => { widgetDrag = null; });
+    ipcMain.on('widget:drag-move', (_e, { mx, my } = {}) => {
+        if (!widgetWindow || !Number.isFinite(mx) || !Number.isFinite(my)) return;
+        const b = widgetWindow.getBounds();
+        if (!widgetDrag) widgetDrag = { offX: mx - b.x, offY: my - b.y };
+        const nb = clampToDisplay({ x: mx - widgetDrag.offX, y: my - widgetDrag.offY, width: b.width, height: b.height });
+        widgetWindow.setBounds(nb);
+        saveWidgetPos(nb.x, nb.y);
+    });
+    ipcMain.on('widget:drag-end', () => { widgetDrag = null; });
+
+    // Ouverture / fermeture du chat : on redimensionne la fenêtre en gardant
+    // le coin haut-gauche (l'avatar) stable, reclampé dans l'écran.
+    ipcMain.on('widget:set-open', (_e, { open } = {}) => {
+        if (!widgetWindow) return;
+        const b = widgetWindow.getBounds();
+        const size = open ? WIDGET_EXPANDED : WIDGET_COLLAPSED;
+        const nb = clampToDisplay({ x: b.x, y: b.y, width: size.width, height: size.height });
+        widgetWindow.setBounds(nb);
+        saveWidgetPos(nb.x, nb.y);
     });
 }
 
@@ -311,6 +418,7 @@ function applyCSP() {
 
 app.whenReady().then(() => {
     applyCSP();
+    registerWidgetIpc();
 
     // Autorise mic + caméra pour le renderer (sinon getUserMedia renvoie un stream
     // sans frames et enumerateDevices ne livre pas les labels).
