@@ -57,6 +57,20 @@ html, body, #widget-root {
 .jv-avatar:active { cursor: grabbing; transform: scale(0.98); }
 .jv-avatar.is-open { box-shadow: 0 8px 26px rgba(0,0,0,0.5), 0 0 30px rgba(34,211,238,0.5); }
 
+.jv-avatar.is-piloting {
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.7);
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5), 0 0 28px rgba(251, 191, 36, 0.55);
+}
+.jv-avatar .jv-piloting-ring {
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid rgba(251, 191, 36, 0.8);
+    animation: jv-pulse 1.1s ease-out infinite;
+    pointer-events: none;
+}
+
 .jv-avatar .jv-pulse {
     position: absolute;
     inset: -3px;

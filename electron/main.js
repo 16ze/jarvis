@@ -441,6 +441,15 @@ app.whenReady().then(() => {
             .catch((err) => console.error(`[Permissions] Camera request failed: ${err.message}`));
     }
 
+    // Pilotage PC : la fenêtre principale se rétracte (laisse la vignette robot
+    // flottante comme indicateur), puis se restaure à la fin — façon Claude.
+    ipcMain.on('pc-control-active', () => {
+        try { if (mainWindow && !mainWindow.isMinimized()) mainWindow.minimize(); } catch (e) {}
+    });
+    ipcMain.on('pc-control-idle', () => {
+        try { if (mainWindow && mainWindow.isMinimized()) mainWindow.restore(); } catch (e) {}
+    });
+
     ipcMain.on('window-minimize', () => {
         if (mainWindow) mainWindow.minimize();
     });

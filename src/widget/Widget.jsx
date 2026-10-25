@@ -1,6 +1,9 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import io from 'socket.io-client';
 import RobotMark from './RobotMark';
 import MiniChat from './MiniChat';
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 // IPC (contextIsolation désactivé comme dans App.jsx)
 const ipc = (() => {
@@ -15,7 +18,18 @@ const DRAG_THRESHOLD = 5; // px : en dessous = clic (toggle), au-dessus = dépla
 
 export default function Widget() {
     const [open, setOpen] = useState(false);
+    const [piloting, setPiloting] = useState(false);
     const drag = useRef({ active: false, moved: 0, sx: 0, sy: 0 });
+
+    // Indicateur « pilotage PC » : la vignette pulse pendant qu'Ada contrôle l'écran.
+    useEffect(() => {
+        let socket;
+        try {
+            socket = io(BACKEND_URL, { transports: ['websocket'], upgrade: false });
+            socket.on('pc_control_state', (d) => setPiloting(!!(d && d.active)));
+        } catch (e) { /* backend indisponible */ }
+        return () => { try { socket && socket.close(); } catch (e) {} };
+    }, []);
 
     const toggle = useCallback(() => {
         setOpen((prev) => {
@@ -55,12 +69,13 @@ export default function Widget() {
     return (
         <div className="jarvis-widget">
             <button
-                className={`jv-avatar ${open ? 'is-open' : ''}`}
+                className={`jv-avatar ${open ? 'is-open' : ''} ${piloting ? 'is-piloting' : ''}`}
                 onMouseDown={onMouseDown}
-                title="Jarvis — cliquer pour ouvrir, glisser pour déplacer"
+                title={piloting ? 'Jarvis pilote l’écran…' : 'Jarvis — cliquer pour ouvrir, glisser pour déplacer'}
             >
                 <RobotMark size={38} />
                 {!open && <span className="jv-pulse" />}
+                {piloting && <span className="jv-piloting-ring" />}
             </button>
 
             {open && <MiniChat onClose={toggle} />}

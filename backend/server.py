@@ -296,6 +296,18 @@ async def build_health_report() -> dict:
 async def startup_event():
     import sys
     print(f"[SERVER DEBUG] Startup Event Triggered")
+
+    # Signal « pilotage PC » → l'UI rétracte la fenêtre pendant qu'Ada contrôle l'écran.
+    try:
+        import os_control_agent
+
+        async def _broadcast_pc_state(active: bool):
+            await sio.emit('pc_control_state', {"active": bool(active)})
+
+        os_control_agent.set_pc_state_broadcaster(_broadcast_pc_state)
+        print("[SERVER] pc_control_state broadcaster enregistré")
+    except Exception as _e:
+        print(f"[SERVER] pc_control_state broadcaster indisponible: {_e}")
     print(f"[SERVER DEBUG] Python Version: {sys.version}")
     try:
         loop = asyncio.get_running_loop()

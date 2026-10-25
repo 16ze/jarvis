@@ -463,6 +463,12 @@ function App() {
             setStatus('Disconnected');
             setSocketConnected(false);
         });
+        // Pilotage PC : rétracte la fenêtre pendant qu'Ada contrôle l'écran (façon Claude).
+        socket.on('pc_control_state', (data) => {
+            try {
+                ipcRenderer.send(data && data.active ? 'pc-control-active' : 'pc-control-idle');
+            } catch (e) { /* hors Electron */ }
+        });
         socket.on('status', (data) => {
             addMessage('System', data.msg);
             // Update status bar based on backend messages

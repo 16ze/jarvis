@@ -47,6 +47,24 @@ LOCK_WAIT_SEC = float(os.getenv("OS_CONTROL_LOCK_WAIT_SEC", "6"))
 # de temps plus large que le mode "plan en rafale".
 STEP_TIMEOUT_SEC = float(os.getenv("OS_CONTROL_STEP_TIMEOUT_SEC", "150"))
 
+# Diffuseur d'état « pilotage PC » : le serveur l'enregistre pour prévenir l'UI
+# (la fenêtre se rétracte pendant qu'Ada prend le contrôle, comme Claude).
+_pc_state_broadcaster = None
+
+
+def set_pc_state_broadcaster(fn):
+    global _pc_state_broadcaster
+    _pc_state_broadcaster = fn
+
+
+async def _emit_pc_state(active: bool):
+    if _pc_state_broadcaster is None:
+        return
+    try:
+        await _pc_state_broadcaster(active)
+    except Exception as e:
+        print(f"[OsControl] pc_state broadcast: {e}")
+
 _SPECIAL_KEY_CODES = {
     "return": 36, "enter": 36,
     "escape": 53, "esc": 53,
@@ -2232,6 +2250,7 @@ end timeout'''
                         "Réessaie dans un instant.")
 
         async with self._lock:
+            await _emit_pc_state(True)  # la fenêtre UI se rétracte (pilotage en cours)
             self._reset()
             self._current_task = task
             self._sw, self._sh = await asyncio.to_thread(_get_screen_size)
@@ -2247,6 +2266,7 @@ end timeout'''
             try:
                 fp = await self._fast_path(task, step_callback)
                 if fp is not None:
+                    await _emit_pc_state(False)
                     return fp
             except Exception as e:
                 print(f"[OsControl] Fast-path erreur: {e}")
@@ -2279,6 +2299,7 @@ end timeout'''
             except Exception as e:
                 return f"Erreur: {e}"
             finally:
+                await _emit_pc_state(False)  # la fenêtre UI se restaure
                 local_stop.set()
                 watcher.cancel()
                 try:
