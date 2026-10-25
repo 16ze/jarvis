@@ -1015,10 +1015,22 @@ async def shutdown(sid, data=None):
 
 @sio.event
 async def user_input(sid, data):
-    text = data.get('text')
-    print(f"[SERVER DEBUG] User input received: '{text}'")
+    raw_text = data.get('text')
+    # Couche de reprompting : clarifie l'intention avant le LLM (fallback = brut).
+    text = raw_text
+    if raw_text:
+        try:
+            import reprompt
+            text = await reprompt.enhance(raw_text)
+            if text != raw_text:
+                print(f"[REPROMPT] '{raw_text}' -> '{text}'")
+        except Exception as _e:
+            print(f"[REPROMPT] skip: {_e}")
+            text = raw_text
+    print(f"[SERVER DEBUG] User input received: '{raw_text}'")
 
-    if text and is_local_first_task(text):
+    # Routage sur le texte ORIGINAL (heuristique par mots-clés), exécution sur le clarifié.
+    if raw_text and is_local_first_task(raw_text):
         print(f"[SERVER DEBUG] Local-first Mac task intercepted: '{text}'")
         os_agent = getattr(audio_loop, "os_control_agent", None) if audio_loop else None
         os_agent = os_agent or standalone_os_control_agent

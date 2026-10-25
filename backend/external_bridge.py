@@ -946,6 +946,13 @@ class TextAgent:
             # Passe par la politique safe_exec (blocage dur non contournable).
             import safe_exec
             cmd = args.get("command", "")
+            try:
+                import security_gate
+                if security_gate.kill_switch_on():
+                    return "[GATE] Kill switch actif — commande refusée."
+                security_gate.audit("shell", cmd, source="ai")
+            except Exception as _e:
+                print(f"[GATE] indisponible: {_e}")
             cwd = args.get("working_dir") or os.path.expanduser("~")
             _decision, output = await asyncio.to_thread(
                 safe_exec.run, cmd, "ai", cwd=cwd, timeout=30, allow_confirm=True
@@ -1946,6 +1953,12 @@ async def handle_external_message(
     text: str,
 ) -> str:
     try:
+        # Couche de reprompting : clarifie l'intention avant le LLM (fallback = brut).
+        try:
+            import reprompt
+            text = await reprompt.enhance(text)
+        except Exception as _e:
+            print(f"[REPROMPT] skip: {_e}")
         if _ada_loop is not None:
             reply = await _ada_loop.process_text_message(text)
         else:

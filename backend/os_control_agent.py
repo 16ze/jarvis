@@ -1814,6 +1814,13 @@ end timeout'''
         # catastrophiques (fork bomb, rm -rf /, dd disque…) initiées par l'IA.
         if action == "run_shell" and text:
             import safe_exec
+            try:
+                import security_gate
+                if security_gate.kill_switch_on():
+                    return "[BLOQUÉ] kill switch actif"
+                security_gate.audit("shell", text, source="ai")
+            except Exception:
+                pass
             _decision = safe_exec.classify(text, source="ai")
             if _decision.action == safe_exec.BLOCK:
                 msg = f"[BLOQUÉ] {_decision.reason}: {text[:60]}"

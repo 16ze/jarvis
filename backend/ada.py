@@ -2684,6 +2684,15 @@ class AudioLoop:
     async def handle_terminal_request(self, command, working_dir=None, source="ai"):
         import safe_exec
 
+        # Gate : kill switch + journal d'audit infalsifiable (mode autonome).
+        try:
+            import security_gate
+            if security_gate.kill_switch_on():
+                return "[GATE] Kill switch actif — commande refusée."
+            security_gate.audit("shell", command, source=source)
+        except Exception as _e:
+            print(f"[GATE] indisponible: {_e}")
+
         print(f"[ADA DEBUG] [TERMINAL] Executing ({source}): {command}")
 
         # Politique d'exécution robuste (remplace l'ancienne blocklist par
