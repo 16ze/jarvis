@@ -5284,6 +5284,13 @@ class AudioLoop:
                                                 args["model_version"],
                                                 args["input_json"],
                                             )
+                                        elif n == "generate_video":
+                                            result = await asyncio.to_thread(
+                                                self.replicate.generate_video,
+                                                args.get("prompt", ""),
+                                                args.get("image_url", ""),
+                                                args.get("model", ""),
+                                            )
 
                                         else:
                                             result = f"Tool '{n}' enregistré mais non implémenté dans le routing."
@@ -7031,6 +7038,13 @@ class AudioLoop:
                         self.replicate.run_model,
                         args["model_version"],
                         args["input_json"],
+                    )
+                elif n == "generate_video":
+                    return await asyncio.to_thread(
+                        self.replicate.generate_video,
+                        args.get("prompt", ""),
+                        args.get("image_url", ""),
+                        args.get("model", ""),
                     )
                 elif n == "maps_directions":
                     return await asyncio.to_thread(

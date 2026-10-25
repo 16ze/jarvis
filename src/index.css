@@ -231,3 +231,10 @@ body {
 .electron-performance .animate-ping {
   animation: none !important;
 }
+
+/* Polish : entrée fluide des messages du chat (façon Claude) */
+@keyframes adaMsgIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.ada-msg-in { animation: adaMsgIn 0.24s cubic-bezier(0.22, 1, 0.36, 1); }

@@ -1726,6 +1726,13 @@ class TextAgent:
                 args.get("width", 1024),
                 args.get("height", 1024),
             )
+        elif name == "generate_video" and self._replicate:
+            return await asyncio.to_thread(
+                self._replicate.generate_video,
+                args.get("prompt", ""),
+                args.get("image_url", ""),
+                args.get("model", ""),
+            )
         elif name == "replicate_run_model" and self._replicate:
             return await asyncio.to_thread(
                 self._replicate.run_model,

@@ -66,7 +66,7 @@ const ChatModule = ({
                 style={{ height: height ? `calc(${height}px - 112px)` : '15rem' }}
             >
                 {messages.slice(-5).map((msg, i) => (
-                    <div key={i} className="text-sm border-l-2 border-blue-300/70 pl-3 py-1">
+                    <div key={i} className="ada-msg-in text-sm border-l-2 border-blue-300/70 pl-3 py-1">
                         <span className="text-blue-500 font-mono text-xs opacity-70">[{msg.time}]</span> <span className="font-bold text-[#10294d]">{msg.sender}</span>
                         <div className="text-slate-600 mt-1 leading-relaxed">{msg.text}</div>
                     </div>

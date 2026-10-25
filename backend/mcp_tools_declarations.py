@@ -1256,6 +1256,23 @@ replicate_generate_image_tool = {
         "required": ["prompt"]
     }
 }
+generate_video_tool = {
+    "name": "generate_video",
+    "description": (
+        "Génère une vidéo / animation via Replicate. Donne un 'prompt' (texte→vidéo) "
+        "et/ou une 'image_url' (image→vidéo, ex. une image générée juste avant). "
+        "Utilise pour : créer une animation, un clip, du motion design."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "prompt": {"type": "STRING", "description": "Description de la vidéo/animation à générer"},
+            "image_url": {"type": "STRING", "description": "URL d'une image de départ (image→vidéo), optionnel"},
+            "model": {"type": "STRING", "description": "Modèle Replicate vidéo (sinon REPLICATE_VIDEO_MODEL)"},
+        },
+        "required": [],
+    },
+}
 replicate_run_model_tool = {
     "name": "replicate_run_model",
     "description": "Exécute n'importe quel modèle Replicate avec des paramètres personnalisés.",
@@ -1811,6 +1828,8 @@ MCP_TOOLS = [
     jarvis_git_commit_tool, self_correct_file_tool, self_evolve_tool,
     # ── Vision objet (YOLO) ───────────────────────────────────────────────────
     detect_objects_tool, query_seen_objects_tool, count_objects_seen_tool,
+    # ── Création média (Replicate) ────────────────────────────────────────────
+    generate_video_tool,
 ]
 
 MCP_TOOL_NAMES = {t["name"] for t in MCP_TOOLS}

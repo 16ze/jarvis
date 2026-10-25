@@ -47,6 +47,35 @@ class ReplicateMCP:
         except Exception as e:
             return f"Erreur Replicate: {str(e)}"
 
+    def generate_video(self, prompt: str = "", image_url: str = "", model: str = "") -> str:
+        """Génère une vidéo/animation via Replicate. texte→vidéo (prompt) ou
+        image→vidéo (image_url). Le modèle vient de l'argument `model` ou de
+        REPLICATE_VIDEO_MODEL (.env)."""
+        if not self._ensure_connected():
+            return "Erreur Replicate: REPLICATE_API_TOKEN manquant."
+        mdl = model or os.getenv("REPLICATE_VIDEO_MODEL", "")
+        if not mdl:
+            return ("Aucun modèle vidéo configuré. Ajoute REPLICATE_VIDEO_MODEL dans .env "
+                    "(un modèle text-to-video ou image-to-video de Replicate) "
+                    "ou passe 'model' explicitement.")
+        try:
+            inp = {}
+            if prompt:
+                inp["prompt"] = prompt
+            if image_url:
+                inp["image"] = image_url
+            output = self._client.run(mdl, input=inp)
+            if not output:
+                return "Aucune vidéo générée."
+            urls = [str(u) for u in output] if isinstance(output, list) else [str(output)]
+            label = f" pour: '{prompt}'" if prompt else (f" depuis l'image fournie" if image_url else "")
+            lines = [f"Vidéo(s) générée(s){label}"]
+            for i, u in enumerate(urls, 1):
+                lines.append(f"  Vidéo {i}: {u}")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Erreur Replicate (vidéo): {str(e)}"
+
     def run_model(self, model_version: str, input_json: str) -> str:
         if not self._ensure_connected():
             return "Erreur Replicate: REPLICATE_API_TOKEN manquant."
