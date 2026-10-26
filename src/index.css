@@ -238,3 +238,22 @@ body {
     to   { opacity: 1; transform: translateY(0); }
 }
 .ada-msg-in { animation: adaMsgIn 0.24s cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* ── Polish : couche d'animation cohérente ────────────────────────────────── */
+:root { --ada-ease: cubic-bezier(0.22, 1, 0.36, 1); }
+
+@keyframes adaRiseIn  { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes adaScaleIn { from { opacity: 0; transform: scale(0.96); }     to { opacity: 1; transform: none; } }
+
+.ada-rise-in  { animation: adaRiseIn 0.28s var(--ada-ease) both; }
+.ada-scale-in { animation: adaScaleIn 0.22s var(--ada-ease) both; }
+
+/* Accessibilité : respecte la préférence système « réduire les animations ». */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
