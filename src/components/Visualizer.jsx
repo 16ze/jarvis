@@ -190,6 +190,9 @@ const Visualizer = ({ audioData, audioDataRef: externalAudioDataRef, isListening
 
         let animationId;
         let lastDraw = 0;
+        // Mode perfs Electron : plafonne aussi le visualiseur à ~30 fps.
+        const _perfMode = typeof document !== 'undefined' &&
+            document.documentElement.classList.contains('electron-performance');
 
         const getCurrentIntensity = () => {
             if (intensityRef.current !== null && typeof intensityRef.current !== 'undefined') {
@@ -203,7 +206,7 @@ const Visualizer = ({ audioData, audioDataRef: externalAudioDataRef, isListening
 
         const draw = (timestamp = 0) => {
             animationId = requestAnimationFrame(draw);
-            if (reduceMotion && timestamp - lastDraw < 33) return;
+            if ((reduceMotion || _perfMode) && timestamp - lastDraw < 33) return;
             lastDraw = timestamp;
 
             const w = width;
