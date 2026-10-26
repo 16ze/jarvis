@@ -55,3 +55,6 @@ pytest-asyncio>=0.23
 
 # Cerveau hybride : modèles Claude pour le raisonnement/codage (voix reste Gemini)
 anthropic>=0.39
+
+# Client MCP generique : brancher des connecteurs externes (facon Claude/Codex)
+mcp>=1.2

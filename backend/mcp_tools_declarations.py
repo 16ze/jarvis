@@ -1784,6 +1784,34 @@ workspace_open_browser_tool = {
     "behavior": "NON_BLOCKING",
 }
 
+mcp_list_servers_tool = {
+    "name": "mcp_list_servers",
+    "description": "Liste les connecteurs MCP externes configurés (serveurs MCP branchables comme sur Claude/Codex).",
+    "parameters": {"type": "OBJECT", "properties": {}},
+}
+mcp_list_tools_tool = {
+    "name": "mcp_list_tools",
+    "description": "Liste les outils exposés par un connecteur MCP externe donné.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {"server": {"type": "STRING", "description": "Nom du serveur MCP (voir mcp_list_servers)"}},
+        "required": ["server"],
+    },
+}
+mcp_call_tool_tool = {
+    "name": "mcp_call_tool",
+    "description": "Appelle un outil d'un connecteur MCP externe. Donne le serveur, le nom de l'outil et ses arguments en JSON.",
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "server": {"type": "STRING", "description": "Nom du serveur MCP"},
+            "tool": {"type": "STRING", "description": "Nom de l'outil à appeler"},
+            "arguments_json": {"type": "STRING", "description": "Arguments de l'outil en JSON"},
+        },
+        "required": ["server", "tool"],
+    },
+}
+
 MCP_TOOLS = [
     # ── Communication ─────────────────────────────────────────────────────────
     telegram_send_message_tool, telegram_send_photo_tool, telegram_get_updates_tool,
@@ -1830,6 +1858,8 @@ MCP_TOOLS = [
     detect_objects_tool, query_seen_objects_tool, count_objects_seen_tool,
     # ── Création média (Replicate) ────────────────────────────────────────────
     generate_video_tool,
+    # ── Connecteurs MCP externes (génériques, façon Claude/Codex) ─────────────
+    mcp_list_servers_tool, mcp_list_tools_tool, mcp_call_tool_tool,
 ]
 
 MCP_TOOL_NAMES = {t["name"] for t in MCP_TOOLS}

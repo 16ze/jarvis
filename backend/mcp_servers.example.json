@@ -1,0 +1,15 @@
+{
+  "_comment": "Connecteurs MCP externes d'Ada (comme sur Claude/Codex). Copie ce fichier en mcp_servers.json et remplis-le. Les secrets passent par 'env' et ne sont PAS commités (mcp_servers.json est gitignoré).",
+  "servers": {
+    "exemple-stdio": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/bryandev"],
+      "env": {}
+    },
+    "exemple-http": {
+      "transport": "sse",
+      "url": "https://mon-serveur-mcp.example.com/sse"
+    }
+  }
+}

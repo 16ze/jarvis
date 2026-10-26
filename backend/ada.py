@@ -241,42 +241,6 @@ list_projects_tool = {
     },
 }
 
-list_smart_devices_tool = {
-    "name": "list_smart_devices",
-    "description": "Lists all available smart home devices (lights, plugs, etc.) on the network.",
-    "parameters": {
-        "type": "OBJECT",
-        "properties": {},
-    },
-}
-
-control_light_tool = {
-    "name": "control_light",
-    "description": "Controls a smart light device.",
-    "parameters": {
-        "type": "OBJECT",
-        "properties": {
-            "target": {
-                "type": "STRING",
-                "description": "Alias (nom) du device à contrôler, tel que retourné par list_smart_devices (ex: 'Salon', 'Cuisine', 'Couloir', 'Lanternes', 'CHAMBRE PRINCIPAL'). Utilise 'all' pour contrôler toutes les lumières en même temps.",
-            },
-            "action": {
-                "type": "STRING",
-                "description": "The action to perform: 'turn_on', 'turn_off', or 'set'.",
-            },
-            "brightness": {
-                "type": "INTEGER",
-                "description": "Optional brightness level (0-100).",
-            },
-            "color": {
-                "type": "STRING",
-                "description": "Optional color name (e.g., 'red', 'cool white') or 'warm'.",
-            },
-        },
-        "required": ["target", "action"],
-    },
-}
-
 discover_printers_tool = {
     "name": "discover_printers",
     "description": "Discovers 3D printers available on the local network.",
@@ -5291,6 +5255,18 @@ class AudioLoop:
                                                 args.get("image_url", ""),
                                                 args.get("model", ""),
                                             )
+                                        elif n == "mcp_list_servers":
+                                            import external_mcp
+                                            result = await external_mcp.list_servers()
+                                        elif n == "mcp_list_tools":
+                                            import external_mcp
+                                            result = await external_mcp.list_tools(args.get("server", ""))
+                                        elif n == "mcp_call_tool":
+                                            import external_mcp
+                                            result = await external_mcp.call_tool(
+                                                args.get("server", ""), args.get("tool", ""),
+                                                args.get("arguments_json", "{}"),
+                                            )
 
                                         else:
                                             result = f"Tool '{n}' enregistré mais non implémenté dans le routing."
@@ -7045,6 +7021,17 @@ class AudioLoop:
                         args.get("prompt", ""),
                         args.get("image_url", ""),
                         args.get("model", ""),
+                    )
+                elif n == "mcp_list_servers":
+                    import external_mcp
+                    return await external_mcp.list_servers()
+                elif n == "mcp_list_tools":
+                    import external_mcp
+                    return await external_mcp.list_tools(args.get("server", ""))
+                elif n == "mcp_call_tool":
+                    import external_mcp
+                    return await external_mcp.call_tool(
+                        args.get("server", ""), args.get("tool", ""), args.get("arguments_json", "{}")
                     )
                 elif n == "maps_directions":
                     return await asyncio.to_thread(

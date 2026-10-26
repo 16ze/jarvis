@@ -1733,6 +1733,17 @@ class TextAgent:
                 args.get("image_url", ""),
                 args.get("model", ""),
             )
+        elif name == "mcp_list_servers":
+            import external_mcp
+            return await external_mcp.list_servers()
+        elif name == "mcp_list_tools":
+            import external_mcp
+            return await external_mcp.list_tools(args.get("server", ""))
+        elif name == "mcp_call_tool":
+            import external_mcp
+            return await external_mcp.call_tool(
+                args.get("server", ""), args.get("tool", ""), args.get("arguments_json", "{}")
+            )
         elif name == "replicate_run_model" and self._replicate:
             return await asyncio.to_thread(
                 self._replicate.run_model,
