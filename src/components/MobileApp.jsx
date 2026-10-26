@@ -27,7 +27,15 @@ const MobileApp = ({
     const orbGlow = `0 0 ${40 + (audioAmp || 0) * 60}px rgba(6,182,212,${0.3 + (audioAmp || 0) * 0.5})`;
 
     return (
-        <div className="h-screen w-screen bg-black text-cyan-100 font-mono flex flex-col overflow-hidden select-none">
+        <div
+            className="h-screen w-screen bg-black text-cyan-100 font-mono flex flex-col overflow-hidden select-none"
+            style={{
+                paddingTop: 'env(safe-area-inset-top)',
+                paddingBottom: 'env(safe-area-inset-bottom)',
+                paddingLeft: 'env(safe-area-inset-left)',
+                paddingRight: 'env(safe-area-inset-right)',
+            }}
+        >
 
             {/* Header */}
             <div className="flex items-center justify-between px-6 pt-12 pb-4 shrink-0">

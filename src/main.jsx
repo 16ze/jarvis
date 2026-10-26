@@ -19,6 +19,14 @@ try {
     if (isElectron) document.documentElement.classList.add('electron-performance')
 }
 
+// PWA : enregistre le service worker en web/mobile (pas dans Electron).
+// Le rend installable sur l'écran d'accueil du téléphone.
+if (!isElectron && 'serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {})
+    })
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
     isElectron ? app : <React.StrictMode>{app}</React.StrictMode>,
 )
