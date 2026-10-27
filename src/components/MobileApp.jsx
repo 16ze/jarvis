@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Power, Mic, MicOff, Send } from 'lucide-react';
+import Face from '../widget/Face';
 
 const MobileApp = ({
     socket,
@@ -13,6 +14,10 @@ const MobileApp = ({
     inputValue,
     setInputValue,
     handleSend,
+    adaAffect = null,
+    adaSpeaking = false,
+    adaPiloting = false,
+    micRef = null,
 }) => {
     const messagesEndRef = useRef(null);
     const [showChat, setShowChat] = useState(false);
@@ -125,10 +130,16 @@ const MobileApp = ({
                                     boxShadow: orbGlow,
                                 }}
                             >
-                                <div className="text-center">
-                                    <div className="text-2xl font-light text-cyan-400 tracking-widest">ADA</div>
+                                <div className="flex flex-col items-center">
+                                    <Face
+                                        affect={adaAffect}
+                                        talking={adaSpeaking || (audioAmp || 0) > 0.06}
+                                        acting={adaPiloting}
+                                        micRef={isMuted ? null : micRef}
+                                        size={Math.round(orbSize * 0.72)}
+                                    />
                                     <div className="text-[9px] text-cyan-700 tracking-wider mt-1">
-                                        {!isConnected ? 'OFFLINE' : isMuted ? 'EN VEILLE' : 'À L\'ÉCOUTE'}
+                                        {!isConnected ? 'OFFLINE' : isMuted ? 'EN VEILLE' : (adaAffect?.mood || 'À L\'ÉCOUTE')}
                                     </div>
                                 </div>
                             </div>

@@ -103,13 +103,24 @@ function familyFor(affect, acting) {
     return 'neutral';
 }
 
-export default function Face({ affect = null, talking = false, acting = false, look = { x: 0, y: 0 }, size = 120 }) {
+export default function Face({
+    affect = null, talking = false, acting = false, listening = false,
+    look = { x: 0, y: 0 }, size = 120, followCursor = false, micRef = null,
+}) {
     const [blink, setBlink] = useState(false);
     const [sacc, setSacc] = useState({ x: 0, y: 0 }); // micro-saccades oculaires
+    const [curLook, setCurLook] = useState({ x: 0, y: 0 }); // suivi curseur interne
+    const [micHot, setMicHot] = useState(false); // Bryan parle au micro
+    const svgRef = useRef(null);
     const uid = useRef('f' + Math.random().toString(36).slice(2, 8)).current;
 
+    // Écoute : le visage est attentif tant qu'une émotion forte (pilotage) ne prime pas.
+    const isListening = (listening || micHot) && !acting;
     const fam = familyFor(affect, acting);
-    const E = FAMILIES[fam] || FAMILIES.neutral;
+    const base = FAMILIES[fam] || FAMILIES.neutral;
+    const E = isListening
+        ? { ...base, browY: (base.browY || 0) - 2.5, eyeScale: (base.eyeScale || 1) * 1.06 }
+        : base;
 
     // Éveil (arousal) : dilate les yeux, accélère clignement & respiration.
     const arousal = affect
@@ -139,12 +150,49 @@ export default function Face({ affect = null, talking = false, acting = false, l
         return () => clearInterval(id);
     }, []);
 
+    // Suivi du curseur : les yeux te suivent à l'écran (relatif au centre du visage).
+    useEffect(() => {
+        if (!followCursor) return;
+        let raf = 0;
+        const onMove = (e) => {
+            if (raf) return;
+            raf = requestAnimationFrame(() => {
+                raf = 0;
+                const el = svgRef.current;
+                if (!el) return;
+                const r = el.getBoundingClientRect();
+                const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+                setCurLook({ x: clamp((e.clientX - cx) / 240, -1, 1), y: clamp((e.clientY - cy) / 240, -1, 1) });
+            });
+        };
+        window.addEventListener('mousemove', onMove);
+        return () => { window.removeEventListener('mousemove', onMove); if (raf) cancelAnimationFrame(raf); };
+    }, [followCursor]);
+
+    // Détection de parole micro (humeur « écoute »), via l'amplitude du flux micro.
+    useEffect(() => {
+        if (!micRef) return;
+        let lastHot = 0;
+        const id = setInterval(() => {
+            const arr = micRef.current;
+            if (!arr || !arr.length) return;
+            let s = 0;
+            for (let i = 0; i < arr.length; i++) s += arr[i];
+            const amp = s / arr.length / 255;
+            const now = Date.now();
+            if (amp > 0.08) { lastHot = now; setMicHot(true); }
+            else if (now - lastHot > 500) setMicHot(false);
+        }, 150);
+        return () => clearInterval(id);
+    }, [micRef]);
+
     const tint = E.tint;
     const screen = 'rgba(7,17,22,0.92)'; // couleur de la plaque / des paupières
 
-    // Décalage du regard : curseur + saccade + baissé si honte.
-    const gx = clamp((look.x || 0), -1, 1) * 4 + sacc.x;
-    const gy = clamp((look.y || 0), -1, 1) * 3 + sacc.y + (E.lookDown ? 3 : 0);
+    // Décalage du regard : curseur (externe ou suivi interne) + saccade + baissé si honte.
+    const effLook = followCursor ? curLook : (look || { x: 0, y: 0 });
+    const gx = clamp((effLook.x || 0), -1, 1) * 4 + sacc.x;
+    const gy = clamp((effLook.y || 0), -1, 1) * 3 + sacc.y + (E.lookDown ? 3 : 0);
 
     const lidTop = blink ? 1 : E.lidTop;
     const eyeRy = 13 * (E.eyeScale || 1);
@@ -171,6 +219,7 @@ export default function Face({ affect = null, talking = false, acting = false, l
       @keyframes ${uid}-shake   { 0%,100%{transform:translate(0,0)} 25%{transform:translate(0.7px,-0.4px)} 75%{transform:translate(-0.7px,0.4px)} }
       @keyframes ${uid}-talk    { 0%,100%{transform:scaleY(0.25)} 50%{transform:scaleY(1)} }
       @keyframes ${uid}-tear    { 0%{opacity:0;transform:translateY(0)} 20%{opacity:.9} 100%{opacity:0;transform:translateY(10px)} }
+      @keyframes ${uid}-ring    { 0%{opacity:.5;transform:scale(1)} 70%{opacity:0;transform:scale(1.14)} 100%{opacity:0} }
     `, [uid]);
 
     const breatheSpeed = (3.6 - arousal * 1.8).toFixed(2);
@@ -180,9 +229,20 @@ export default function Face({ affect = null, talking = false, acting = false, l
     };
 
     return (
-        <svg width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
-             style={{ display: 'block', filter: `drop-shadow(0 0 ${6 + arousal * 6}px ${tint}55)`, transition: 'filter .4s ease' }}>
+        <svg ref={svgRef} width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
+             style={{
+                 display: 'block',
+                 filter: `drop-shadow(0 0 ${6 + arousal * 6}px ${tint}55)`,
+                 transform: isListening ? 'rotate(3deg)' : 'none',
+                 transition: 'filter .4s ease, transform .4s ease',
+             }}>
             <style>{anims}</style>
+
+            {/* Anneau d'écoute : pulse quand Ada t'entend parler */}
+            {isListening && (
+                <rect x="6" y="12" width="88" height="76" rx="24" fill="none" stroke={tint} strokeWidth="1.4"
+                      style={{ transformOrigin: '50px 50px', animation: `${uid}-ring 1.3s ease-out infinite` }} />
+            )}
 
             <g style={headStyle}>
                 {/* Plaque / écran */}
