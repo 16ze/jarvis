@@ -57,35 +57,41 @@ const MOOD_FAMILY = {
     Rupture: 'overwhelmed',
 };
 
-// Paramètres d'expression par famille.
-//  lidTop/lidBottom : fermeture de paupière (0 ouvert → 1 fermé)
-//  browA            : inclinaison des sourcils (+ = colère, - = tristesse/peur)
-//  browY            : décalage vertical des sourcils (- = levés)
-//  eyeScale         : taille des yeux (surprise/peur > 1)
-//  mouthCurve       : -1 (∩ triste) → +1 (∪ sourire)
-//  mouthOpen        : 0..1, mouthW : largeur
-//  tint             : couleur lumineuse ; asym : sourcil droit levé (dubitatif)
-//  tear/sweat/shake : décorations
-const FAMILIES = {
-    neutral:   { lidTop: .08, lidBottom: 0,  browA: 0,  browY: 0,  eyeScale: 1,    mouthCurve: .12, mouthOpen: 0,   mouthW: 1,   tint: '#22d3ee' },
-    joy:       { lidTop: 0,   lidBottom: .42, browA: -4, browY: -3, eyeScale: 1,    mouthCurve: .9,  mouthOpen: .25, mouthW: 1.1, tint: '#2ee6c6' },
-    love:      { lidTop: .12, lidBottom: .3, browA: -6, browY: -2, eyeScale: 1,    mouthCurve: .7,  mouthOpen: 0,   mouthW: 1,   tint: '#ff86cf' },
-    pride:     { lidTop: .1,  lidBottom: .12, browA: -8, browY: -3, eyeScale: 1,    mouthCurve: .55, mouthOpen: 0,   mouthW: 1,   tint: '#49d0ff' },
-    curious:   { lidTop: 0,   lidBottom: 0,  browA: -3, browY: -6, eyeScale: 1.08, mouthCurve: .2,  mouthOpen: .1,  mouthW: .9,  tint: '#5ad1ff', asym: true },
-    serene:    { lidTop: .22, lidBottom: .14, browA: -2, browY: -1, eyeScale: .98,  mouthCurve: .45, mouthOpen: 0,   mouthW: 1,   tint: '#39d7bd' },
-    fear:      { lidTop: 0,   lidBottom: 0,  browA: -10, browY: -8, eyeScale: 1.22, mouthCurve: -.3, mouthOpen: .45, mouthW: .85, tint: '#b98cff', sweat: true, shake: .6 },
-    anger:     { lidTop: .2,  lidBottom: .1, browA: 16, browY: 2,  eyeScale: 1,    mouthCurve: -.6, mouthOpen: .1,  mouthW: 1,   tint: '#ff5a46', shake: .25 },
-    disgust:   { lidTop: .28, lidBottom: .12, browA: 8,  browY: 1,  eyeScale: .95,  mouthCurve: -.4, mouthOpen: 0,   mouthW: .85, tint: '#c3a24b', asym: true },
-    sad:       { lidTop: .32, lidBottom: 0,  browA: -14, browY: 3,  eyeScale: .98,  mouthCurve: -.7, mouthOpen: 0,   mouthW: .9,  tint: '#5aa6ff', tear: true },
-    shame:     { lidTop: .4,  lidBottom: 0,  browA: -8, browY: 3,  eyeScale: .9,   mouthCurve: -.3, mouthOpen: 0,   mouthW: .8,  tint: '#6f88c0', lookDown: true },
-    bored:     { lidTop: .5,  lidBottom: 0,  browA: 2,  browY: 2,  eyeScale: .95,  mouthCurve: -.1, mouthOpen: 0,   mouthW: .9,  tint: '#788690' },
-    tired:     { lidTop: .62, lidBottom: .05, browA: -3, browY: 3,  eyeScale: .92,  mouthCurve: -.15, mouthOpen: .15, mouthW: .9, tint: '#6b7a85', droop: true },
-    sarcastic: { lidTop: .34, lidBottom: .08, browA: 4,  browY: -2, eyeScale: .98,  mouthCurve: .3,  mouthOpen: 0,   mouthW: 1,   tint: '#7fd4c0', asym: true, smirk: true },
-    overwhelmed:{ lidTop: 0,  lidBottom: 0,  browA: -6, browY: -6, eyeScale: 1.1,  mouthCurve: -.5, mouthOpen: .6,  mouthW: .8,  tint: '#ff4d6d', sweat: true, shake: 1 },
-    focus:     { lidTop: .34, lidBottom: .22, browA: 6,  browY: 0,  eyeScale: .96,  mouthCurve: 0,   mouthOpen: 0,   mouthW: .9,  tint: '#fbbf24' }, // pilotage PC
+// SIGNATURES de forme par émotion (Ekman) : des DELTAS appliqués par-dessus une
+// base continue, et dosés par une intensité k (jamais binaire). C'est ce qui
+// distingue deux émotions de même valence (peur vs colère vs dégoût).
+//  browA +  = sourcils abaissés/rapprochés (colère) ; -  = relevés (peur) / obliques (tristesse)
+//  mouthBoost = sourire en plus ; mouthDown = bouche descendue ; mouthOpenAdd = bouche ouverte
+const SIG = {
+    joy:        { browA: -3, browY: -2, lidBottom: 0.38, mouthBoost: 0.3,  tint: '#2ee6c6' },
+    love:       { browA: -5, browY: -1, lidTop: 0.12, lidBottom: 0.22, mouthBoost: 0.12, tint: '#ff86cf' },
+    pride:      { browA: -6, browY: -3, mouthBoost: 0.08, tint: '#49d0ff' },
+    curious:    { browY: -5, eyeBoost: 0.12, asym: true, mouthBoost: 0.06, tint: '#5ad1ff' },
+    serene:     { lidTop: 0.18, lidBottom: 0.12, mouthBoost: 0.12, tint: '#39d7bd' },
+    fear:       { browA: -9, browY: -7, eyeBoost: 0.22, mouthOpenAdd: 0.4, tint: '#b98cff', sweat: true, shake: 0.5 },
+    anger:      { browA: 17, browY: 2, lidTop: 0.2, mouthDown: 0.5, tint: '#ff5a46', shake: 0.25 },
+    disgust:    { browA: 7, lidTop: 0.22, asym: true, smirk: true, mouthDown: 0.3, tint: '#c3a24b' },
+    sad:        { browA: -14, browY: 3, lidTop: 0.22, mouthDown: 0.55, tint: '#5aa6ff', tear: true },
+    shame:      { browA: -7, lidTop: 0.3, lookDown: true, mouthDown: 0.25, tint: '#6f88c0' },
+    bored:      { browY: 2, lidTop: 0.45, mouthDown: 0.1, tint: '#788690' },
+    tired:      { browY: 2, lidTop: 0.55, droop: true, mouthDown: 0.15, tint: '#6b7a85' },
+    sarcastic:  { browA: 4, browY: -2, lidTop: 0.3, asym: true, smirk: true, mouthBoost: 0.2, tint: '#7fd4c0' },
+    overwhelmed:{ browA: -6, browY: -6, eyeBoost: 0.1, mouthOpenAdd: 0.55, mouthDown: 0.4, tint: '#ff4d6d', sweat: true, shake: 0.9 },
+    focus:      { browA: 6, lidTop: 0.32, lidBottom: 0.2, tint: '#fbbf24' }, // pilotage PC
 };
 
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
+
+// Interpolation de deux couleurs hex (#rrggbb) — pour fondre vers la teinte de l'émotion.
+function mixHex(a, b, t) {
+    const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+    const ar = pa >> 16, ag = (pa >> 8) & 255, ab = pa & 255;
+    const br = pb >> 16, bg = (pb >> 8) & 255, bb = pb & 255;
+    const r = Math.round(ar + (br - ar) * t);
+    const g = Math.round(ag + (bg - ag) * t);
+    const bl = Math.round(ab + (bb - ab) * t);
+    return '#' + ((1 << 24) + (r << 16) + (g << 8) + bl).toString(16).slice(1);
+}
 
 function familyFor(affect, acting) {
     if (acting) return 'focus';
@@ -112,38 +118,67 @@ export default function Face({
     const [curLook, setCurLook] = useState({ x: 0, y: 0 }); // suivi curseur interne
     const [micHot, setMicHot] = useState(false); // Bryan parle au micro
     const [aiHot, setAiHot] = useState(false); // Ada émet du son (elle parle)
+    const [micro, setMicro] = useState({ brow: 0, mouth: 0 }); // micro-variations humaines
     const svgRef = useRef(null);
     const uid = useRef('f' + Math.random().toString(36).slice(2, 8)).current;
 
     // Écoute : le visage est attentif tant qu'une émotion forte (pilotage) ne prime pas.
     const isListening = (listening || micHot) && !acting;
-    const fam = familyFor(affect, acting);
-    let base = FAMILIES[fam] || FAMILIES.neutral;
 
-    // Gradient continu : même quand le label du brain reste « Neutre », son état
-    // penche (dopamine/sérotonine/ocytocine au-dessus du repos = positif, cortisol
-    // = négatif). On lit cet écart pour esquisser un sourire ou un renfrognement,
-    // au lieu d'un visage mort tant que le seuil d'une humeur nommée n'est pas franchi.
-    if (fam === 'neutral' && affect) {
-        const d = affect.dopamine ?? 0.28, c = affect.cortisol ?? 0.10;
-        const s = affect.serotonine ?? 0.42, o = affect.oxytocine ?? 0.30;
-        const val = clamp((d - 0.28) * 2.2 + (s - 0.42) * 1.4 + (o - 0.30) * 1.2 - (c - 0.10) * 2.4, -1, 1);
-        base = {
-            ...base,
-            mouthCurve: clamp((base.mouthCurve || 0) + val * 0.55, -0.7, 0.9),
-            browA: (base.browA || 0) - val * 3, // sourcils qui se détendent si positif
-            tint: val > 0.18 ? '#2ee6c6' : val < -0.18 ? '#5aa6ff' : base.tint,
-        };
+    // ── MOTEUR D'EXPRESSION CONTINU ──────────────────────────────────────────
+    // L'humeur n'est pas un état figé : on lit en continu les hormones du brain et
+    // on en dérive des dimensions affectives (valence, éveil, fatigue) qui modèlent
+    // le visage en douceur. La famille nommée n'ajoute que sa SIGNATURE de forme,
+    // dosée progressivement — jamais un saut binaire. Résultat : variable, humain.
+    const H = affect || {};
+    const d = H.dopamine ?? 0.28, c = H.cortisol ?? 0.10, o = H.oxytocine ?? 0.30;
+    const s = H.serotonine ?? 0.42, ml = H.mental_load ?? 0.16;
+    const valence = clamp((d - 0.28) * 1.8 + (s - 0.42) * 1.3 + (o - 0.30) * 1.1 - (c - 0.10) * 2.3, -1, 1);
+    const arousal = clamp(c * 0.7 + d * 0.5 + ml * 0.3, 0, 1);
+    const fatigue = clamp(ml, 0, 1);
+
+    // Base continue (toujours vivante, varie en douceur avec l'état).
+    const E = {
+        mouthCurve: valence * 0.7,
+        mouthOpen: 0,
+        mouthW: 1,
+        eyeScale: 1 + (arousal - 0.3) * 0.22,
+        lidTop: clamp(0.06 + fatigue * 0.5 - Math.max(0, arousal - 0.5) * 0.4, 0, 0.72),
+        lidBottom: valence > 0 ? valence * 0.3 : 0,
+        browA: -valence * 2,
+        browY: -Math.max(0, arousal - 0.3) * 4 + fatigue * 2,
+        tint: '#22d3ee',
+    };
+
+    // Signature de l'émotion nommée, appliquée avec une intensité k progressive.
+    const fam = familyFor(affect, acting);
+    const sig = SIG[fam];
+    if (sig) {
+        const k = acting ? 1 : clamp(0.4 + Math.abs(valence) * 0.6 + Math.max(0, arousal - 0.3) * 0.5, 0.35, 1);
+        if (sig.browA) E.browA += sig.browA * k;
+        if (sig.browY) E.browY += sig.browY * k;
+        if (sig.lidTop) E.lidTop = clamp(E.lidTop + sig.lidTop * k, 0, 0.8);
+        if (sig.lidBottom) E.lidBottom = clamp(Math.max(E.lidBottom, sig.lidBottom * k), 0, 0.6);
+        if (sig.eyeBoost) E.eyeScale += sig.eyeBoost * k;
+        if (sig.mouthBoost) E.mouthCurve = clamp(E.mouthCurve + sig.mouthBoost * k, -0.85, 0.98);
+        if (sig.mouthDown) E.mouthCurve = clamp(E.mouthCurve - sig.mouthDown * k, -0.85, 0.98);
+        if (sig.mouthOpenAdd) E.mouthOpen = clamp(E.mouthOpen + sig.mouthOpenAdd * k, 0, 0.7);
+        if (sig.asym && k > 0.5) E.asym = true;
+        if (sig.smirk && k > 0.5) E.smirk = true;
+        if (sig.droop) E.droop = true;
+        if (sig.lookDown) E.lookDown = true;
+        if (sig.sweat && k > 0.5) E.sweat = true;
+        if (sig.tear && k > 0.55) E.tear = true;
+        if (sig.shake) E.shake = sig.shake * k;
+        if (sig.tint) E.tint = mixHex('#22d3ee', sig.tint, clamp(k, 0, 1));
     }
 
-    const E = isListening
-        ? { ...base, browY: (base.browY || 0) - 2.5, eyeScale: (base.eyeScale || 1) * 1.06 }
-        : base;
+    // Micro-variations humaines : le visage n'est jamais parfaitement immobile.
+    E.browY += micro.brow;
+    E.mouthCurve = clamp(E.mouthCurve + micro.mouth, -0.9, 0.98);
 
-    // Éveil (arousal) : dilate les yeux, accélère clignement & respiration.
-    const arousal = affect
-        ? clamp((affect.cortisol ?? 0) * 0.6 + (affect.dopamine ?? 0) * 0.5 + (affect.mental_load ?? 0) * 0.2)
-        : 0.25;
+    // Écoute : visage attentif (yeux un peu plus ouverts, sourcils relevés).
+    if (isListening) { E.browY -= 2.5; E.eyeScale *= 1.06; }
 
     // Clignement périodique (plus fréquent si éveillé).
     useEffect(() => {
@@ -165,6 +200,18 @@ export default function Face({
         const id = setInterval(() => {
             setSacc({ x: (Math.random() - 0.5) * 1.6, y: (Math.random() - 0.5) * 1.2 });
         }, 1400 + Math.random() * 1200);
+        return () => clearInterval(id);
+    }, []);
+
+    // Micro-variations d'expression (marche aléatoire lente) : sourcils et bouche
+    // bougent légèrement en permanence → l'humeur paraît vivante, jamais figée.
+    useEffect(() => {
+        const id = setInterval(() => {
+            setMicro((m) => ({
+                brow: clamp(m.brow + (Math.random() - 0.5) * 1.1, -1.6, 1.6),
+                mouth: clamp(m.mouth + (Math.random() - 0.5) * 0.07, -0.12, 0.12),
+            }));
+        }, 650 + Math.random() * 500);
         return () => clearInterval(id);
     }, []);
 
