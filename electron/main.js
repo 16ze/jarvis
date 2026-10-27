@@ -141,6 +141,7 @@ function createWindow() {
 // ─── VIGNETTE FLOTTANTE (mini-robot Jarvis + mini-chat) ──────────────────────
 let widgetWindow = null;
 let widgetDrag = null; // { offX, offY } pendant un déplacement
+let widgetFullPrev = null; // bornes sauvegardées avant le plein écran
 const WIDGET_COLLAPSED = { width: 92, height: 92 };
 const WIDGET_EXPANDED = { width: 360, height: 560 };
 const WIDGET_STATE_FILE = path.join(app.getPath('userData'), 'widget-state.json');
@@ -239,6 +240,33 @@ function registerWidgetIpc() {
         const nb = clampToDisplay({ x: b.x, y: b.y, width: size.width, height: size.height });
         widgetWindow.setBounds(nb);
         saveWidgetPos(nb.x, nb.y);
+    });
+
+    // Redimensionnement explicite piloté par le renderer (tailles S/M/L/XL +
+    // ouverture du chat). On garde le coin haut-gauche stable et on reclampe.
+    ipcMain.on('widget:resize', (_e, { w, h } = {}) => {
+        if (!widgetWindow || !Number.isFinite(w) || !Number.isFinite(h)) return;
+        if (widgetFullPrev) return; // ignoré pendant le plein écran
+        const b = widgetWindow.getBounds();
+        const nb = clampToDisplay({ x: b.x, y: b.y, width: Math.round(w), height: Math.round(h) });
+        widgetWindow.setBounds(nb);
+        saveWidgetPos(nb.x, nb.y);
+    });
+
+    // Plein écran : la fenêtre widget (frameless, transparente, always-on-top)
+    // s'étend à toute la zone de travail ; le visage est centré par le renderer.
+    ipcMain.on('widget:fullscreen', (_e, { on } = {}) => {
+        if (!widgetWindow) return;
+        const disp = screen.getDisplayNearestPoint(widgetWindow.getBounds());
+        const wa = (disp && disp.workArea) || screen.getPrimaryDisplay().workArea;
+        if (on) {
+            widgetFullPrev = widgetWindow.getBounds();
+            widgetWindow.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height });
+        } else if (widgetFullPrev) {
+            widgetWindow.setBounds(clampToDisplay(widgetFullPrev));
+            saveWidgetPos(widgetFullPrev.x, widgetFullPrev.y);
+            widgetFullPrev = null;
+        }
     });
 }
 

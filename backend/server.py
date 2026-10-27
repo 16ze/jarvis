@@ -308,6 +308,37 @@ async def startup_event():
         print("[SERVER] pc_control_state broadcaster enregistré")
     except Exception as _e:
         print(f"[SERVER] pc_control_state broadcaster indisponible: {_e}")
+
+    # État émotionnel du brain → visage vivant d'Ada (vignette). Diffusion
+    # périodique et défensive : si le brain est désactivé/dégradé,
+    # get_affect_snapshot() renvoie None → on n'émet rien (visage neutre).
+    # Émission seulement quand l'humeur/les hormones changent (peu coûteux).
+    if os.getenv("JARVIS_AFFECT_BROADCAST", "true").lower() == "true":
+        async def _affect_loop():
+            interval = float(os.getenv("JARVIS_AFFECT_INTERVAL", "1.5"))
+            last_key = None
+            while True:
+                try:
+                    from brain.brain_manager import get_brain
+                    snap = get_brain().get_affect_snapshot()
+                    if snap:
+                        key = (
+                            snap.get("mood"),
+                            round(float(snap.get("cortisol", 0) or 0), 2),
+                            round(float(snap.get("dopamine", 0) or 0), 2),
+                            round(float(snap.get("oxytocine", 0) or 0), 2),
+                            round(float(snap.get("serotonine", 0) or 0), 2),
+                            round(float(snap.get("mental_load", 0) or 0), 2),
+                        )
+                        if key != last_key:
+                            last_key = key
+                            await sio.emit("ada_affect", snap)
+                except Exception:
+                    pass
+                await asyncio.sleep(interval)
+
+        asyncio.create_task(_affect_loop())
+        print("[SERVER] ada_affect broadcaster enregistré")
     print(f"[SERVER DEBUG] Python Version: {sys.version}")
     try:
         loop = asyncio.get_running_loop()

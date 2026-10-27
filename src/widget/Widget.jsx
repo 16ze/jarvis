@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import io from 'socket.io-client';
-import Eyes from './Eyes';
+import Face from './Face';
 import MiniChat from './MiniChat';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
@@ -16,21 +16,32 @@ const ipc = (() => {
 
 const DRAG_THRESHOLD = 5; // px : en dessous = clic (toggle), au-dessus = déplacement
 
+// Tailles du visage (px) et fenêtre correspondante. Le renderer est la source de
+// vérité : il calcule les dimensions et demande à Electron de redimensionner.
+const FACE_PX = { s: 60, m: 88, l: 132, xl: 196 };
+const PAD = 12;
+const CHAT = { width: 360, height: 560 };
+const SIZE_ORDER = ['s', 'm', 'l', 'xl'];
+
 export default function Widget() {
     const [open, setOpen] = useState(false);
+    const [size, setSize] = useState('m');
+    const [full, setFull] = useState(false);
     const [piloting, setPiloting] = useState(false);
     const [speaking, setSpeaking] = useState(false);
+    const [affect, setAffect] = useState(null);
     const [look, setLook] = useState({ x: 0, y: 0 });
+    const [fullPx, setFullPx] = useState(360);
     const drag = useRef({ active: false, moved: 0, sx: 0, sy: 0 });
     const speakTimer = useRef(null);
 
-    // Socket : pilotage PC (humeur « acting ») + parole d'Ada (humeur « speaking »).
+    // Socket : état émotionnel du brain + pilotage PC + parole d'Ada.
     useEffect(() => {
         let socket;
         try {
             socket = io(BACKEND_URL, { transports: ['websocket'], upgrade: false });
             socket.on('pc_control_state', (d) => setPiloting(!!(d && d.active)));
-            // Quand Ada émet du texte, elle « parle » : bouche qui pulse ~1,6 s.
+            socket.on('ada_affect', (d) => { if (d && typeof d === 'object') setAffect(d); });
             socket.on('transcription', (d) => {
                 if (!d || d.sender === 'user') return;
                 setSpeaking(true);
@@ -44,34 +55,53 @@ export default function Widget() {
         };
     }, []);
 
-    // Les pupilles suivent le curseur (dans la fenêtre de la vignette).
+    // Les pupilles suivent le curseur (dans la fenêtre).
     useEffect(() => {
         const onMouse = (e) => {
-            const cx = window.innerWidth / 2;
-            const cy = window.innerHeight / 2;
+            const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
             setLook({ x: (e.clientX - cx) / (cx || 1), y: (e.clientY - cy) / (cy || 1) });
         };
         window.addEventListener('mousemove', onMouse);
         return () => window.removeEventListener('mousemove', onMouse);
     }, []);
 
-    // Humeur : pilotage > parole > repos.
-    const mood = piloting ? 'acting' : (speaking ? 'speaking' : 'idle');
+    // En plein écran : taille du visage = ~55 % du plus petit côté de l'écran.
+    useEffect(() => {
+        if (!full) return;
+        const recompute = () => setFullPx(Math.round(Math.min(window.innerWidth, window.innerHeight) * 0.55));
+        recompute();
+        window.addEventListener('resize', recompute);
+        return () => window.removeEventListener('resize', recompute);
+    }, [full]);
 
-    const toggle = useCallback(() => {
-        setOpen((prev) => {
+    // Redimensionne la fenêtre Electron selon l'état (taille / chat ouvert).
+    useEffect(() => {
+        if (full) return; // la fenêtre est gérée par le mode plein écran
+        const facePx = FACE_PX[size];
+        const w = open ? CHAT.width : Math.max(facePx + PAD * 2, 176);
+        const h = open ? CHAT.height : facePx + PAD * 2;
+        ipc.send('widget:resize', { w, h });
+    }, [size, open, full]);
+
+    const toggleFull = useCallback(() => {
+        setFull((prev) => {
             const next = !prev;
-            ipc.send('widget:set-open', { open: next });
+            ipc.send('widget:fullscreen', { on: next });
+            if (next) setOpen(false);
             return next;
         });
     }, []);
 
+    const toggleOpen = useCallback(() => {
+        if (full) return;
+        setOpen((p) => !p);
+    }, [full]);
+
+    // Glisser / cliquer sur le visage.
     const onMove = useCallback((e) => {
         const d = drag.current;
         if (!d.active) return;
         d.moved = Math.max(d.moved, Math.abs(e.screenX - d.sx) + Math.abs(e.screenY - d.sy));
-        // Le déplacement réel est calculé côté Electron (il connaît la position de la
-        // fenêtre et l'écran) — on envoie juste la position écran du curseur.
         ipc.send('widget:drag-move', { mx: e.screenX, my: e.screenY });
     }, []);
 
@@ -81,31 +111,74 @@ export default function Widget() {
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
         ipc.send('widget:drag-end');
-        if (d.moved < DRAG_THRESHOLD) toggle();
-    }, [onMove, toggle]);
+        if (d.moved < DRAG_THRESHOLD) toggleOpen();
+    }, [onMove, toggleOpen]);
 
     const onMouseDown = useCallback((e) => {
-        if (e.button !== 0) return;
+        if (e.button !== 0 || full) return;
         e.preventDefault();
         drag.current = { active: true, moved: 0, sx: e.screenX, sy: e.screenY };
         ipc.send('widget:drag-start');
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
-    }, [onMove, onUp]);
+    }, [onMove, onUp, full]);
 
+    const cycleSize = useCallback((s) => (e) => {
+        e.stopPropagation();
+        setSize(s);
+    }, []);
+
+    const facePx = full ? fullPx : FACE_PX[size];
+    const commonFace = (
+        <Face affect={affect} talking={speaking} acting={piloting} look={look} size={facePx} />
+    );
+
+    // ── Plein écran : visage centré sur fond quasi plein, contrôles discrets ──
+    if (full) {
+        return (
+            <div className="jarvis-widget jv-full">
+                <div className="jv-full-face">{commonFace}</div>
+                <div className="jv-controls jv-controls-full">
+                    {SIZE_ORDER.map((s) => (
+                        <button key={s} className="jv-size-dot" onClick={cycleSize(s)} title={`Taille ${s.toUpperCase()}`}>
+                            {s.toUpperCase()}
+                        </button>
+                    ))}
+                    <button className="jv-size-dot jv-full-btn" onClick={toggleFull} title="Quitter le plein écran">⤡</button>
+                </div>
+            </div>
+        );
+    }
+
+    // ── Chat ouvert : petit visage en tête + mini-chat ──
+    if (open) {
+        return (
+            <div className="jarvis-widget jv-open">
+                <button className="jv-avatar is-open" onMouseDown={onMouseDown} title="Ada">
+                    <Face affect={affect} talking={speaking} acting={piloting} look={look} size={48} />
+                </button>
+                <MiniChat onClose={toggleOpen} />
+            </div>
+        );
+    }
+
+    // ── Vignette : le visage EST la vignette ──
     return (
-        <div className="jarvis-widget">
-            <button
-                className={`jv-avatar ${open ? 'is-open' : ''} ${piloting ? 'is-piloting' : ''}`}
-                onMouseDown={onMouseDown}
-                title={piloting ? 'Jarvis pilote l’écran…' : 'Jarvis — cliquer pour ouvrir, glisser pour déplacer'}
-            >
-                <Eyes mood={mood} look={look} size={40} />
-                {!open && <span className="jv-pulse" />}
-                {piloting && <span className="jv-piloting-ring" />}
+        <div className={`jarvis-widget jv-collapsed ${piloting ? 'is-piloting' : ''}`}>
+            <button className="jv-avatar" onMouseDown={onMouseDown}
+                    title={piloting ? 'Ada pilote l’écran…' : 'Ada — cliquer pour ouvrir, glisser pour déplacer'}>
+                {commonFace}
             </button>
-
-            {open && <MiniChat onClose={toggle} />}
+            <div className="jv-controls">
+                {SIZE_ORDER.map((s) => (
+                    <button key={s} className={`jv-size-dot ${size === s ? 'is-active' : ''}`}
+                            onClick={cycleSize(s)} title={`Taille ${s.toUpperCase()}`}>
+                        {s.toUpperCase()}
+                    </button>
+                ))}
+                <button className="jv-size-dot jv-full-btn" onClick={(e) => { e.stopPropagation(); toggleFull(); }}
+                        title="Plein écran">⤢</button>
+            </div>
         </div>
     );
 }

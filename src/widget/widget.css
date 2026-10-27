@@ -197,3 +197,81 @@ html, body, #widget-root {
 }
 .jv-send:hover { background: #38dcf0; }
 .jv-send:disabled { opacity: 0.4; cursor: default; }
+
+/* ─── Visage vivant : la vignette EST le visage ─────────────────── */
+/* Le composant Face dessine sa propre plaque + glow, donc le conteneur
+   avatar devient un simple wrapper transparent qui épouse sa taille. */
+.jv-collapsed, .jv-full {
+    align-items: center;
+    justify-content: center;
+}
+.jv-collapsed .jv-avatar,
+.jv-full .jv-full-face {
+    width: auto;
+    height: auto;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+}
+.jv-collapsed .jv-avatar:hover { transform: scale(1.04); box-shadow: none; }
+.jv-collapsed .jv-avatar:active { transform: scale(0.99); }
+
+/* Petit visage dans l'en-tête du chat */
+.jv-open .jv-avatar.is-open {
+    width: 48px; height: 48px;
+    border-radius: 14px;
+    border: 1px solid var(--jv-border);
+    background: transparent;
+    box-shadow: 0 0 18px rgba(34, 211, 238, 0.18);
+}
+
+/* ─── Contrôles de taille (apparaissent au survol) ──────────────── */
+.jv-controls {
+    position: absolute;
+    bottom: 4px;
+    left: 50%;
+    transform: translateX(-50%) translateY(4px);
+    display: flex;
+    gap: 3px;
+    padding: 3px 5px;
+    border-radius: 999px;
+    background: rgba(6, 12, 16, 0.82);
+    border: 1px solid var(--jv-border);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    backdrop-filter: blur(6px);
+    -webkit-app-region: no-drag;
+}
+.jarvis-widget:hover .jv-controls { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(0); }
+.jv-controls-full {
+    position: fixed;
+    bottom: 28px;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%);
+    padding: 6px 10px;
+    gap: 5px;
+}
+.jv-size-dot {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 4px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #7dd3fc;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    line-height: 1;
+}
+.jv-size-dot:hover { background: rgba(34, 211, 238, 0.15); }
+.jv-size-dot.is-active { background: var(--jv-cyan); color: #04141a; }
+.jv-full-btn { color: #a5f3fc; font-size: 12px; }
+
+.jv-full { position: relative; }
+.jv-full-face { display: flex; align-items: center; justify-content: center; }
