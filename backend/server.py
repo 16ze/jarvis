@@ -330,6 +330,26 @@ async def startup_event():
 
         asyncio.create_task(_affect_loop())
         print("[SERVER] ada_affect broadcaster enregistré")
+
+    # « Ada parle » → animation de la bouche du visage, sur TOUTES les fenêtres.
+    # Source de vérité unique : audio_loop._speaking_until (durée réelle du son
+    # envoyé). Diffusé seulement au changement, à ~20 Hz pour une bouche réactive.
+    async def _speaking_loop():
+        import time as _t
+        last = None
+        while True:
+            try:
+                al = audio_loop
+                on = bool(al and _t.monotonic() < getattr(al, "_speaking_until", 0.0))
+                if on != last:
+                    last = on
+                    await sio.emit("ada_speaking", {"on": on})
+            except Exception:
+                pass
+            await asyncio.sleep(0.05)
+
+    asyncio.create_task(_speaking_loop())
+    print("[SERVER] ada_speaking broadcaster enregistré")
     print(f"[SERVER DEBUG] Python Version: {sys.version}")
     try:
         loop = asyncio.get_running_loop()
@@ -549,15 +569,6 @@ async def on_get_chromecast_status(sid, data=None):
         await cast_agent.initialize()
     status = await cast_agent.get_status()
     await sio.emit("chromecast_status", {"status": status}, room=sid)
-
-@sio.event
-async def ada_speaking_state(sid, data=None):
-    """Relai : la fenêtre qui joue l'audio sait quand Ada parle vraiment ;
-    on rediffuse l'info aux autres fenêtres (ex. vignette flottante) pour
-    synchroniser l'animation de la bouche du visage."""
-    on = bool((data or {}).get("on")) if isinstance(data, dict) else False
-    await sio.emit("ada_speaking", {"on": on}, skip_sid=sid)
-
 
 @sio.event
 async def connect(sid, environ, auth=None):

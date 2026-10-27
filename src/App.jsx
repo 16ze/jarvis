@@ -480,6 +480,8 @@ function App() {
         socket.on('ada_affect', (data) => {
             if (data && typeof data === 'object') setAdaAffect(data);
         });
+        // « Ada parle » (source de vérité backend, dure toute la phrase).
+        socket.on('ada_speaking', (data) => setAdaSpeaking(!!(data && data.on)));
         socket.on('status', (data) => {
             addMessage('System', data.msg);
             // Update status bar based on backend messages
@@ -1967,23 +1969,6 @@ function App() {
         () => aiAudioData.reduce((a, b) => a + b, 0) / aiAudioData.length / 255,
         [aiAudioData]
     );
-
-    // « Ada parle » = il reste de l'audio programmé à jouer (fiable, dure toute la
-    // phrase, se coupe net sur interruption). On relaie l'état au backend pour que
-    // la vignette flottante (autre fenêtre) soit synchronisée.
-    useEffect(() => {
-        let lastOn = false;
-        const id = setInterval(() => {
-            const ctx = playbackCtxRef.current;
-            const on = !!(ctx && playbackNextTimeRef.current > ctx.currentTime + 0.03);
-            if (on !== lastOn) {
-                lastOn = on;
-                setAdaSpeaking(on);
-                try { socket.emit('ada_speaking_state', { on }); } catch (_) {}
-            }
-        }, 80);
-        return () => clearInterval(id);
-    }, []);
 
     const toggleKasaWindow = () => {
         if (!showKasaWindow) {

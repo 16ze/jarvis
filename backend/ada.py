@@ -1449,6 +1449,11 @@ class AudioLoop:
         self._silence_start_time = None
         # Echo prevention: True while Ada's TTS is playing through speakers
         self._is_ada_speaking = False
+        # Instant (monotonic) jusqu'auquel l'audio DÉJÀ ENVOYÉ finit de jouer.
+        # Calculé sur la durée réelle du son (pas l'état de la file) → le signal
+        # « Ada parle » dure exactement toute la phrase, y compris le son encore
+        # bufferisé côté navigateur. Source de vérité unique pour l'animation.
+        self._speaking_until = 0.0
         # Frontend audio mode: mic is captured in Electron (with AEC) and streamed here
         self.frontend_audio_mode = False
 
@@ -1536,6 +1541,9 @@ class AudioLoop:
                 )
         except Exception as e:
             print(f"[ADA DEBUG] [ERR] Failed to clear audio queue: {e}")
+        # Interruption : la parole s'arrête net (le visage referme la bouche).
+        self._speaking_until = 0.0
+        self._is_ada_speaking = False
         # Notify browser to cancel all scheduled audio sources
         if self.on_clear_audio:
             self.on_clear_audio()
@@ -5321,13 +5329,19 @@ class AudioLoop:
             while True:
                 bytestream = await self.audio_in_queue.get()
                 self._is_ada_speaking = True
+                # Prolonge la fenêtre de parole de la durée réelle de ce chunk
+                # (PCM16 mono @ RECEIVE_SAMPLE_RATE) : le son part vite dans la
+                # file mais le navigateur le joue sur toute cette durée.
+                _dur = len(bytestream) / 2 / float(RECEIVE_SAMPLE_RATE)
+                _now = time.monotonic()
+                self._speaking_until = max(_now, self._speaking_until) + _dur
                 if self.on_audio_data:
                     self.on_audio_data(bytestream)  # visualization
                 if self.on_audio_pcm:
                     self.on_audio_pcm(bytestream)  # raw PCM → browser plays it
                 if self.audio_in_queue.empty():
                     await asyncio.sleep(0.3)
-                    if self.audio_in_queue.empty():
+                    if self.audio_in_queue.empty() and time.monotonic() >= self._speaking_until:
                         self._is_ada_speaking = False
             return
 
@@ -5342,13 +5356,15 @@ class AudioLoop:
         while True:
             bytestream = await self.audio_in_queue.get()
             self._is_ada_speaking = True
+            _dur = len(bytestream) / 2 / float(RECEIVE_SAMPLE_RATE)
+            self._speaking_until = max(time.monotonic(), self._speaking_until) + _dur
             if self.on_audio_data:
                 self.on_audio_data(bytestream)
             await asyncio.to_thread(stream.write, bytestream)
             # If queue drained, Ada finished speaking — add small tail to let speaker buffer clear
             if self.audio_in_queue.empty():
                 await asyncio.sleep(0.3)
-                if self.audio_in_queue.empty():
+                if self.audio_in_queue.empty() and time.monotonic() >= self._speaking_until:
                     self._is_ada_speaking = False
 
     async def get_frames(self):
