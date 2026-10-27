@@ -4,6 +4,10 @@ import Face from './Face';
 import MiniChat from './MiniChat';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+// Même token d'auth que la fenêtre principale : sans lui, si ADA_API_TOKEN est
+// configuré côté backend, le handshake socket de la vignette est REFUSÉ et elle
+// ne reçoit plus rien (humeur, parole, pilotage) — seul le curseur (local) marche.
+const ADA_TOKEN = import.meta.env.VITE_ADA_API_TOKEN || '';
 
 // IPC (contextIsolation désactivé comme dans App.jsx)
 const ipc = (() => {
@@ -39,7 +43,12 @@ export default function Widget() {
     useEffect(() => {
         let socket;
         try {
-            socket = io(BACKEND_URL, { transports: ['websocket'], upgrade: false });
+            socket = io(BACKEND_URL, {
+                transports: ['websocket'],
+                upgrade: false,
+                auth: ADA_TOKEN ? { token: ADA_TOKEN } : undefined,
+            });
+            socket.on('connect_error', (e) => console.warn('[widget] socket refusé :', e && e.message));
             socket.on('pc_control_state', (d) => setPiloting(!!(d && d.active)));
             socket.on('ada_affect', (d) => { if (d && typeof d === 'object') setAffect(d); });
             // Signal fiable relayé par la fenêtre qui joue l'audio (dure toute la phrase).
