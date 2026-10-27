@@ -105,12 +105,13 @@ function familyFor(affect, acting) {
 
 export default function Face({
     affect = null, talking = false, acting = false, listening = false,
-    look = { x: 0, y: 0 }, size = 120, followCursor = false, micRef = null,
+    look = { x: 0, y: 0 }, size = 120, followCursor = false, micRef = null, speakRef = null,
 }) {
     const [blink, setBlink] = useState(false);
     const [sacc, setSacc] = useState({ x: 0, y: 0 }); // micro-saccades oculaires
     const [curLook, setCurLook] = useState({ x: 0, y: 0 }); // suivi curseur interne
     const [micHot, setMicHot] = useState(false); // Bryan parle au micro
+    const [aiHot, setAiHot] = useState(false); // Ada émet du son (elle parle)
     const svgRef = useRef(null);
     const uid = useRef('f' + Math.random().toString(36).slice(2, 8)).current;
 
@@ -186,6 +187,24 @@ export default function Face({
         return () => clearInterval(id);
     }, [micRef]);
 
+    // Détection de parole d'Ada via l'amplitude audio réelle (la transcription de
+    // sa voix est désactivée) → la bouche s'anime quand elle parle vraiment.
+    useEffect(() => {
+        if (!speakRef) return;
+        let lastHot = 0;
+        const id = setInterval(() => {
+            const arr = speakRef.current;
+            if (!arr || !arr.length) return;
+            let s = 0;
+            for (let i = 0; i < arr.length; i++) s += arr[i];
+            const amp = s / arr.length / 255;
+            const now = Date.now();
+            if (amp > 0.05) { lastHot = now; setAiHot(true); }
+            else if (now - lastHot > 350) setAiHot(false);
+        }, 120);
+        return () => clearInterval(id);
+    }, [speakRef]);
+
     const tint = E.tint;
     const screen = 'rgba(7,17,22,0.92)'; // couleur de la plaque / des paupières
 
@@ -212,7 +231,8 @@ export default function Face({
     const mouthPath = E.smirk
         ? `M ${mx1} 73 Q 50 ${72 + 6} ${mx2} 69` // sourire en coin
         : `M ${mx1} 72 Q 50 ${ctrlY} ${mx2} 72`;
-    const mouthOpen = talking ? 0.55 : (E.mouthOpen || 0);
+    const isTalking = talking || aiHot;
+    const mouthOpen = isTalking ? 0.55 : (E.mouthOpen || 0);
 
     const anims = useMemo(() => `
       @keyframes ${uid}-breathe { 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-1px) scale(1.012)} }
@@ -299,7 +319,7 @@ export default function Face({
                     <ellipse cx="50" cy="72" rx={mW * 0.7} ry={6 * mouthOpen + 1.5} fill={tint}
                              style={{
                                  transformOrigin: '50px 72px', transition: 'fill .5s ease',
-                                 animation: talking ? `${uid}-talk .32s ease-in-out infinite` : 'none',
+                                 animation: isTalking ? `${uid}-talk .32s ease-in-out infinite` : 'none',
                              }} />
                 ) : (
                     <path d={mouthPath} fill="none" stroke={tint} strokeWidth="3" strokeLinecap="round"

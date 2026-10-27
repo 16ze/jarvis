@@ -2128,7 +2128,7 @@ function App() {
             <div className="flex-1 relative z-10 flex flex-col items-center justify-center">
                 {/* Visage vivant d'Ada — humeur réelle issue du brain */}
                 <div className="absolute top-[76px] left-4 z-40 flex flex-col items-center gap-1 pointer-events-none select-none">
-                    <Face affect={adaAffect} talking={adaSpeaking} acting={adaPiloting} followCursor micRef={micAudioDataRef} size={96} />
+                    <Face affect={adaAffect} talking={adaSpeaking} acting={adaPiloting} followCursor micRef={micAudioDataRef} speakRef={aiAudioDataRef} size={96} />
                     {adaAffect?.mood && (
                         <span className="text-[10px] font-mono tracking-[0.18em] uppercase text-cyan-300/80 bg-black/35 px-2 py-0.5 rounded-full border border-cyan-400/20">
                             {adaAffect.mood}

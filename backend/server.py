@@ -315,24 +315,15 @@ async def startup_event():
     # Émission seulement quand l'humeur/les hormones changent (peu coûteux).
     if os.getenv("JARVIS_AFFECT_BROADCAST", "true").lower() == "true":
         async def _affect_loop():
+            # Émission en continu (pas seulement au changement) : une UI qui se
+            # (re)connecte reçoit immédiatement l'humeur courante.
             interval = float(os.getenv("JARVIS_AFFECT_INTERVAL", "1.5"))
-            last_key = None
             while True:
                 try:
                     from brain.brain_manager import get_brain
                     snap = get_brain().get_affect_snapshot()
                     if snap:
-                        key = (
-                            snap.get("mood"),
-                            round(float(snap.get("cortisol", 0) or 0), 2),
-                            round(float(snap.get("dopamine", 0) or 0), 2),
-                            round(float(snap.get("oxytocine", 0) or 0), 2),
-                            round(float(snap.get("serotonine", 0) or 0), 2),
-                            round(float(snap.get("mental_load", 0) or 0), 2),
-                        )
-                        if key != last_key:
-                            last_key = key
-                            await sio.emit("ada_affect", snap)
+                        await sio.emit("ada_affect", snap)
                 except Exception:
                     pass
                 await asyncio.sleep(interval)
