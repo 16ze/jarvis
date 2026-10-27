@@ -19,6 +19,8 @@ export default defineConfig({
                 widget: resolve(__dirname, 'widget.html'),
                 // Client WebXR (casque VR/MR) — Couche A
                 xr: resolve(__dirname, 'xr.html'),
+                // « Yeux » d'Ada : flux caméra (tél/webcam) -> vision — Couche B
+                eye: resolve(__dirname, 'eye.html'),
             },
         },
     },

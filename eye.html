@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+        <meta name="theme-color" content="#06141a" />
+        <title>Ada — Yeux</title>
+        <style>
+            html, body { margin: 0; height: 100%; background: #06141a; color: #7dd3fc; font-family: monospace; overflow: hidden; }
+            #cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.9; }
+            #overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; pointer-events: none; padding-bottom: calc(40px + env(safe-area-inset-bottom)); gap: 16px; }
+            #status { pointer-events: none; background: rgba(6,16,22,0.72); border: 1px solid rgba(34,211,238,0.5); color: #22d3ee; padding: 8px 16px; border-radius: 999px; font-size: 14px; }
+            #go { pointer-events: auto; background: #22d3ee; color: #04141a; border: 0; border-radius: 14px; padding: 14px 24px; font-size: 16px; font-weight: 700; cursor: pointer; }
+        </style>
+    </head>
+    <body>
+        <video id="cam" playsinline muted></video>
+        <div id="overlay">
+            <div id="status">prête</div>
+            <button id="go">👁️ Activer la caméra d'Ada</button>
+        </div>
+        <script type="module" src="/src/eye/eye-main.js"></script>
+    </body>
+</html>
