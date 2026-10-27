@@ -2,12 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import io from 'socket.io-client';
 import Face from './Face';
 import MiniChat from './MiniChat';
+import { ADA_TOKEN } from '../adaToken';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-// Même token d'auth que la fenêtre principale : sans lui, si ADA_API_TOKEN est
-// configuré côté backend, le handshake socket de la vignette est REFUSÉ et elle
-// ne reçoit plus rien (humeur, parole, pilotage) — seul le curseur (local) marche.
-const ADA_TOKEN = import.meta.env.VITE_ADA_API_TOKEN || '';
 
 // IPC (contextIsolation désactivé comme dans App.jsx)
 const ipc = (() => {

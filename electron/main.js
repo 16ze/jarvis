@@ -2,6 +2,32 @@ const { app, BrowserWindow, ipcMain, dialog, session, shell, systemPreferences, 
 const path = require('path');
 const { spawn } = require('child_process');
 
+// ── Token socket : lu directement dans le .env du backend et injecté dans les
+// renderers (bureau + vignette). Évite de devoir synchroniser VITE_ADA_API_TOKEN
+// avec ADA_API_TOKEN à la main — sinon le handshake Socket.IO est refusé et les
+// fenêtres ne reçoivent plus rien d'Ada.
+function readAdaToken() {
+    const fs = require('fs');
+    const files = [
+        path.join(__dirname, '..', 'backend', '.env'),
+        path.join(__dirname, '..', '.env'),
+    ];
+    for (const f of files) {
+        try {
+            const txt = fs.readFileSync(f, 'utf8');
+            for (const line of txt.split(/\r?\n/)) {
+                const m = line.match(/^\s*(?:ADA_API_TOKEN|VITE_ADA_API_TOKEN)\s*=\s*(.*)$/);
+                if (m) {
+                    const v = m[1].trim().replace(/^['"]|['"]$/g, '');
+                    if (v) return v;
+                }
+            }
+        } catch (_) { /* fichier absent → on continue */ }
+    }
+    return '';
+}
+const ADA_TOKEN_ARG = '--ada-token=' + readAdaToken();
+
 // Keep the Windows GPU workaround scoped to Windows. Forcing D3D/Vulkan on
 // other platforms can make Electron's compositor noticeably less responsive.
 if (process.platform === 'win32') {
@@ -69,6 +95,7 @@ function createWindow() {
             nodeIntegration: true,
             contextIsolation: false, // For simple IPC/Socket.IO usage
             backgroundThrottling: false,
+            additionalArguments: [ADA_TOKEN_ARG], // token socket dispo via process.argv
             // Navigateur intégré du Workspace. Le <webview> lui-même tourne
             // SANS intégration Node et dans une session isolée (voir
             // will-attach-webview ci-dessous) : le contenu web distant n'a
@@ -198,6 +225,7 @@ function createWidgetWindow() {
             nodeIntegration: true,
             contextIsolation: false,
             backgroundThrottling: false,
+            additionalArguments: [ADA_TOKEN_ARG], // même token que la fenêtre principale
         },
         show: false,
     });

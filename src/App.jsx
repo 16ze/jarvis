@@ -3,6 +3,7 @@ import io from 'socket.io-client';
 
 import Visualizer from './components/Visualizer';
 import Face from './widget/Face';
+import { ADA_TOKEN } from './adaToken';
 import TopAudioBar from './components/TopAudioBar';
 import CadWindow from './components/CadWindow';
 import TerminalWindow from './components/TerminalWindow';
@@ -29,9 +30,6 @@ import {
 } from './lib/handTrackingControl';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-// Token partagé optionnel : envoyé au handshake si ADA_API_TOKEN est configuré
-// côté backend (voir server.py). Vide = aucune auth exigée (défense = origine CORS).
-const ADA_TOKEN = import.meta.env.VITE_ADA_API_TOKEN || '';
 const socket = io(BACKEND_URL, {
     transports: ['websocket'],
     upgrade: false,
