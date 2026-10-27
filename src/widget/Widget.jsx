@@ -36,8 +36,11 @@ export default function Widget() {
     const [affect, setAffect] = useState(null);
     const [look, setLook] = useState({ x: 0, y: 0 });
     const [fullPx, setFullPx] = useState(360);
+    const [conn, setConn] = useState(false);   // socket connecté au backend ?
+    const [live, setLive] = useState(false);   // on vient de recevoir une donnée ?
     const drag = useRef({ active: false, moved: 0, sx: 0, sy: 0 });
     const speakTimer = useRef(null);
+    const liveTimer = useRef(null);
 
     // Socket : état émotionnel du brain + pilotage PC + parole d'Ada.
     useEffect(() => {
@@ -48,15 +51,23 @@ export default function Widget() {
                 upgrade: false,
                 auth: ADA_TOKEN ? { token: ADA_TOKEN } : undefined,
             });
-            socket.on('connect_error', (e) => console.warn('[widget] socket refusé :', e && e.message));
-            socket.on('pc_control_state', (d) => setPiloting(!!(d && d.active)));
-            socket.on('ada_affect', (d) => { if (d && typeof d === 'object') setAffect(d); });
+            socket.on('connect', () => { console.log('[widget] socket connecté'); setConn(true); });
+            socket.on('disconnect', () => setConn(false));
+            socket.on('connect_error', (e) => { console.warn('[widget] socket refusé :', e && e.message); setConn(false); });
+            const pulse = () => {
+                setLive(true);
+                if (liveTimer.current) clearTimeout(liveTimer.current);
+                liveTimer.current = setTimeout(() => setLive(false), 1200);
+            };
+            socket.on('pc_control_state', (d) => { pulse(); setPiloting(!!(d && d.active)); });
+            socket.on('ada_affect', (d) => { pulse(); if (d && typeof d === 'object') setAffect(d); });
             // Signal fiable relayé par la fenêtre qui joue l'audio (dure toute la phrase).
-            socket.on('ada_speaking', (d) => setSpeaking(!!(d && d.on)));
+            socket.on('ada_speaking', (d) => { pulse(); setSpeaking(!!(d && d.on)); });
         } catch (e) { /* backend indisponible */ }
         return () => {
             try { socket && socket.close(); } catch (e) {}
             if (speakTimer.current) clearTimeout(speakTimer.current);
+            if (liveTimer.current) clearTimeout(liveTimer.current);
         };
     }, []);
 
@@ -138,12 +149,27 @@ export default function Widget() {
         <Face affect={affect} talking={speaking} acting={piloting} look={look} size={facePx} />
     );
 
+    // Témoin de connexion : rouge = socket refusé/déconnecté, bleu = connecté
+    // (mais aucune donnée reçue), vert = données qui arrivent du backend.
+    const connDot = (
+        <span
+            title={conn ? (live ? 'Reçoit les données du backend' : 'Connecté — aucune donnée reçue') : 'Déconnecté / connexion refusée'}
+            style={{
+                width: 8, height: 8, borderRadius: '50%', flex: '0 0 auto', alignSelf: 'center',
+                background: conn ? (live ? '#22c55e' : '#38bdf8') : '#ef4444',
+                boxShadow: conn && live ? '0 0 6px #22c55e' : 'none',
+                transition: 'background .2s ease',
+            }}
+        />
+    );
+
     // ── Plein écran : visage centré sur fond quasi plein, contrôles discrets ──
     if (full) {
         return (
             <div className="jarvis-widget jv-full">
                 <div className="jv-full-face">{commonFace}</div>
                 <div className="jv-controls jv-controls-full">
+                    {connDot}
                     {SIZE_ORDER.map((s) => (
                         <button key={s} className="jv-size-dot" onClick={cycleSize(s)} title={`Taille ${s.toUpperCase()}`}>
                             {s.toUpperCase()}
@@ -175,6 +201,7 @@ export default function Widget() {
                 {commonFace}
             </button>
             <div className="jv-controls">
+                {connDot}
                 {SIZE_ORDER.map((s) => (
                     <button key={s} className={`jv-size-dot ${size === s ? 'is-active' : ''}`}
                             onClick={cycleSize(s)} title={`Taille ${s.toUpperCase()}`}>
