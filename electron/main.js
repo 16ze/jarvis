@@ -249,7 +249,7 @@ function registerWidgetIpc() {
         if (widgetFullPrev) return; // ignoré pendant le plein écran
         const b = widgetWindow.getBounds();
         const nb = clampToDisplay({ x: b.x, y: b.y, width: Math.round(w), height: Math.round(h) });
-        widgetWindow.setBounds(nb);
+        setWidgetBounds(nb);
         saveWidgetPos(nb.x, nb.y);
     });
 
@@ -261,13 +261,27 @@ function registerWidgetIpc() {
         const wa = (disp && disp.workArea) || screen.getPrimaryDisplay().workArea;
         if (on) {
             widgetFullPrev = widgetWindow.getBounds();
-            widgetWindow.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height });
+            setWidgetBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height });
         } else if (widgetFullPrev) {
-            widgetWindow.setBounds(clampToDisplay(widgetFullPrev));
+            setWidgetBounds(clampToDisplay(widgetFullPrev));
             saveWidgetPos(widgetFullPrev.x, widgetFullPrev.y);
             widgetFullPrev = null;
         }
     });
+}
+
+// Une fenêtre `resizable: false` IGNORE les setBounds qui changent la taille
+// (macOS). On réautorise le redimensionnement le temps de l'appel programmatique,
+// puis on le reverrouille pour empêcher tout redimensionnement à la souris.
+function setWidgetBounds(nb) {
+    if (!widgetWindow) return;
+    const wasResizable = widgetWindow.isResizable();
+    try {
+        widgetWindow.setResizable(true);
+        widgetWindow.setBounds(nb);
+    } finally {
+        if (!wasResizable) widgetWindow.setResizable(false);
+    }
 }
 
 function resolvePythonBackendBinary() {
