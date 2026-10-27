@@ -17,6 +17,8 @@ export default defineConfig({
                 main: resolve(__dirname, 'index.html'),
                 // Vignette flottante Jarvis (fenêtre Electron séparée)
                 widget: resolve(__dirname, 'widget.html'),
+                // Client WebXR (casque VR/MR) — Couche A
+                xr: resolve(__dirname, 'xr.html'),
             },
         },
     },
