@@ -42,12 +42,8 @@ export default function Widget() {
             socket = io(BACKEND_URL, { transports: ['websocket'], upgrade: false });
             socket.on('pc_control_state', (d) => setPiloting(!!(d && d.active)));
             socket.on('ada_affect', (d) => { if (d && typeof d === 'object') setAffect(d); });
-            socket.on('transcription', (d) => {
-                if (!d || d.sender === 'user') return;
-                setSpeaking(true);
-                if (speakTimer.current) clearTimeout(speakTimer.current);
-                speakTimer.current = setTimeout(() => setSpeaking(false), 1600);
-            });
+            // Signal fiable relayé par la fenêtre qui joue l'audio (dure toute la phrase).
+            socket.on('ada_speaking', (d) => setSpeaking(!!(d && d.on)));
         } catch (e) { /* backend indisponible */ }
         return () => {
             try { socket && socket.close(); } catch (e) {}

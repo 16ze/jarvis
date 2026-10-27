@@ -551,6 +551,15 @@ async def on_get_chromecast_status(sid, data=None):
     await sio.emit("chromecast_status", {"status": status}, room=sid)
 
 @sio.event
+async def ada_speaking_state(sid, data=None):
+    """Relai : la fenêtre qui joue l'audio sait quand Ada parle vraiment ;
+    on rediffuse l'info aux autres fenêtres (ex. vignette flottante) pour
+    synchroniser l'animation de la bouche du visage."""
+    on = bool((data or {}).get("on")) if isinstance(data, dict) else False
+    await sio.emit("ada_speaking", {"on": on}, skip_sid=sid)
+
+
+@sio.event
 async def connect(sid, environ, auth=None):
     # Auth par token sur le handshake (si ADA_API_TOKEN est configuré).
     # Le client envoie io(url, { auth: { token } }). Sans token valide → refus.

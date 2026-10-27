@@ -112,7 +112,6 @@ function App() {
     const [adaAffect, setAdaAffect] = useState(null);
     const [adaPiloting, setAdaPiloting] = useState(false);
     const [adaSpeaking, setAdaSpeaking] = useState(false);
-    const adaSpeakTimer = useRef(null);
 
 
     // RESTORED STATE
@@ -649,12 +648,6 @@ function App() {
 
         // Handle streaming transcription
         socket.on('transcription', (data) => {
-            // Ada parle → la bouche du visage s'anime (~1,6 s après le dernier chunk).
-            if (data && data.sender && !/you|user|system/i.test(data.sender)) {
-                setAdaSpeaking(true);
-                if (adaSpeakTimer.current) clearTimeout(adaSpeakTimer.current);
-                adaSpeakTimer.current = setTimeout(() => setAdaSpeaking(false), 1600);
-            }
             setMessages(prev => {
                 const lastMsg = prev[prev.length - 1];
 
@@ -1975,6 +1968,23 @@ function App() {
         [aiAudioData]
     );
 
+    // « Ada parle » = il reste de l'audio programmé à jouer (fiable, dure toute la
+    // phrase, se coupe net sur interruption). On relaie l'état au backend pour que
+    // la vignette flottante (autre fenêtre) soit synchronisée.
+    useEffect(() => {
+        let lastOn = false;
+        const id = setInterval(() => {
+            const ctx = playbackCtxRef.current;
+            const on = !!(ctx && playbackNextTimeRef.current > ctx.currentTime + 0.03);
+            if (on !== lastOn) {
+                lastOn = on;
+                setAdaSpeaking(on);
+                try { socket.emit('ada_speaking_state', { on }); } catch (_) {}
+            }
+        }, 80);
+        return () => clearInterval(id);
+    }, []);
+
     const toggleKasaWindow = () => {
         if (!showKasaWindow) {
             // Maybe trigger discover instantly?
@@ -2128,7 +2138,7 @@ function App() {
             <div className="flex-1 relative z-10 flex flex-col items-center justify-center">
                 {/* Visage vivant d'Ada — l'expression montre l'humeur, sans texte */}
                 <div className="absolute top-[76px] left-4 z-40 flex flex-col items-center pointer-events-none select-none">
-                    <Face affect={adaAffect} talking={adaSpeaking} acting={adaPiloting} followCursor micRef={micAudioDataRef} speakRef={aiAudioDataRef} size={96} />
+                    <Face affect={adaAffect} talking={adaSpeaking} acting={adaPiloting} followCursor micRef={micAudioDataRef} size={96} />
                 </div>
 
                 {/* Central Visualizer (AI Audio) */}
