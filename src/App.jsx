@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import io from 'socket.io-client';
 
 import Visualizer from './components/Visualizer';
+import Face from './widget/Face';
 import TopAudioBar from './components/TopAudioBar';
 import CadWindow from './components/CadWindow';
 import TerminalWindow from './components/TerminalWindow';
@@ -106,6 +107,12 @@ function App() {
     const [activePrintStatus, setActivePrintStatus] = useState(null); // {printer, progress_percent, time_elapsed, state}
     const [printerCount, setPrinterCount] = useState(0); // Count of connected printers
     const [currentTime, setCurrentTime] = useState(new Date()); // Live clock
+
+    // Visage vivant d'Ada (piloté par le brain via le socket ada_affect)
+    const [adaAffect, setAdaAffect] = useState(null);
+    const [adaPiloting, setAdaPiloting] = useState(false);
+    const [adaSpeaking, setAdaSpeaking] = useState(false);
+    const adaSpeakTimer = useRef(null);
 
 
     // RESTORED STATE
@@ -465,9 +472,14 @@ function App() {
         });
         // Pilotage PC : rétracte la fenêtre pendant qu'Ada contrôle l'écran (façon Claude).
         socket.on('pc_control_state', (data) => {
+            setAdaPiloting(!!(data && data.active));
             try {
                 ipcRenderer.send(data && data.active ? 'pc-control-active' : 'pc-control-idle');
             } catch (e) { /* hors Electron */ }
+        });
+        // Humeur du brain → visage vivant d'Ada.
+        socket.on('ada_affect', (data) => {
+            if (data && typeof data === 'object') setAdaAffect(data);
         });
         socket.on('status', (data) => {
             addMessage('System', data.msg);
@@ -637,6 +649,12 @@ function App() {
 
         // Handle streaming transcription
         socket.on('transcription', (data) => {
+            // Ada parle → la bouche du visage s'anime (~1,6 s après le dernier chunk).
+            if (data && data.sender && !/you|user|system/i.test(data.sender)) {
+                setAdaSpeaking(true);
+                if (adaSpeakTimer.current) clearTimeout(adaSpeakTimer.current);
+                adaSpeakTimer.current = setTimeout(() => setAdaSpeaking(false), 1600);
+            }
             setMessages(prev => {
                 const lastMsg = prev[prev.length - 1];
 
@@ -2104,6 +2122,16 @@ function App() {
 
             {/* Main Content */}
             <div className="flex-1 relative z-10 flex flex-col items-center justify-center">
+                {/* Visage vivant d'Ada — humeur réelle issue du brain */}
+                <div className="absolute top-[76px] left-4 z-40 flex flex-col items-center gap-1 pointer-events-none select-none">
+                    <Face affect={adaAffect} talking={adaSpeaking} acting={adaPiloting} look={{ x: 0, y: 0 }} size={96} />
+                    {adaAffect?.mood && (
+                        <span className="text-[10px] font-mono tracking-[0.18em] uppercase text-cyan-300/80 bg-black/35 px-2 py-0.5 rounded-full border border-cyan-400/20">
+                            {adaAffect.mood}
+                        </span>
+                    )}
+                </div>
+
                 {/* Central Visualizer (AI Audio) */}
                 <div
                     id="visualizer"
