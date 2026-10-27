@@ -139,7 +139,7 @@ const MobileApp = ({
                                         size={Math.round(orbSize * 0.72)}
                                     />
                                     <div className="text-[9px] text-cyan-700 tracking-wider mt-1">
-                                        {!isConnected ? 'OFFLINE' : isMuted ? 'EN VEILLE' : (adaAffect?.mood || 'À L\'ÉCOUTE')}
+                                        {!isConnected ? 'OFFLINE' : isMuted ? 'EN VEILLE' : 'À L\'ÉCOUTE'}
                                     </div>
                                 </div>
                             </div>

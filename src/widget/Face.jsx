@@ -118,7 +118,24 @@ export default function Face({
     // Écoute : le visage est attentif tant qu'une émotion forte (pilotage) ne prime pas.
     const isListening = (listening || micHot) && !acting;
     const fam = familyFor(affect, acting);
-    const base = FAMILIES[fam] || FAMILIES.neutral;
+    let base = FAMILIES[fam] || FAMILIES.neutral;
+
+    // Gradient continu : même quand le label du brain reste « Neutre », son état
+    // penche (dopamine/sérotonine/ocytocine au-dessus du repos = positif, cortisol
+    // = négatif). On lit cet écart pour esquisser un sourire ou un renfrognement,
+    // au lieu d'un visage mort tant que le seuil d'une humeur nommée n'est pas franchi.
+    if (fam === 'neutral' && affect) {
+        const d = affect.dopamine ?? 0.28, c = affect.cortisol ?? 0.10;
+        const s = affect.serotonine ?? 0.42, o = affect.oxytocine ?? 0.30;
+        const val = clamp((d - 0.28) * 2.2 + (s - 0.42) * 1.4 + (o - 0.30) * 1.2 - (c - 0.10) * 2.4, -1, 1);
+        base = {
+            ...base,
+            mouthCurve: clamp((base.mouthCurve || 0) + val * 0.55, -0.7, 0.9),
+            browA: (base.browA || 0) - val * 3, // sourcils qui se détendent si positif
+            tint: val > 0.18 ? '#2ee6c6' : val < -0.18 ? '#5aa6ff' : base.tint,
+        };
+    }
+
     const E = isListening
         ? { ...base, browY: (base.browY || 0) - 2.5, eyeScale: (base.eyeScale || 1) * 1.06 }
         : base;
