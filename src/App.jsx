@@ -2013,7 +2013,7 @@ function App() {
     }
 
     return (
-        <div className={`ada-soft-shell h-screen w-screen text-[#10294d] font-mono overflow-hidden flex flex-col relative selection:bg-blue-100 selection:text-blue-900 ${isElectron ? 'electron-performance' : ''}`}>
+        <div className={`ada-shell h-screen w-screen text-ink overflow-hidden flex flex-col relative selection:bg-accent/20 selection:text-ink ${isElectron ? 'electron-performance' : ''}`}>
 
             {/* Logic: Show AuthLock if we are NOT authenticated AND (Lock Screen is visible OR Auth is Enabled) 
                 Actually, simpler: isLockScreenVisible is the source of truth for visibility.
@@ -2052,25 +2052,19 @@ function App() {
                 />
             )}
 
-            {/* Background light field */}
+            {/* Léger halo d'accent, très discret (sobre, clair/sombre) */}
             <div
                 className="absolute inset-0 z-0 pointer-events-none"
                 style={{
-                    backgroundImage: 'radial-gradient(circle at 50% 42%, rgba(60, 130, 246, 0.08), transparent 32%), radial-gradient(circle at 10% 20%, rgba(62, 139, 255, 0.08), transparent 18%)',
+                    backgroundImage: 'radial-gradient(circle at 50% 38%, rgb(var(--c-accent) / 0.05), transparent 38%)',
                 }}
             ></div>
-
-            {!isElectron && (
-                <div
-                    className="absolute top-[42%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[560px] bg-blue-200/20 blur-[90px] pointer-events-none"
-                />
-            )}
 
             {/* Top Bar (Draggable) */}
             <div className="z-50 flex items-center justify-between px-6 py-8 bg-transparent select-none sticky top-0" style={{ WebkitAppRegion: 'drag' }}>
                 <div className="flex items-center gap-4 pl-2">
-                    <h1 className="hidden text-2xl font-bold tracking-[0.02em] text-[#10294d]">
-                        ADA – REDESIGN
+                    <h1 className="hidden text-2xl font-semibold tracking-[0.01em] text-ink">
+                        Ada
                     </h1>
                     {/* FPS Counter */}
                     {isVideoOn && (
@@ -2101,17 +2095,17 @@ function App() {
 
                 <div className="flex items-center gap-2 pr-2" style={{ WebkitAppRegion: 'no-drag' }}>
                     {/* Live Clock */}
-                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono px-2">
-                        <Clock size={12} className="text-blue-500/60" />
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted px-2">
+                        <Clock size={12} className="text-muted" />
                         <span>{currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                    <button onClick={handleMinimize} className="p-1 hover:bg-blue-50 rounded text-blue-600 transition-colors">
+                    <button onClick={handleMinimize} className="p-1.5 hover:bg-ink/[0.06] rounded-lg text-muted hover:text-ink transition-colors">
                         <Minus size={18} />
                     </button>
-                    <button onClick={handleMaximize} className="p-1 hover:bg-blue-50 rounded text-blue-600 transition-colors">
-                        <div className="w-[14px] h-[14px] border-2 border-current rounded-[2px]" />
+                    <button onClick={handleMaximize} className="p-1.5 hover:bg-ink/[0.06] rounded-lg text-muted hover:text-ink transition-colors">
+                        <div className="w-[14px] h-[14px] border-2 border-current rounded-[3px]" />
                     </button>
-                    <button onClick={handleCloseRequest} className="p-1 hover:bg-red-900/50 rounded text-red-500 transition-colors">
+                    <button onClick={handleCloseRequest} className="p-1.5 hover:bg-danger/10 rounded-lg text-muted hover:text-danger transition-colors">
                         <X size={18} />
                     </button>
                 </div>
@@ -2128,7 +2122,7 @@ function App() {
                 <div
                     id="visualizer"
                     className={`absolute flex items-center justify-center transition-all duration-200 overflow-visible
-                        ${isModularMode ? (activeDragElement === 'visualizer' ? 'ring-2 ring-blue-400/40 bg-white/25' : 'ring-1 ring-blue-200/60 bg-white/10') + ' rounded-2xl pointer-events-auto' : 'pointer-events-none'}
+                        ${isModularMode ? (activeDragElement === 'visualizer' ? 'ring-2 ring-accent/40 bg-ink/[0.05]' : 'ring-1 ring-line bg-ink/[0.03]') + ' rounded-2xl pointer-events-auto' : 'pointer-events-none'}
                     `}
                     style={{
                         left: elementPositions.visualizer.x,
@@ -2150,12 +2144,12 @@ function App() {
                             reduceMotion={isElectron}
                         />
                     </div>
-                    {isModularMode && <div className={`absolute top-2 right-2 text-xs font-bold tracking-widest z-20 ${activeDragElement === 'visualizer' ? 'text-blue-600' : 'text-blue-400/60'}`}>VISUALIZER</div>}
+                    {isModularMode && <div className={`absolute top-2 right-2 text-xs font-semibold tracking-widest z-20 ${activeDragElement === 'visualizer' ? 'text-accent' : 'text-muted'}`}>VISUALIZER</div>}
                 </div>
 
                 {/* Video Feed Overlay */}
                 {/* Floating Project Label */}
-                <div className="absolute top-[86px] left-1/2 -translate-x-1/2 text-blue-700 text-xs font-mono tracking-widest pointer-events-none z-50 bg-white/55 px-3 py-1 rounded-full backdrop-blur-sm border border-white/80 shadow-[0_10px_30px_rgba(37,99,235,0.08)] opacity-0">
+                <div className="absolute top-[86px] left-1/2 -translate-x-1/2 text-accent text-xs tracking-widest pointer-events-none z-50 bg-surface/80 px-3 py-1 rounded-full backdrop-blur-sm border border-line shadow-ada opacity-0">
                     PROJECT: {currentProject?.toUpperCase()}
                 </div>
 
@@ -2168,7 +2162,7 @@ function App() {
                     style={{ zIndex: 20 }}
                 >
                     {/* Compact Display Container (1080p Source) */}
-                    <div className="relative border border-white/60 rounded-[14px] overflow-hidden shadow-[0_18px_52px_rgba(37,99,235,0.20)] w-[480px] aspect-video bg-white/50">
+                    <div className="relative border border-line rounded-[14px] overflow-hidden shadow-ada-lg w-[480px] aspect-video bg-surface2">
                         {/* Hidden Video Element (Source) */}
                         <video ref={videoRef} autoPlay muted className="absolute inset-0 w-full h-full object-cover opacity-0" />
 
@@ -2191,7 +2185,7 @@ function App() {
                         />
 
                         {isHandTrackingEnabled && (
-                            <div className="absolute bottom-2 left-2 z-10 text-[10px] leading-4 text-cyan-100 bg-black/70 backdrop-blur px-2 py-1 rounded border border-cyan-500/20">
+                            <div className="absolute bottom-2 left-2 z-10 text-[10px] leading-4 text-white/80 bg-black/70 backdrop-blur px-2 py-1 rounded border border-white/15">
                                 <div>STATE: {handDebug.state}</div>
                                 <div>PINCH: {handDebug.pinchRatio === null ? '--' : handDebug.pinchRatio.toFixed(3)}</div>
                                 <div>CONF: {handDebug.confidence.toFixed(2)}</div>
@@ -2269,9 +2263,8 @@ function App() {
                 {showCadWindow && (
                     <div
                         id="cad"
-                        className={`absolute flex flex-col transition-all duration-200 
-                        backdrop-blur-xl bg-black/40 border border-white/10 shadow-2xl overflow-hidden rounded-2xl
-                        ${activeDragElement === 'cad' ? 'ring-2 ring-green-500 bg-green-500/10' : ''}
+                        className={`absolute flex flex-col transition-all duration-200 ada-float overflow-hidden rounded-ada-lg
+                        ${activeDragElement === 'cad' ? 'ring-2 ring-accent/50' : ''}
                     `}
                         style={{
                             left: elementPositions.cad?.x || window.innerWidth / 2,
@@ -2287,17 +2280,16 @@ function App() {
                         {/* Drag Handle Header */}
                         <div
                             data-drag-handle
-                            className="h-8 bg-gray-900/80 border-b border-cyan-500/20 flex items-center justify-between px-3 cursor-grab active:cursor-grabbing shrink-0"
+                            className="h-9 bg-surface2 border-b border-line flex items-center justify-between px-3 cursor-grab active:cursor-grabbing shrink-0"
                         >
-                            <span className="text-xs font-bold tracking-widest text-cyan-500/70">CAD PROTOTYPE</span>
+                            <span className="text-xs font-semibold tracking-widest text-muted">CAD PROTOTYPE</span>
                             <button
                                 onClick={() => setShowCadWindow(false)}
-                                className="text-gray-400 hover:text-red-400 hover:bg-red-500/20 p-1 rounded transition-colors"
+                                className="text-muted hover:text-danger hover:bg-danger/10 p-1 rounded-lg transition-colors"
                             >
                                 ✕
                             </button>
                         </div>
-                        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay z-10"></div>
                         <div className="relative z-20 flex-1 min-h-0">
                             <CadWindow
                                 data={cadData}
@@ -2315,9 +2307,8 @@ function App() {
                 {showTerminalWindow && (
                     <div
                         id="terminal"
-                        className={`absolute flex flex-col transition-all duration-200
-                        backdrop-blur-xl bg-black/40 border border-white/10 shadow-2xl overflow-hidden rounded-lg
-                        ${activeDragElement === 'terminal' ? 'ring-2 ring-green-500 bg-green-500/10' : ''}
+                        className={`absolute flex flex-col transition-all duration-200 ada-float overflow-hidden rounded-ada
+                        ${activeDragElement === 'terminal' ? 'ring-2 ring-accent/50' : ''}
                     `}
                         style={{
                             left: elementPositions.terminal?.x || window.innerWidth / 2 + 100,

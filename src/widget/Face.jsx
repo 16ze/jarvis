@@ -63,11 +63,11 @@ const MOOD_FAMILY = {
 //  browA +  = sourcils abaissés/rapprochés (colère) ; -  = relevés (peur) / obliques (tristesse)
 //  mouthBoost = sourire en plus ; mouthDown = bouche descendue ; mouthOpenAdd = bouche ouverte
 const SIG = {
-    joy:        { browA: -3, browY: -2, lidBottom: 0.38, mouthBoost: 0.3,  tint: '#2ee6c6' },
+    joy:        { browA: -3, browY: -2, lidBottom: 0.38, mouthBoost: 0.3,  tint: '#4fc3a8' },
     love:       { browA: -5, browY: -1, lidTop: 0.12, lidBottom: 0.22, mouthBoost: 0.12, tint: '#ff86cf' },
-    pride:      { browA: -6, browY: -3, mouthBoost: 0.08, tint: '#49d0ff' },
-    curious:    { browY: -5, eyeBoost: 0.12, asym: true, mouthBoost: 0.06, tint: '#5ad1ff' },
-    serene:     { lidTop: 0.18, lidBottom: 0.12, mouthBoost: 0.12, tint: '#39d7bd' },
+    pride:      { browA: -6, browY: -3, mouthBoost: 0.08, tint: '#5aa6e0' },
+    curious:    { browY: -5, eyeBoost: 0.12, asym: true, mouthBoost: 0.06, tint: '#6cb0e0' },
+    serene:     { lidTop: 0.18, lidBottom: 0.12, mouthBoost: 0.12, tint: '#5bc0ac' },
     fear:       { browA: -9, browY: -7, eyeBoost: 0.22, mouthOpenAdd: 0.4, tint: '#b98cff', sweat: true, shake: 0.5 },
     anger:      { browA: 17, browY: 2, lidTop: 0.2, mouthDown: 0.5, tint: '#ff5a46', shake: 0.25 },
     disgust:    { browA: 7, lidTop: 0.22, asym: true, smirk: true, mouthDown: 0.3, tint: '#c3a24b' },
@@ -147,7 +147,7 @@ export default function Face({
         lidBottom: valence > 0 ? valence * 0.3 : 0,
         browA: -valence * 2,
         browY: -Math.max(0, arousal - 0.3) * 4 + fatigue * 2,
-        tint: '#22d3ee',
+        tint: '#6e9fd4',
     };
 
     // Signature de l'émotion nommée, appliquée avec une intensité k progressive.
@@ -170,7 +170,7 @@ export default function Face({
         if (sig.sweat && k > 0.5) E.sweat = true;
         if (sig.tear && k > 0.55) E.tear = true;
         if (sig.shake) E.shake = sig.shake * k;
-        if (sig.tint) E.tint = mixHex('#22d3ee', sig.tint, clamp(k, 0, 1));
+        if (sig.tint) E.tint = mixHex('#6e9fd4', sig.tint, clamp(k, 0, 1));
     }
 
     // Micro-variations humaines : le visage n'est jamais parfaitement immobile.
@@ -316,7 +316,7 @@ export default function Face({
         <svg ref={svgRef} width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
              style={{
                  display: 'block',
-                 filter: `drop-shadow(0 0 ${6 + arousal * 6}px ${tint}55)`,
+                 filter: `drop-shadow(0 0 ${3 + arousal * 4}px ${tint}38)`,
                  transform: isListening ? 'rotate(3deg)' : 'none',
                  transition: 'filter .4s ease, transform .4s ease',
              }}>
