@@ -28,7 +28,7 @@ public » façon ChatGPT (voir §1 pour le détail livré, §2–§3 pour ce qui
 
 - **Repo** : github.com/16ze/jarvis
 - **Branche de travail** : `integration/widget-pc-control`
-- **HEAD poussé sur origin** : `43cbc82` (« feat(maturité 3): robustesse backend — monitoring + 38 tests »)
+- **HEAD fonctionnel poussé sur origin** : `f7501e4` (« feat(maturité 4): streaming texte token par token »)
 - **Mac (machine de Bryan)** : repo sur `/Volumes/Disque dev/Archives-Mars-Avril-2026/jarvis`,
   conda env `ada_v2` (Python 3.11), node 22.
 - **Déploiement sur le Mac** : double-clic `~/Desktop/Relancer-Ada.command`
@@ -53,7 +53,7 @@ Avant de commencer : `git fetch origin && git reset --hard origin/integration/wi
 6. **Composants chat** : `src/components/chat/{MarkdownMessage,MessageActions,TypingIndicator,ChatComposer}.jsx`.
 7. **Streaming visuel** : caret clignotant sur le dernier message Ada pendant `isGenerating` (= `adaSpeaking`).
 8. **Fix** : la fenêtre flottante TERMINAL ne s'auto-ouvre plus en mode normal (réservée au modulaire).
-9. **Tests** : `backend/tests/*` → `python -m pytest backend/tests -q` = **79 verts** ;
+9. **Tests** : `backend/tests/*` → `python -m pytest backend/tests -q` = **87 verts** ;
    `src/components/chat/__tests__/*` → `npm run test` (vitest) = **20 verts**.
 10. **Monitoring** : `backend/monitoring.py` (`log_exception`, `@guard`, `get_error_stats`),
     handler d'exception global + endpoint `GET /health/errors` dans `server.py`.
@@ -62,50 +62,30 @@ Avant de commencer : `git fetch origin && git reset --hard origin/integration/wi
 
 ---
 
-## 2. TÂCHE EN COURS (reprendre ici) : vrai streaming token-par-token
+## 2. LIVRÉ : vrai streaming token-par-token
 
-**Objectif** : que la réponse d'Ada s'affiche mot à mot en temps réel (ressenti ChatGPT),
-au lieu d'apparaître par gros blocs.
+Livré dans `f7501e4`. Les réponses tapées utilisent désormais
+`generate_content_stream` et émettent chaque delta Socket.IO dès son arrivée.
 
-**Ce qui est déjà en place côté front** (aucune modif nécessaire a priori) :
+**Contrats validés** :
 - `App.jsx` handler `socket.on('transcription', (data) => …)` : **append par expéditeur**
-  (si `data.sender` == dernier message, concatène `data.text` ; sinon nouveau bloc).
-  Donc si le backend émet de petits chunks, le front streame déjà.
+  sans réémission finale du texte complet ;
+- `ada_speaking {on:true}` précède les deltas texte et `{on:false}` clôt le tour ;
+- la voix Gemini Live conserve son streaming existant, sans modification ;
+- le contexte caméra/écran et les function calls restent disponibles en mode texte ;
+- test runtime Socket.IO : 4 chunks reçus dans l'ordre, réponse reconstruite sans doublon.
 
-**Point d'investigation backend (là où je me suis arrêté)** :
-- `backend/server.py:857` →
-  ```python
-  def on_transcription(data):
-      asyncio.create_task(sio.emit('transcription', data))
-  ```
-  `data` = `{sender, text}`. Ce callback est fourni à l'AudioLoop (`audio_loop` wiring ~ligne 934)
-  ET doit être alimenté par le chemin texte (TextAgent).
-- **À vérifier/corriger** :
-  1. **Voix** (`backend/ada.py`) : comment `on_transcription` est appelé pour le transcript de sortie
-     d'Ada (Gemini Live). Émet-il par token/segment ou par phrase complète ? Chercher les appels à
-     `on_transcription(` dans `ada.py`. Si c'est par phrase → découper en segments plus fins au fil de l'arrivée.
-  2. **Texte** (`backend/external_bridge.py` `TextAgent` et/ou le chemin `user_input` du front) :
-     la réponse texte est très probablement émise **en une fois**. Il faut streamer la génération
-     (Gemini `generate_content` en mode stream) et appeler `on_transcription({sender:'Ada', text:<chunk>})`
-     à chaque chunk. Garder `sender` constant pour que le front concatène.
-  3. S'assurer que `ada_speaking {on:true}` est émis au début et `{on:false}` à la fin de la réponse texte
-     aussi (pas seulement la voix), pour que le caret + TypingIndicator réagissent. Voir `server.py:388`
-     (`ada_speaking`) et `_speaking_until` dans `ada.py`.
-
-**Contrat à respecter** : `transcription` = `{sender, text}` où `text` est un **delta** (incrément),
-pas le texte complet à chaque fois. `sender` : `'Ada'` (ou ce que le backend utilise déjà — vérifier,
-le front traite tout sender ≠ `'Bryan'` et ≠ `'System'` comme Ada).
+**Validation** : 87 tests backend, 20 tests front, build Vite réussi, `/health/errors` à zéro.
 
 ---
 
 ## 3. Backlog restant pour viser 100 %
 
-1. **(en cours)** Streaming token-par-token (cf. §2) — plus gros gain de ressenti.
-2. **Recherche dans l'historique** + **édition d'un message envoyé** (côté `App.jsx` + sidebar).
-3. **Panneau santé** branché sur `GET /health/errors` (monitoring déjà prêt côté backend).
-4. **CI** : lancer `pytest backend/tests` + `npm run test` à chaque push (GitHub Actions).
-5. **npm audit** : 26 vulnérabilités (3 critiques) préexistantes remontées à l'install — à traiter.
-6. Cosmétique : router les logs `terminal_output` `[PLAN]/[PENSÉE]/[DIAG]` ailleurs que dans le fil
+1. **Recherche dans l'historique** + **édition d'un message envoyé** (côté `App.jsx` + sidebar).
+2. **Panneau santé** branché sur `GET /health/errors` (monitoring déjà prêt côté backend).
+3. **CI** : lancer `pytest backend/tests` + `npm run test` à chaque push (GitHub Actions).
+4. **npm audit** : 26 vulnérabilités (3 critiques) préexistantes remontées à l'install — à traiter.
+5. Cosmétique : router les logs `terminal_output` `[PLAN]/[PENSÉE]/[DIAG]` ailleurs que dans le fil
    (ou dans un panneau latéral discret), pour ne pas polluer la conversation.
 
 ---
@@ -149,7 +129,7 @@ Claude-Session: https://claude.ai/code/session_01GgB2RcfHN2UPAwpdFC58ue
 
 ```bash
 # Tests backend (sans clé ni réseau)
-python -m pytest backend/tests -q           # 79 verts attendus
+python -m pytest backend/tests -q           # 87 verts attendus
 
 # Tests + build front
 npm run test                                # vitest, 20 verts
