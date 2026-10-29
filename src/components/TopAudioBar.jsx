@@ -15,6 +15,11 @@ const TopAudioBar = ({ audioData, audioDataRef }) => {
         let animationId;
         let lastDraw = 0;
 
+        // Couleur d'accent sobre (token design system), lue une fois — thème clair/sombre.
+        const accentRaw = getComputedStyle(document.documentElement)
+            .getPropertyValue('--c-accent').trim() || '0 113 227';
+        const [aR, aG, aB] = accentRaw.split(/\s+/).map(Number);
+
         const draw = (timestamp) => {
             animationId = requestAnimationFrame(draw);
             if (timestamp - lastDraw < 33) return;
@@ -40,7 +45,7 @@ const TopAudioBar = ({ audioData, audioDataRef }) => {
                 const percent = value / 255;
                 const barHeight = Math.max(2, percent * height);
 
-                ctx.fillStyle = `rgba(34, 211, 238, ${0.2 + percent * 0.8})`; // Cyan with opacity
+                ctx.fillStyle = `rgba(${aR}, ${aG}, ${aB}, ${0.2 + percent * 0.8})`; // Accent sobre
 
                 // Right side
                 ctx.fillRect(center + i * (barWidth + gap), (height - barHeight) / 2, barWidth, barHeight);

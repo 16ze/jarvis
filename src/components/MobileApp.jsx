@@ -2,6 +2,19 @@ import React, { useRef, useEffect, useState } from 'react';
 import { Power, Mic, MicOff, Send } from 'lucide-react';
 import Face from '../widget/Face';
 
+/*
+ * MobileApp — interface mobile ET tablette d'Ada, « propre comme Apple ».
+ *
+ * Consomme le design system déjà posé (tokens clair/sombre : bg/surface/ink/
+ * muted/line/accent, rayons rounded-ada, ombres shadow-ada, boutons ada-btn).
+ * Aucune couleur n'est codée en dur : tout passe par les tokens → beau en clair
+ * comme en sombre. Le câblage (socket, props, handlers, <Face/>) est conservé.
+ *
+ *  - Téléphone  : plein écran, visage central, bascule Visage/Conversation,
+ *                 saisie + micro ancrés en bas au-dessus de la safe-area.
+ *  - Tablette   : deux colonnes (présence à gauche, conversation à droite),
+ *                 mise en page aérée façon iPad (≥ 768px, confortable ≤ 1180px).
+ */
 const MobileApp = ({
     socket,
     isConnected,
@@ -23,18 +36,181 @@ const MobileApp = ({
     const messagesEndRef = useRef(null);
     const [showChat, setShowChat] = useState(false);
 
+    // Largeur de fenêtre → choix des tailles (visage, colonnes). Le composant est
+    // rendu jusqu'à ~1180px ; on adapte donc le visage au palier téléphone/tablette.
+    const [vw, setVw] = useState(() =>
+        typeof window !== 'undefined' ? window.innerWidth : 390
+    );
+    useEffect(() => {
+        const onResize = () => setVw(window.innerWidth);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
+    const isWide = vw >= 768;
+
     useEffect(() => {
         if (messagesEndRef.current) {
             messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
     }, [messages]);
 
-    const orbSize = 120 + (audioAmp || 0) * 80;
-    const orbGlow = `0 0 ${40 + (audioAmp || 0) * 60}px rgba(6,182,212,${0.3 + (audioAmp || 0) * 0.5})`;
+    const amp = audioAmp || 0;
+    // Le disque respire légèrement avec l'amplitude audio — sobre, sans glow.
+    const diskSize = Math.round((isWide ? 300 : 216) + amp * (isWide ? 64 : 48));
+    const faceSize = Math.round(diskSize * 0.74);
+    const live = isConnected && !isMuted;
+
+    const statusLabel = !isConnected ? 'Hors ligne' : isMuted ? 'En veille' : 'À l’écoute';
+
+    // ── Briques réutilisées par les deux mises en page ───────────────────────
+    const Brand = (
+        <div className="flex items-center gap-2.5">
+            <span
+                className={`inline-block h-2 w-2 rounded-full transition-colors ${
+                    isConnected ? 'bg-positive' : 'bg-muted/50'
+                }`}
+            />
+            <div className="flex flex-col leading-tight">
+                <span className="text-sm font-semibold tracking-[0.18em] text-ink">ADA</span>
+                <span className="text-[11px] text-muted">
+                    {isConnected ? 'Connectée' : 'Hors ligne'}
+                </span>
+            </div>
+        </div>
+    );
+
+    const PowerButton = (
+        <button
+            onClick={togglePower}
+            aria-label={isConnected ? 'Éteindre Ada' : 'Allumer Ada'}
+            className={`grid h-10 w-10 place-items-center rounded-full border transition-all active:scale-95 ${
+                isConnected
+                    ? 'border-positive/40 text-positive bg-positive/10'
+                    : 'border-line text-muted bg-surface'
+            }`}
+        >
+            <Power size={16} />
+        </button>
+    );
+
+    const MicButton = (
+        <div className="flex flex-col items-center gap-2">
+            {audioError ? (
+                <p className="max-w-[280px] text-center text-[11px] leading-relaxed text-danger">{audioError}</p>
+            ) : (
+                isMuted && <p className="text-[11px] tracking-wide text-muted">Touche le micro pour parler</p>
+            )}
+            <button
+                onClick={toggleMute}
+                disabled={!isConnected}
+                aria-label={isMuted ? 'Réactiver le micro' : 'Mettre en veille'}
+                className={`grid h-[72px] w-[72px] place-items-center rounded-full border transition-all duration-300 active:scale-95 shadow-ada ${
+                    !isConnected
+                        ? 'border-line text-muted/60 bg-surface'
+                        : isMuted
+                        ? 'border-danger/40 text-danger bg-danger/10'
+                        : 'border-accent/40 text-accent bg-accent/10'
+                }`}
+            >
+                {isMuted ? <MicOff size={26} /> : <Mic size={26} />}
+            </button>
+        </div>
+    );
+
+    const FaceStage = (
+        <div className="relative flex flex-col items-center justify-center gap-4">
+            <div className="relative grid place-items-center">
+                {/* Anneau d'écoute : pulsation discrète en accent (pas de néon) */}
+                {live && (
+                    <span
+                        className="pointer-events-none absolute rounded-full border border-accent/25 animate-ping"
+                        style={{ width: diskSize + 28, height: diskSize + 28 }}
+                    />
+                )}
+                {/* Disque de présence : surface douce, bordure fine, ombre Apple */}
+                <div
+                    className="grid place-items-center rounded-full bg-surface2 border border-line shadow-ada-md"
+                    style={{
+                        width: diskSize,
+                        height: diskSize,
+                        transition: 'width .15s var(--ada-ease), height .15s var(--ada-ease)',
+                    }}
+                >
+                    <Face
+                        affect={adaAffect}
+                        talking={adaSpeaking || amp > 0.06}
+                        acting={adaPiloting}
+                        micRef={isMuted ? null : micRef}
+                        size={faceSize}
+                    />
+                </div>
+            </div>
+            <span className="text-[13px] font-medium tracking-wide text-muted">
+                {statusLabel}
+            </span>
+        </div>
+    );
+
+    const renderMessages = () => (
+        <div className="flex h-full flex-col gap-3 overflow-y-auto px-1">
+            {messages.length === 0 && (
+                <div className="flex h-full flex-col items-center justify-center text-center">
+                    <p className="text-sm text-muted">Aucun message pour l’instant.</p>
+                    <p className="mt-1 text-xs text-muted/70">
+                        Écris un message ou parle à Ada.
+                    </p>
+                </div>
+            )}
+            {messages.slice(-30).map((msg, i) => {
+                const mine = msg.sender === 'Bryan';
+                return (
+                    <div
+                        key={i}
+                        className={`ada-msg-in flex flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}
+                    >
+                        <span className="px-1 text-[10px] font-medium tracking-wide text-muted">
+                            {msg.sender}
+                        </span>
+                        <div
+                            className={`max-w-[85%] rounded-ada px-3.5 py-2.5 text-sm leading-relaxed shadow-ada-sm ${
+                                mine
+                                    ? 'bg-accent text-white'
+                                    : 'border border-line bg-surface text-ink'
+                            }`}
+                        >
+                            {msg.text}
+                        </div>
+                    </div>
+                );
+            })}
+            <div ref={messagesEndRef} />
+        </div>
+    );
+
+    const InputBar = (
+        <div className="flex items-center gap-2">
+            <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleSend}
+                placeholder="Écrire à Ada…"
+                className="h-11 flex-1 rounded-full border border-line bg-surface px-4 text-sm text-ink placeholder:text-muted outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_rgb(var(--c-accent)/0.18)]"
+            />
+            <button
+                onClick={handleSend}
+                disabled={!inputValue.trim()}
+                aria-label="Envoyer"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-accent text-white transition-all active:scale-95 disabled:opacity-30"
+            >
+                <Send size={17} />
+            </button>
+        </div>
+    );
 
     return (
         <div
-            className="h-screen w-screen bg-black text-cyan-100 font-mono flex flex-col overflow-hidden select-none"
+            className="flex h-screen w-screen select-none flex-col overflow-hidden bg-bg text-ink"
             style={{
                 paddingTop: 'env(safe-area-inset-top)',
                 paddingBottom: 'env(safe-area-inset-bottom)',
@@ -42,159 +218,58 @@ const MobileApp = ({
                 paddingRight: 'env(safe-area-inset-right)',
             }}
         >
-
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 pt-12 pb-4 shrink-0">
-                <div className="flex flex-col">
-                    <span className="text-xs text-cyan-500 tracking-widest uppercase">A.D.A</span>
-                    <span className="text-[10px] text-cyan-900 tracking-wider">
-                        {isConnected ? 'CONNECTÉE' : 'HORS LIGNE'}
-                    </span>
-                </div>
-                <div className="flex items-center gap-3">
-                    {/* Chat toggle */}
+            {/* ── En-tête téléphone (masqué en tablette) ─────────────────────── */}
+            <header className="flex shrink-0 items-center justify-between px-5 pb-3 pt-4 lg:hidden">
+                {Brand}
+                <div className="flex items-center gap-2.5">
                     <button
                         onClick={() => setShowChat(!showChat)}
-                        className={`text-xs px-3 py-1 rounded-full border transition-all ${
+                        className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all active:scale-95 ${
                             showChat
-                                ? 'border-cyan-500 text-cyan-400 bg-cyan-900/20'
-                                : 'border-cyan-900 text-cyan-700'
+                                ? 'border-accent/40 bg-accent/10 text-accent'
+                                : 'border-line text-muted'
                         }`}
                     >
-                        {showChat ? 'ORBE' : 'CHAT'}
+                        {showChat ? 'Visage' : 'Conversation'}
                     </button>
-                    {/* Power */}
-                    <button
-                        onClick={togglePower}
-                        className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${
-                            isConnected
-                                ? 'border-green-500 text-green-500'
-                                : 'border-gray-700 text-gray-600'
-                        }`}
-                    >
-                        <Power size={14} />
-                    </button>
+                    {PowerButton}
                 </div>
-            </div>
+            </header>
 
-            {/* Main area */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-                {showChat ? (
-                    /* Chat view */
-                    <div className="flex-1 overflow-y-auto px-4 py-2 space-y-3">
-                        {messages.slice(-30).map((msg, i) => (
-                            <div
-                                key={i}
-                                className={`flex flex-col gap-1 ${msg.sender === 'Bryan' ? 'items-end' : 'items-start'}`}
-                            >
-                                <span className="text-[9px] text-cyan-800 tracking-wider uppercase">
-                                    {msg.sender}
-                                </span>
-                                <div className={`max-w-[85%] px-3 py-2 rounded-2xl text-xs leading-relaxed ${
-                                    msg.sender === 'Bryan'
-                                        ? 'bg-cyan-900/40 border border-cyan-800/50 text-cyan-100'
-                                        : 'bg-gray-900/60 border border-gray-800/50 text-cyan-200'
-                                }`}>
-                                    {msg.text}
-                                </div>
-                            </div>
-                        ))}
-                        <div ref={messagesEndRef} />
-                    </div>
-                ) : (
-                    /* Orb view */
-                    <div className="flex-1 flex items-center justify-center">
-                        <div className="relative flex items-center justify-center">
-                            {/* Outer pulse rings */}
-                            {isConnected && !isMuted && (
-                                <>
-                                    <div
-                                        className="absolute rounded-full border border-cyan-500/10 animate-ping"
-                                        style={{ width: orbSize + 60, height: orbSize + 60 }}
-                                    />
-                                    <div
-                                        className="absolute rounded-full border border-cyan-500/20 animate-ping"
-                                        style={{
-                                            width: orbSize + 30,
-                                            height: orbSize + 30,
-                                            animationDelay: '0.3s'
-                                        }}
-                                    />
-                                </>
-                            )}
-                            {/* Main orb */}
-                            <div
-                                className="rounded-full bg-gradient-to-br from-cyan-900/60 to-black border border-cyan-500/30 flex items-center justify-center transition-all duration-100"
-                                style={{
-                                    width: orbSize,
-                                    height: orbSize,
-                                    boxShadow: orbGlow,
-                                }}
-                            >
-                                <div className="flex flex-col items-center">
-                                    <Face
-                                        affect={adaAffect}
-                                        talking={adaSpeaking || (audioAmp || 0) > 0.06}
-                                        acting={adaPiloting}
-                                        micRef={isMuted ? null : micRef}
-                                        size={Math.round(orbSize * 0.72)}
-                                    />
-                                    <div className="text-[9px] text-cyan-700 tracking-wider mt-1">
-                                        {!isConnected ? 'OFFLINE' : isMuted ? 'EN VEILLE' : 'À L\'ÉCOUTE'}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            {/* Text input */}
-            <div className="px-4 pb-2 flex gap-2">
-                <input
-                    type="text"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={handleSend}
-                    placeholder="Écrire à Ada..."
-                    className="flex-1 bg-gray-900/60 border border-cyan-900/50 rounded-full px-4 py-2.5 text-xs text-cyan-100 placeholder-cyan-900 outline-none focus:border-cyan-700"
-                />
-                <button
-                    onClick={handleSend}
-                    disabled={!inputValue.trim()}
-                    className="w-10 h-10 rounded-full bg-cyan-900/30 border border-cyan-800 flex items-center justify-center text-cyan-500 disabled:opacity-30"
+            {/* ── Contenu : 1 colonne (téléphone) / 2 colonnes (tablette) ─────── */}
+            <div className="mx-auto flex w-full min-h-0 max-w-6xl flex-1 flex-col lg:flex-row lg:gap-6 lg:px-6 lg:py-5">
+                {/* Présence : visage + contrôles */}
+                <section
+                    className={`${showChat ? 'hidden' : 'flex'} min-h-0 flex-1 flex-col lg:flex lg:max-w-[46%] lg:rounded-ada-lg lg:border lg:border-line lg:bg-surface lg:p-6 lg:shadow-ada`}
                 >
-                    <Send size={14} />
-                </button>
+                    {/* Marque + power (tablette uniquement) */}
+                    <div className="hidden items-center justify-between lg:flex">
+                        {Brand}
+                        {PowerButton}
+                    </div>
+
+                    <div className="grid flex-1 place-items-center">{FaceStage}</div>
+
+                    {/* Micro (tablette : sous le visage) */}
+                    <div className="hidden justify-center pt-2 lg:flex">{MicButton}</div>
+                </section>
+
+                {/* Conversation : fil + saisie */}
+                <section
+                    className={`${showChat ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col lg:flex lg:rounded-ada-lg lg:border lg:border-line lg:bg-surface lg:p-5 lg:shadow-ada`}
+                >
+                    <div className="min-h-0 flex-1 px-4 py-2 lg:px-0 lg:py-0">
+                        {renderMessages()}
+                    </div>
+                    {/* Saisie (tablette : au bas de la colonne) */}
+                    <div className="hidden pt-4 lg:block">{InputBar}</div>
+                </section>
             </div>
 
-            {/* Mic button */}
-            <div className="flex justify-center pb-12 pt-2 shrink-0">
-                <div className="flex flex-col items-center gap-2">
-                    {audioError && (
-                        <p className="max-w-[280px] text-center text-[10px] leading-relaxed text-red-400">
-                            {audioError}
-                        </p>
-                    )}
-                    {isMuted && !audioError && (
-                        <p className="text-[10px] tracking-wider text-cyan-700">
-                            TOUCHE LE MICRO POUR PARLER
-                        </p>
-                    )}
-                    <button
-                        onClick={toggleMute}
-                        disabled={!isConnected}
-                        className={`w-20 h-20 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
-                            !isConnected
-                                ? 'border-gray-800 text-gray-800'
-                                : isMuted
-                                ? 'border-red-500 bg-red-500/10 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.2)]'
-                                : 'border-cyan-400 bg-cyan-500/10 text-cyan-400 shadow-[0_0_30px_rgba(6,182,212,0.4)]'
-                        }`}
-                    >
-                        {isMuted ? <MicOff size={28} /> : <Mic size={28} />}
-                    </button>
-                </div>
+            {/* ── Barre basse téléphone : saisie + micro (masquée en tablette) ── */}
+            <div className="shrink-0 px-4 pb-4 pt-1 lg:hidden">
+                <div className="pb-3">{InputBar}</div>
+                <div className="flex justify-center">{MicButton}</div>
             </div>
         </div>
     );

@@ -75,8 +75,8 @@ const KasaWindow = ({
         <div
             id="kasa"
             onMouseDown={onMouseDown}
-            className={`absolute flex flex-col gap-2 p-4 rounded-xl backdrop-blur-md bg-black/60 border border-cyan-500/30 transition-all duration-200 select-none
-                ${activeDragElement === 'kasa' ? 'ring-2 ring-green-500 shadow-[0_0_30px_rgba(34,197,94,0.3)]' : 'shadow-[0_0_20px_rgba(6,182,212,0.1)]'}
+            className={`absolute flex flex-col gap-2 p-4 rounded-ada-lg ada-float transition-all duration-200 select-none
+                ${activeDragElement === 'kasa' ? 'ring-2 ring-accent' : ''}
             `}
             style={{
                 left: position.x,
@@ -88,14 +88,14 @@ const KasaWindow = ({
             }}
         >
             {/* Header */}
-            <div data-drag-handle className="flex items-center justify-between pb-2 border-b border-white/10 mb-2 cursor-grab active:cursor-grabbing">
+            <div data-drag-handle className="flex items-center justify-between pb-2 border-b border-line mb-2 cursor-grab active:cursor-grabbing">
                 <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${devices.length > 0 ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
-                    <h3 className="font-bold text-cyan-400 tracking-wider text-sm">SMART CONTROL</h3>
+                    <div className={`w-2 h-2 rounded-full ${devices.length > 0 ? 'bg-positive animate-pulse' : 'bg-line'}`} />
+                    <h3 className="font-semibold text-ink tracking-wider text-sm">SMART CONTROL</h3>
                 </div>
                 <button
                     onClick={onClose}
-                    className="p-1 rounded hover:bg-white/10 transition-colors text-white/50 hover:text-white"
+                    className="p-1 rounded hover:bg-ink/5 transition-colors text-muted hover:text-ink"
                 >
                     <X size={16} />
                 </button>
@@ -105,11 +105,11 @@ const KasaWindow = ({
             <div className="flex-1 overflow-y-auto max-h-[400px] scrollbar-hide">
 
                 {devices.length === 0 && !isThinking && (
-                    <div className="flex flex-col items-center justify-center p-8 text-center opacity-50">
+                    <div className="flex flex-col items-center justify-center p-8 text-center text-muted">
                         <p className="text-xs mb-4">No devices found. Ensure they are on the same network.</p>
                         <button
                             onClick={handleDiscover}
-                            className="flex items-center gap-2 px-4 py-2 bg-cyan-900/30 border border-cyan-500/30 rounded-lg hover:bg-cyan-500/20 hover:border-cyan-500 transition-all text-xs font-mono text-cyan-300"
+                            className="flex items-center gap-2 px-4 py-2 bg-accent/10 border border-accent/30 rounded-ada hover:bg-accent/20 hover:border-accent transition-all text-xs text-accent"
                         >
                             <RefreshCw size={14} /> DISCOVER LIGHTS
                         </button>
@@ -118,24 +118,24 @@ const KasaWindow = ({
 
                 {isThinking && (
                     <div className="flex flex-col items-center justify-center p-8 gap-3">
-                        <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-                        <span className="text-xs text-cyan-400 animate-pulse">Scanning Network...</span>
+                        <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                        <span className="text-xs text-accent animate-pulse">Scanning Network...</span>
                     </div>
                 )}
 
                 {devices.map((dev) => (
-                    <div key={dev.ip} className="mb-3 p-3 bg-white/5 rounded-lg border border-white/10 hover:border-cyan-500/30 transition-all">
+                    <div key={dev.ip} className="mb-3 p-3 bg-surface2 rounded-ada border border-line hover:border-accent/40 transition-all">
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex flex-col">
-                                <span className="font-bold text-sm text-white">{dev.alias}</span>
-                                <span className="text-[10px] text-white/40 font-mono">{dev.ip}</span>
+                                <span className="font-semibold text-sm text-ink">{dev.alias}</span>
+                                <span className="text-[10px] text-muted font-mono">{dev.ip}</span>
                             </div>
                             <button
                                 onClick={() => handleToggle(dev.ip, dev.is_on)}
                                 disabled={loadingDevices[dev.ip]}
                                 className={`p-2 rounded-full transition-all ${dev.is_on
-                                    ? 'bg-green-500/20 text-green-400 shadow-[0_0_10px_rgba(34,197,94,0.3)]'
-                                    : 'bg-white/5 text-gray-500 hover:text-white'}
+                                    ? 'bg-positive/15 text-positive'
+                                    : 'bg-surface text-muted hover:text-ink'}
                                     ${loadingDevices[dev.ip] ? 'opacity-50 cursor-not-allowed' : ''}
                                 `}
                             >
@@ -151,14 +151,14 @@ const KasaWindow = ({
                         {/* Controls */}
                         {dev.has_brightness && dev.is_on && (
                             <div className="flex items-center gap-2 mt-2">
-                                <Sun size={14} className="text-yellow-500/70" />
+                                <Sun size={14} className="text-warn" />
                                 <input
                                     type="range"
                                     min="0"
                                     max="100"
                                     defaultValue={dev.brightness || 100}
                                     onChange={(e) => handleBrightness(dev.ip, e.target.value)}
-                                    className="w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-cyan-400"
+                                    className="w-full h-1 bg-surface2 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent"
                                 />
                             </div>
                         )}
@@ -166,7 +166,7 @@ const KasaWindow = ({
                         {/* Color Control */}
                         {dev.has_color && dev.is_on && (
                             <div className="flex items-center gap-2 mt-2">
-                                <Palette size={14} className="text-purple-500/70" />
+                                <Palette size={14} className="text-muted" />
                                 <input
                                     type="range"
                                     min="0"
@@ -185,10 +185,10 @@ const KasaWindow = ({
             </div>
             {/* Bottom Discover (if devices exist) */}
             {devices.length > 0 && (
-                <div className="pt-2 border-t border-white/10 mt-2 flex justify-end">
+                <div className="pt-2 border-t border-line mt-2 flex justify-end">
                     <button
                         onClick={handleDiscover}
-                        className="p-1 text-white/30 hover:text-cyan-400 transition-colors"
+                        className="p-1 text-muted hover:text-accent transition-colors"
                         title="Rescan"
                     >
                         <RefreshCw size={14} />

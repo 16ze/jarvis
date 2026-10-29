@@ -61,12 +61,12 @@ export default function OsShell({ socket, status = {}, brain = null, screen = nu
         <AnimatePresence>
             {screen && (
                 <motion.div
-                    className="fixed inset-0 z-[55] bg-[#f4f8ff]/95 backdrop-blur-xl overflow-y-auto"
+                    className="fixed inset-0 z-[55] bg-bg/95 backdrop-blur-xl overflow-y-auto"
                     initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }}
                 >
-                    <div className="sticky top-0 z-10 flex items-center justify-between px-8 py-5 bg-[#f4f8ff]/80 backdrop-blur border-b border-blue-100">
-                        <h2 className="text-lg font-bold text-[#10294d] tracking-wide">{TITLES[screen]}</h2>
-                        <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/70 border border-blue-100 flex items-center justify-center text-[#10294d]/70 hover:text-[#10294d]">
+                    <div className="sticky top-0 z-10 flex items-center justify-between px-8 py-5 bg-bg/80 backdrop-blur border-b border-line">
+                        <h2 className="text-lg font-semibold text-ink tracking-wide">{TITLES[screen]}</h2>
+                        <button onClick={onClose} className="w-9 h-9 rounded-ada bg-surface border border-line flex items-center justify-center text-muted hover:text-ink transition-colors">
                             <X size={18} />
                         </button>
                     </div>
@@ -82,8 +82,8 @@ export default function OsShell({ socket, status = {}, brain = null, screen = nu
 
 function ObservabilityScreen({ logs, status, brain }) {
     const tiles = [
-        { label: 'Connexion', value: status.socketConnected ? 'active' : 'inactive', icon: status.socketConnected ? <Wifi size={14} className="text-emerald-600" /> : <WifiOff size={14} className="text-red-500" /> },
-        { label: 'Authentification', value: status.isAuthenticated ? 'ok' : 'verrouillé', icon: status.isAuthenticated ? <ShieldCheck size={14} className="text-emerald-600" /> : <ShieldAlert size={14} className="text-amber-500" /> },
+        { label: 'Connexion', value: status.socketConnected ? 'active' : 'inactive', icon: status.socketConnected ? <Wifi size={14} className="text-positive" /> : <WifiOff size={14} className="text-danger" /> },
+        { label: 'Authentification', value: status.isAuthenticated ? 'ok' : 'verrouillé', icon: status.isAuthenticated ? <ShieldCheck size={14} className="text-positive" /> : <ShieldAlert size={14} className="text-warn" /> },
         { label: 'Imprimantes', value: String(status.printerCount ?? 0) },
         { label: 'Humeur (brain)', value: brain?.mood ?? '—' },
     ];
@@ -91,19 +91,19 @@ function ObservabilityScreen({ logs, status, brain }) {
         <div className="pt-8">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
                 {tiles.map((t) => (
-                    <div key={t.label} className="rounded-2xl bg-white/70 border border-blue-100 px-4 py-3">
-                        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-[#10294d]/40">{t.icon}{t.label}</div>
-                        <div className="text-lg font-semibold text-[#10294d] mt-1">{t.value}</div>
+                    <div key={t.label} className="rounded-ada bg-surface border border-line px-4 py-3 shadow-ada-sm">
+                        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-muted">{t.icon}{t.label}</div>
+                        <div className="text-lg font-semibold text-ink mt-1">{t.value}</div>
                     </div>
                 ))}
             </div>
-            <div className="text-[11px] uppercase tracking-widest text-[#10294d]/40 mb-2">Flux d'activité</div>
-            <div className="rounded-2xl bg-[#0a1830] text-[#cfe0ff] font-mono text-xs p-4 h-[52vh] overflow-y-auto">
-                {logs.length === 0 && <div className="text-[#cfe0ff]/40">En attente d'activité…</div>}
+            <div className="text-[11px] uppercase tracking-widest text-muted mb-2">Flux d'activité</div>
+            <div className="rounded-ada bg-surface2 border border-line text-ink font-mono text-xs p-4 h-[52vh] overflow-y-auto">
+                {logs.length === 0 && <div className="text-muted">En attente d'activité…</div>}
                 {logs.map((l, i) => (
                     <div key={i} className="py-0.5 leading-relaxed">
-                        <span className="text-[#5b86c9]">{new Date(l.t).toLocaleTimeString()}</span>{' '}
-                        <span className="text-[#7fa8e8]">[{l.kind}]</span>{' '}
+                        <span className="text-muted">{new Date(l.t).toLocaleTimeString()}</span>{' '}
+                        <span className="text-accent">[{l.kind}]</span>{' '}
                         <span className="whitespace-pre-wrap break-words">{l.text}</span>
                     </div>
                 ))}
@@ -117,13 +117,13 @@ function AgentsScreen({ socket }) {
     return (
         <div className="pt-8 grid grid-cols-1 md:grid-cols-2 gap-3">
             {AGENTS.map((a) => (
-                <div key={a.name} className="rounded-2xl bg-white/70 border border-blue-100 px-5 py-4 flex items-start justify-between gap-3">
+                <div key={a.name} className="rounded-ada bg-surface border border-line px-5 py-4 flex items-start justify-between gap-3 shadow-ada-sm">
                     <div>
-                        <div className="font-semibold text-[#10294d]">{a.name}</div>
-                        <div className="text-xs text-[#10294d]/60 mt-0.5">{a.desc}</div>
-                        <code className="text-[10px] text-blue-600/70">{a.tool}</code>
+                        <div className="font-semibold text-ink">{a.name}</div>
+                        <div className="text-xs text-muted mt-0.5">{a.desc}</div>
+                        <code className="text-[10px] text-accent font-mono">{a.tool}</code>
                     </div>
-                    <button onClick={() => trigger(a)} className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-700 hover:bg-blue-500/20 transition-colors">
+                    <button onClick={() => trigger(a)} className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 transition-colors">
                         Lancer
                     </button>
                 </div>

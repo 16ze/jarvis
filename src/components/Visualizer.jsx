@@ -248,16 +248,16 @@ const Visualizer = ({ audioData, audioDataRef: externalAudioDataRef, isListening
 
             // Le glow central s'intensifie avec liveness — accentue la sensation de "souffle".
             const coreGlow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, Math.min(w, h) * 0.55);
-            coreGlow.addColorStop(0, `rgba(37, 99, 235, ${0.28 + liveness * 0.14})`);
-            coreGlow.addColorStop(0.34, `rgba(79, 142, 255, ${0.18 + liveness * 0.08})`);
-            coreGlow.addColorStop(0.72, 'rgba(147, 197, 253, 0.085)');
-            coreGlow.addColorStop(1, 'rgba(147, 197, 253, 0)');
+            coreGlow.addColorStop(0, `rgba(80, 120, 190, ${0.15 + liveness * 0.09})`);
+            coreGlow.addColorStop(0.34, `rgba(110, 145, 200, ${0.09 + liveness * 0.05})`);
+            coreGlow.addColorStop(0.72, 'rgba(150, 175, 210, 0.045)');
+            coreGlow.addColorStop(1, 'rgba(150, 175, 210, 0)');
             ctx.fillStyle = coreGlow;
             ctx.fillRect(0, 0, w, h);
 
             const plumeGlow = ctx.createRadialGradient(centerX - w * 0.13, centerY + h * 0.03, 0, centerX - w * 0.13, centerY + h * 0.03, Math.min(w, h) * 0.42);
-            plumeGlow.addColorStop(0, `rgba(96, 165, 250, ${0.09 + liveness * 0.06})`);
-            plumeGlow.addColorStop(1, 'rgba(96, 165, 250, 0)');
+            plumeGlow.addColorStop(0, `rgba(120, 150, 195, ${0.05 + liveness * 0.04})`);
+            plumeGlow.addColorStop(1, 'rgba(120, 150, 195, 0)');
             ctx.fillStyle = plumeGlow;
             ctx.fillRect(0, 0, w, h);
 
@@ -331,7 +331,7 @@ const Visualizer = ({ audioData, audioDataRef: externalAudioDataRef, isListening
                 const alpha = clamp(p.alpha * depthLight * densityScale, 0.025, 0.95);
                 const size = p.size * perspective * (1 + liveness * MOTION.sizeBoost);
 
-                ctx.fillStyle = `hsla(${p.hue}, 100%, ${55 + liveness * 6}%, ${alpha})`;
+                ctx.fillStyle = `hsla(${p.hue}, 44%, ${62 + liveness * 5}%, ${alpha})`;
                 ctx.fillRect(px, py, size, size);
             }
 
