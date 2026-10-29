@@ -94,12 +94,12 @@ const WorkspaceShell = ({
     };
 
     const shell = (
-        <section className="fixed inset-6 z-[420] overflow-hidden rounded-lg border border-white/75 bg-white/72 text-[#10294d] shadow-[0_30px_110px_rgba(15,43,82,0.20)] backdrop-blur-xl">
-            <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_8%,rgba(72,141,255,0.18),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.74),rgba(237,246,255,0.58))]" />
+        <section className="fixed inset-6 z-[420] overflow-hidden rounded-ada-lg ada-float text-ink">
+            <div className="absolute inset-0 pointer-events-none" />
 
-            <header className="relative z-10 flex h-16 items-center justify-between border-b border-white/80 px-6">
+            <header className="relative z-10 flex h-16 items-center justify-between border-b border-line px-6">
                 <div className="min-w-0">
-                    <div className="text-xs uppercase tracking-[0.08em] text-blue-500">ADA OS Workspace</div>
+                    <div className="text-xs uppercase tracking-[0.08em] text-accent">ADA OS Workspace</div>
                     <h2 className="truncate text-lg font-semibold">{workspaceState?.activeWorkspace || 'default'}</h2>
                 </div>
                 <div className="flex items-center gap-2">
@@ -224,16 +224,16 @@ const WorkspaceMenu = ({
                             title={action.label}
                         >
                             <span className="workspace-action-icon">{action.icon}</span>
-                            <span className="text-[26px] font-semibold leading-none text-[#10294d]">{action.label}</span>
-                            <span className="text-xs uppercase tracking-[0.08em] text-blue-500">{action.meta}</span>
+                            <span className="text-[26px] font-semibold leading-none text-ink">{action.label}</span>
+                            <span className="text-xs uppercase tracking-[0.08em] text-accent">{action.meta}</span>
                         </button>
                     ))}
                 </div>
             </main>
 
             <aside className="flex min-h-0 flex-col justify-center">
-                <div className="ada-glass-panel rounded-lg p-4">
-                    <div className="mb-3 text-xs uppercase tracking-[0.08em] text-blue-500">Workspace actif</div>
+                <div className="ada-glass-panel rounded-ada p-4">
+                    <div className="mb-3 text-xs uppercase tracking-[0.08em] text-accent">Workspace actif</div>
                     <input
                         value={workspaceName}
                         onChange={(event) => setWorkspaceName(event.target.value)}
@@ -249,13 +249,13 @@ const WorkspaceMenu = ({
                     <button
                         type="button"
                         onClick={createWorkspace}
-                        className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white transition hover:bg-blue-700"
+                        className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-ada bg-accent px-3 text-sm font-medium text-white transition hover:bg-accent/90"
                     >
                         <Plus size={16} />
                         Créer / ouvrir
                     </button>
                     {workspaceStatus?.message && (
-                        <div className="mt-3 rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                        <div className="mt-3 rounded-ada border border-line bg-accent/10 px-3 py-2 text-xs text-accent">
                             {workspaceStatus.message}
                         </div>
                     )}
@@ -404,7 +404,7 @@ const AdaSearchView = ({ socket, researchResult, workspaceStatus }) => {
                 onClose={closeTab}
                 onNew={openNewSearchTab}
             />
-            <div className="min-h-0 flex-1 overflow-hidden bg-white/72 backdrop-blur-md">
+            <div className="min-h-0 flex-1 overflow-hidden bg-surface/80 backdrop-blur-md">
                 {activeTab?.kind === 'search' && (
                     <SearchTabContent
                         tab={activeTab}
@@ -432,7 +432,7 @@ const AdaSearchView = ({ socket, researchResult, workspaceStatus }) => {
 };
 
 const TabBar = ({ tabs, activeTabId, onSelect, onClose, onNew }) => (
-    <div className="flex items-end gap-1 border-b border-white/70 bg-white/40 px-3 pt-2">
+    <div className="flex items-end gap-1 border-b border-line bg-surface2 px-3 pt-2">
         <div className="flex flex-1 items-end gap-1 overflow-x-auto pb-0">
             {tabs.map((tab) => {
                 const isActive = tab.id === activeTabId;
@@ -448,11 +448,11 @@ const TabBar = ({ tabs, activeTabId, onSelect, onClose, onNew }) => (
                         }}
                         className={`group flex h-9 min-w-[140px] max-w-[220px] cursor-pointer items-center gap-2 rounded-t-md border border-b-0 px-3 text-xs transition ${
                             isActive
-                                ? 'border-white/80 bg-white/85 text-[#10294d] shadow-[0_-4px_14px_rgba(15,43,82,0.08)]'
-                                : 'border-transparent bg-white/30 text-slate-600 hover:bg-white/55'
+                                ? 'border-line bg-surface text-ink shadow-ada-sm'
+                                : 'border-transparent bg-transparent text-muted hover:bg-surface/60'
                         }`}
                     >
-                        <Icon size={13} className={isActive ? 'text-blue-600' : 'text-slate-500'} />
+                        <Icon size={13} className={isActive ? 'text-accent' : 'text-muted'} />
                         <span className="min-w-0 flex-1 truncate text-left font-medium">{tab.title}</span>
                         <span
                             role="button"
@@ -461,7 +461,7 @@ const TabBar = ({ tabs, activeTabId, onSelect, onClose, onNew }) => (
                                 event.stopPropagation();
                                 onClose(tab.id);
                             }}
-                            className="grid h-5 w-5 place-items-center rounded text-slate-400 opacity-0 transition group-hover:opacity-100 hover:bg-slate-200 hover:text-slate-700"
+                            className="grid h-5 w-5 place-items-center rounded text-muted opacity-0 transition group-hover:opacity-100 hover:bg-ink/10 hover:text-ink"
                             aria-label={`Fermer ${tab.title}`}
                         >
                             <X size={12} />
@@ -473,7 +473,7 @@ const TabBar = ({ tabs, activeTabId, onSelect, onClose, onNew }) => (
         <button
             type="button"
             onClick={onNew}
-            className="mb-0 grid h-9 w-9 place-items-center rounded-t-md text-slate-500 transition hover:bg-white/55 hover:text-[#10294d]"
+            className="mb-0 grid h-9 w-9 place-items-center rounded-t-md text-muted transition hover:bg-surface/60 hover:text-ink"
             aria-label="Nouvelle recherche"
             title="Nouvelle recherche"
         >
@@ -495,9 +495,9 @@ const SearchTabContent = ({
 
     return (
         <div className="flex h-full flex-col">
-            <div className="border-b border-white/60 bg-white/40 p-5">
-                <div className="mx-auto flex w-full max-w-[760px] items-center gap-3 rounded-full border border-blue-100 bg-white px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_14px_36px_rgba(37,99,235,0.10)]">
-                    <Search size={19} className="shrink-0 text-blue-600" />
+            <div className="border-b border-line bg-surface2 p-5">
+                <div className="mx-auto flex w-full max-w-[760px] items-center gap-3 rounded-full border border-line bg-surface px-4 py-3 shadow-ada">
+                    <Search size={19} className="shrink-0 text-accent" />
                     <input
                         value={tab.query}
                         onChange={(event) => onChangeQuery(event.target.value)}
@@ -511,7 +511,7 @@ const SearchTabContent = ({
                     <select
                         value={tab.depth}
                         onChange={(event) => onChangeDepth(event.target.value)}
-                        className="h-8 rounded-full border border-blue-100 bg-blue-50 px-3 text-xs text-blue-700 outline-none"
+                        className="h-8 rounded-full border border-line bg-surface2 px-3 text-xs text-ink outline-none"
                     >
                         {depthOptions.map((option) => (
                             <option key={option} value={option}>{option}</option>
@@ -521,19 +521,19 @@ const SearchTabContent = ({
                         type="button"
                         onClick={onLaunch}
                         disabled={tab.loading}
-                        className="h-8 rounded-full bg-[#10294d] px-4 text-xs font-medium text-white transition hover:bg-blue-900 disabled:opacity-60"
+                        className="h-8 rounded-full bg-accent px-4 text-xs font-medium text-white transition hover:bg-accent/90 disabled:opacity-60"
                     >
                         {tab.loading ? 'Recherche…' : 'Rechercher'}
                     </button>
                 </div>
                 {(workspaceStatus?.message || hasResults) && (
-                    <div className="mx-auto mt-3 flex w-full max-w-[760px] items-center justify-between text-[11px] text-slate-500">
-                        <div className="text-blue-600">{workspaceStatus?.message || ''}</div>
+                    <div className="mx-auto mt-3 flex w-full max-w-[760px] items-center justify-between text-[11px] text-muted">
+                        <div className="text-accent">{workspaceStatus?.message || ''}</div>
                         {hasResults && (
                             <div>
-                                {tab.results.length} résultats pour <span className="font-medium text-[#10294d]">« {tab.lastQuery} »</span>
+                                {tab.results.length} résultats pour <span className="font-medium text-ink">« {tab.lastQuery} »</span>
                                 {tab.synthesized && (
-                                    <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">synthèse IA</span>
+                                    <span className="ml-2 rounded-full bg-warn/15 px-2 py-0.5 text-warn">synthèse IA</span>
                                 )}
                             </div>
                         )}
@@ -555,13 +555,13 @@ const SearchTabContent = ({
                             ))}
                         </div>
                     ) : (
-                        <div className="grid h-full place-items-center pt-12 text-center text-sm text-slate-500">
+                        <div className="grid h-full place-items-center pt-12 text-center text-sm text-muted">
                             <div>
-                                <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full border border-blue-100 bg-blue-50 text-blue-600">
+                                <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full border border-line bg-accent/10 text-accent">
                                     <Search size={28} />
                                 </div>
-                                <div className="text-base font-semibold text-[#10294d]">AdaSearch</div>
-                                <div className="mt-1 text-xs text-slate-500">propulsé par Brave Search</div>
+                                <div className="text-base font-semibold text-ink">AdaSearch</div>
+                                <div className="mt-1 text-xs text-muted">propulsé par Brave Search</div>
                             </div>
                         </div>
                     )}
@@ -724,11 +724,11 @@ const PageTabContent = ({ tab, socket, onTitleChange, onUrlChange, onSaveAsNote 
 
     return (
         <div className="flex h-full flex-col">
-            <div className="flex items-center gap-2 border-b border-white/60 bg-white/55 px-3 py-2">
+            <div className="flex items-center gap-2 border-b border-line bg-surface2 px-3 py-2">
                 <button
                     type="button"
                     onClick={goBack}
-                    className="grid h-8 w-8 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100 disabled:text-slate-300 disabled:hover:bg-transparent"
+                    className="grid h-8 w-8 place-items-center rounded-md text-muted transition hover:bg-ink/5 disabled:text-muted/40 disabled:hover:bg-transparent"
                     title="Retour"
                     aria-label="Retour"
                     disabled={!canEmbed || !canGoBack}
@@ -739,20 +739,20 @@ const PageTabContent = ({ tab, socket, onTitleChange, onUrlChange, onSaveAsNote 
                     type="button"
                     onClick={reload}
                     disabled={!canEmbed}
-                    className="grid h-8 w-8 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100 disabled:text-slate-300 disabled:hover:bg-transparent"
+                    className="grid h-8 w-8 place-items-center rounded-md text-muted transition hover:bg-ink/5 disabled:text-muted/40 disabled:hover:bg-transparent"
                     title="Recharger"
                     aria-label="Recharger"
                 >
                     <RotateCw size={15} className={loading && canEmbed ? 'animate-spin' : ''} />
                 </button>
-                <div className="flex h-8 min-w-0 flex-1 items-center gap-2 truncate rounded-full border border-slate-200 bg-white px-3 text-xs text-slate-600">
-                    <Globe size={13} className="shrink-0 text-slate-400" />
+                <div className="flex h-8 min-w-0 flex-1 items-center gap-2 truncate rounded-full border border-line bg-surface px-3 text-xs text-muted">
+                    <Globe size={13} className="shrink-0 text-muted" />
                     <span className="truncate">{currentUrl}</span>
                 </div>
                 <button
                     type="button"
                     onClick={openExternal}
-                    className="grid h-8 w-8 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100"
+                    className="grid h-8 w-8 place-items-center rounded-md text-muted transition hover:bg-ink/5"
                     title="Ouvrir dans le navigateur système"
                     aria-label="Ouvrir dans le navigateur système"
                 >
@@ -761,14 +761,14 @@ const PageTabContent = ({ tab, socket, onTitleChange, onUrlChange, onSaveAsNote 
                 <button
                     type="button"
                     onClick={onSaveAsNote}
-                    className="flex h-8 items-center gap-1.5 rounded-md border border-blue-200 bg-white px-3 text-xs font-medium text-blue-700 transition hover:bg-blue-50"
+                    className="flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-xs font-medium text-accent transition hover:bg-accent/10"
                     title="Sauvegarder cette page comme note"
                 >
                     <BookmarkPlus size={14} />
                     Note
                 </button>
             </div>
-            <div className="relative min-h-0 flex-1 bg-white">
+            <div className="relative min-h-0 flex-1 bg-surface">
                 {canEmbed && !failed ? (
                     // Navigateur intégré. Le contenu distant tourne sans Node,
                     // en sandbox et dans une session isolée (cf. electron/main.js).
@@ -782,13 +782,13 @@ const PageTabContent = ({ tab, socket, onTitleChange, onUrlChange, onSaveAsNote 
                 ) : (
                     <div className="grid h-full place-items-center px-6 text-center">
                         <div className="max-w-md">
-                            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full border border-blue-100 bg-blue-50 text-blue-600">
+                            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full border border-line bg-accent/10 text-accent">
                                 <Globe size={24} />
                             </div>
-                            <div className="text-base font-semibold text-[#10294d]">
+                            <div className="text-base font-semibold text-ink">
                                 {failed ? 'Page non affichable ici' : 'Navigation externe'}
                             </div>
-                            <p className="mt-2 text-sm leading-6 text-slate-600">
+                            <p className="mt-2 text-sm leading-6 text-muted">
                                 {failed
                                     ? `${failed}. Certains sites refusent l’affichage intégré — ouvre-la dans ton navigateur.`
                                     : 'Le navigateur intégré n’est disponible que dans l’application Ada.'}
@@ -798,7 +798,7 @@ const PageTabContent = ({ tab, socket, onTitleChange, onUrlChange, onSaveAsNote 
                                     <button
                                         type="button"
                                         onClick={reload}
-                                        className="rounded-md border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+                                        className="rounded-ada border border-line px-4 py-2 text-xs font-medium text-muted transition hover:bg-surface2"
                                     >
                                         Réessayer
                                     </button>
@@ -806,7 +806,7 @@ const PageTabContent = ({ tab, socket, onTitleChange, onUrlChange, onSaveAsNote 
                                 <button
                                     type="button"
                                     onClick={openExternal}
-                                    className="rounded-md bg-[#10294d] px-4 py-2 text-xs font-medium text-white transition hover:bg-blue-900"
+                                    className="rounded-ada bg-accent px-4 py-2 text-xs font-medium text-white transition hover:bg-accent/90"
                                 >
                                     Ouvrir la page
                                 </button>
@@ -824,15 +824,15 @@ const ResultCard = ({ result, onOpen, onSaveAsNote }) => {
     return (
         <article
             onClick={onOpen}
-            className="group cursor-pointer rounded-md px-4 py-3 transition hover:bg-blue-50/50"
+            className="group cursor-pointer rounded-ada px-4 py-3 transition hover:bg-surface2"
         >
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                    <div className="truncate text-[11px] text-slate-500">{domain}</div>
-                    <h3 className="mt-0.5 truncate text-base font-medium text-blue-700 group-hover:underline">
+                    <div className="truncate text-[11px] text-muted">{domain}</div>
+                    <h3 className="mt-0.5 truncate text-base font-medium text-accent group-hover:underline">
                         {result.title}
                     </h3>
-                    <p className="mt-1 line-clamp-2 text-sm leading-5 text-slate-600">
+                    <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted">
                         {result.snippet || 'Aucun extrait disponible.'}
                     </p>
                 </div>
@@ -842,7 +842,7 @@ const ResultCard = ({ result, onOpen, onSaveAsNote }) => {
                         event.stopPropagation();
                         onSaveAsNote();
                     }}
-                    className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-400 opacity-0 transition group-hover:opacity-100 hover:bg-white hover:text-blue-700"
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-muted opacity-0 transition group-hover:opacity-100 hover:bg-surface hover:text-accent"
                     title="Sauvegarder en note"
                     aria-label="Sauvegarder en note"
                 >
@@ -850,7 +850,7 @@ const ResultCard = ({ result, onOpen, onSaveAsNote }) => {
                 </button>
             </div>
             {result.savedItemId && (
-                <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] uppercase tracking-wider text-blue-700">
+                <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-accent">
                     sauvegardé
                 </div>
             )}
@@ -860,7 +860,7 @@ const ResultCard = ({ result, onOpen, onSaveAsNote }) => {
 
 const NotesView = ({ noteTitle, noteContent, setNoteTitle, setNoteContent, saveNote, notes }) => (
     <div className="relative z-10 grid h-[calc(100%-4rem)] grid-cols-[minmax(0,1fr)_360px] gap-5 p-5">
-        <main className="ada-glass-panel rounded-lg p-5">
+        <main className="ada-glass-panel rounded-ada p-5">
             <input
                 value={noteTitle}
                 onChange={(event) => setNoteTitle(event.target.value)}
@@ -873,11 +873,11 @@ const NotesView = ({ noteTitle, noteContent, setNoteTitle, setNoteContent, saveN
                 placeholder="Contenu"
                 className="workspace-field h-[calc(100%-4rem)] resize-none py-3"
             />
-            <button type="button" onClick={saveNote} className="mt-3 h-10 rounded-md bg-blue-600 px-4 text-sm font-medium text-white">
+            <button type="button" onClick={saveNote} className="mt-3 h-10 rounded-ada bg-accent px-4 text-sm font-medium text-white transition hover:bg-accent/90">
                 Sauvegarder
             </button>
         </main>
-        <aside className="min-h-0 overflow-y-auto rounded-lg border border-white/80 bg-white/70 p-4">
+        <aside className="min-h-0 overflow-y-auto rounded-ada border border-line bg-surface p-4">
             {notes.map((note) => <SourceRow key={note.id} item={note} />)}
         </aside>
     </div>
@@ -887,11 +887,11 @@ const FilesView = ({ items }) => (
     <div className="relative z-10 h-[calc(100%-4rem)] overflow-y-auto p-6">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {items.map((item) => (
-                <article key={item.id} className="rounded-lg border border-white/80 bg-white/72 p-4 shadow-[0_16px_36px_rgba(37,99,235,0.10)]">
-                    <div className="mb-2 inline-flex rounded bg-blue-50 px-2 py-1 text-[11px] uppercase text-blue-700">{item.kind}</div>
-                    <div className="line-clamp-2 text-sm font-semibold">{item.title}</div>
-                    {item.summary && <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-600">{item.summary}</p>}
-                    {item.path && <div className="mt-2 truncate text-[11px] text-blue-500">{item.path}</div>}
+                <article key={item.id} className="rounded-ada border border-line bg-surface p-4 shadow-ada">
+                    <div className="mb-2 inline-flex rounded bg-accent/10 px-2 py-1 text-[11px] uppercase text-accent">{item.kind}</div>
+                    <div className="line-clamp-2 text-sm font-semibold text-ink">{item.title}</div>
+                    {item.summary && <p className="mt-2 line-clamp-3 text-xs leading-5 text-muted">{item.summary}</p>}
+                    {item.path && <div className="mt-2 truncate text-[11px] text-accent">{item.path}</div>}
                 </article>
             ))}
         </div>
@@ -901,15 +901,15 @@ const FilesView = ({ items }) => (
 const ActivityView = ({ workspaceStatus, workspaceEvents }) => (
     <div className="relative z-10 h-[calc(100%-4rem)] overflow-y-auto p-6">
         {workspaceStatus?.message && (
-            <div className="mb-4 rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            <div className="mb-4 rounded-ada border border-line bg-accent/10 px-3 py-2 text-xs text-accent">
                 {workspaceStatus.message}
             </div>
         )}
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {workspaceEvents.slice().reverse().map((event, index) => (
-                <div key={`${event.type}-${index}`} className="rounded-lg border border-white/80 bg-white/72 px-4 py-3 text-xs">
-                    <div className="font-semibold">{event.type || 'event'}</div>
-                    <div className="mt-1 line-clamp-3 text-slate-500">{event.query || event.mission || event.message || JSON.stringify(event)}</div>
+                <div key={`${event.type}-${index}`} className="rounded-ada border border-line bg-surface px-4 py-3 text-xs">
+                    <div className="font-semibold text-ink">{event.type || 'event'}</div>
+                    <div className="mt-1 line-clamp-3 text-muted">{event.query || event.mission || event.message || JSON.stringify(event)}</div>
                 </div>
             ))}
         </div>
@@ -917,9 +917,9 @@ const ActivityView = ({ workspaceStatus, workspaceEvents }) => (
 );
 
 const SourceRow = ({ item }) => (
-    <div className="mb-2 rounded-md border border-blue-100 bg-white/72 px-3 py-2 text-xs">
-        <div className="line-clamp-2 font-semibold text-[#10294d]">{item.title}</div>
-        {item.summary && <div className="mt-1 line-clamp-2 text-slate-500">{item.summary}</div>}
+    <div className="mb-2 rounded-ada border border-line bg-surface px-3 py-2 text-xs">
+        <div className="line-clamp-2 font-semibold text-ink">{item.title}</div>
+        {item.summary && <div className="mt-1 line-clamp-2 text-muted">{item.summary}</div>}
     </div>
 );
 

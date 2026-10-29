@@ -8,9 +8,9 @@ const ToolBubble = ({ icon, label, active, disabled, onClick, title, className =
         disabled={disabled}
         title={title || label}
         aria-label={title || label}
-        className={`ada-glass-circle group flex h-[86px] w-[86px] flex-col items-center justify-center gap-1.5 text-[11px] font-medium text-[#10294d] transition-all duration-300 hover:-translate-y-1 hover:scale-[1.03] disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:scale-100 ${active ? 'text-blue-600 ring-2 ring-blue-400/40' : ''} ${className}`}
+        className={`ada-glass-circle group flex h-[86px] w-[86px] flex-col items-center justify-center gap-1.5 text-[11px] font-medium text-ink transition-all duration-300 hover:-translate-y-1 hover:scale-[1.03] disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:scale-100 ${active ? 'text-accent ring-2 ring-accent/40' : ''} ${className}`}
     >
-        <span className={`${active ? 'text-blue-600' : 'text-blue-600/90'} transition-colors`}>
+        <span className={`${active ? 'text-accent' : 'text-accent/90'} transition-colors`}>
             {icon}
         </span>
         <span className="max-w-[68px] truncate leading-none">{label}</span>
@@ -18,7 +18,7 @@ const ToolBubble = ({ icon, label, active, disabled, onClick, title, className =
 );
 
 const MenuIcon = ({ open }) => (
-    <span className="relative block h-6 w-7 text-blue-600">
+    <span className="relative block h-6 w-7 text-accent">
         <span
             className={`absolute left-0 top-[7px] h-[2px] w-7 rounded-full bg-current transition-transform duration-300 ${open ? 'translate-y-1 rotate-45' : ''}`}
         />
@@ -192,7 +192,7 @@ const ToolsModule = ({
             }}
         >
             <div
-                className={`absolute left-1/2 top-[88px] h-[190px] w-[610px] -translate-x-1/2 rounded-full bg-white/70 blur-xl transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0'}`}
+                className={`absolute left-1/2 top-[88px] h-[190px] w-[610px] -translate-x-1/2 rounded-full bg-ink/5 blur-2xl transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0'}`}
                 aria-hidden="true"
             />
             <div className={`absolute inset-0 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
@@ -246,7 +246,7 @@ const ToolsModule = ({
                 <button
                     type="button"
                     onClick={() => setIsOpen(prev => !prev)}
-                    className="ada-glass-circle flex h-[76px] w-[76px] items-center justify-center text-blue-600 transition-all duration-300 hover:-translate-y-1 hover:scale-[1.03]"
+                    className="ada-glass-circle flex h-[76px] w-[76px] items-center justify-center text-accent transition-all duration-300 hover:-translate-y-1 hover:scale-[1.03]"
                     aria-label={isOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
                     title={isOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
                 >

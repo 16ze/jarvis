@@ -8,7 +8,7 @@ import { Printer } from 'lucide-react';
 const GeometryModel = ({ geometry }) => {
     return (
         <mesh geometry={geometry} castShadow receiveShadow>
-            <meshStandardMaterial color="#06b6d4" roughness={0.3} metalness={0.8} />
+            <meshStandardMaterial color="#b0b0b8" roughness={0.35} metalness={0.7} />
         </mesh>
     );
 };
@@ -22,7 +22,7 @@ const LoadingCube = () => {
     return (
         <mesh ref={meshRef}>
             <boxGeometry args={[10, 10, 10]} />
-            <meshStandardMaterial wireframe color="cyan" transparent opacity={0.5} />
+            <meshStandardMaterial wireframe color="#8e8e93" transparent opacity={0.5} />
         </mesh>
     );
 };
@@ -107,17 +107,17 @@ const CadWindow = ({ data, thoughts, retryInfo = {}, onClose, socket }) => {
     };
 
     return (
-        <div className="w-full h-full relative group bg-gray-900 rounded-lg overflow-hidden border border-cyan-500/30">
+        <div className="w-full h-full relative group bg-surface2 rounded-ada overflow-hidden border border-line shadow-ada">
             {/* Close Button */}
             <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={onClose} className="bg-red-500/20 hover:bg-red-500/50 text-red-500 p-1 rounded">X</button>
+                <button onClick={onClose} className="bg-danger/10 hover:bg-danger/20 text-danger p-1 rounded">X</button>
             </div>
 
             {/* Top Toolbar */}
             <div className="absolute top-2 left-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
                 <button
                     onClick={() => setIsIterating(true)}
-                    className="bg-cyan-500/20 hover:bg-cyan-500/50 text-cyan-400 text-xs px-2 py-1 rounded border border-cyan-500/30 backdrop-blur-sm"
+                    className="bg-accent/10 hover:bg-accent/20 text-accent text-xs px-2 py-1 rounded border border-accent/30"
                 >
                     ITERATE
                 </button>
@@ -129,7 +129,7 @@ const CadWindow = ({ data, thoughts, retryInfo = {}, onClose, socket }) => {
                         // Best approach: Open Printer Window + Auto-populate / Trigger
                         if (socket) socket.emit('request_print_window');
                     }}
-                    className="bg-green-500/20 hover:bg-green-500/50 text-green-400 text-xs px-2 py-1 rounded border border-green-500/30 backdrop-blur-sm flex items-center gap-1"
+                    className="bg-positive/10 hover:bg-positive/20 text-positive text-xs px-2 py-1 rounded border border-positive/30 flex items-center gap-1"
                 >
                     <Printer size={12} /> PRINT
                 </button>
@@ -138,16 +138,16 @@ const CadWindow = ({ data, thoughts, retryInfo = {}, onClose, socket }) => {
             {/* Iteration / Generation Overlay */}
             {/* Show if iterating OR if no data exists (and not loading) */}
             {(isIterating || (!data && data?.format !== 'loading')) && (
-                <div className={`absolute inset-0 z-20 ${!data ? 'bg-gray-900' : 'bg-black/80'} flex items-center justify-center p-4`}>
-                    <div className="bg-gray-800 border border-cyan-500/50 rounded p-4 w-full max-w-sm pointer-events-auto shadow-[0_0_20px_rgba(6,182,212,0.2)]">
-                        <h4 className="text-cyan-400 text-sm mb-2 font-mono">
+                <div className={`absolute inset-0 z-20 ${!data ? 'bg-surface2' : 'bg-black/50'} flex items-center justify-center p-4`}>
+                    <div className="ada-card rounded-ada p-4 w-full max-w-sm pointer-events-auto">
+                        <h4 className="text-ink text-sm mb-2 font-semibold">
                             {!data ? "New Design" : "Refine Design"}
                         </h4>
                         <textarea
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
                             placeholder={!data ? "Describe what you want to create..." : "e.g., Make the wheels bigger..."}
-                            className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-white text-sm mb-3 focus:outline-none focus:border-cyan-500 h-24 resize-none"
+                            className="w-full bg-surface border border-line rounded-ada p-2 text-ink text-sm mb-3 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 h-24 resize-none"
                             autoFocus
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -161,7 +161,7 @@ const CadWindow = ({ data, thoughts, retryInfo = {}, onClose, socket }) => {
                             {data && (
                                 <button
                                     onClick={() => setIsIterating(false)}
-                                    className="text-gray-400 text-xs hover:text-white px-2 py-1"
+                                    className="text-muted text-xs hover:text-ink px-2 py-1"
                                 >
                                     Cancel
                                 </button>
@@ -169,7 +169,7 @@ const CadWindow = ({ data, thoughts, retryInfo = {}, onClose, socket }) => {
                             <button
                                 onClick={!data ? handleGenerate : handleIterate}
                                 disabled={isSending}
-                                className="bg-cyan-600 hover:bg-cyan-500 text-white text-xs px-3 py-1 rounded"
+                                className="bg-accent hover:bg-accent/90 text-white text-xs px-3 py-1 rounded-ada"
                             >
                                 {isSending ? "Generating..." : (!data ? "Generate" : "Update")}
                             </button>
@@ -179,7 +179,7 @@ const CadWindow = ({ data, thoughts, retryInfo = {}, onClose, socket }) => {
             )}
 
             <Canvas shadows camera={{ position: [4, 4, 4], fov: 45 }}>
-                <color attach="background" args={['#101010']} />
+                <color attach="background" args={['#1c1c1e']} />
 
                 <Stage environment="city" intensity={0.5}>
                     {data?.format === 'loading' ? (
@@ -198,31 +198,31 @@ const CadWindow = ({ data, thoughts, retryInfo = {}, onClose, socket }) => {
 
             {/* Streaming Thoughts Panel */}
             {data?.format === 'loading' && (
-                <div className="absolute inset-y-0 right-0 w-2/5 p-4 bg-black/70 backdrop-blur-sm border-l border-green-500/30 overflow-hidden flex flex-col">
+                <div className="absolute inset-y-0 right-0 w-2/5 p-4 bg-surface/90 backdrop-blur-sm border-l border-line overflow-hidden flex flex-col">
                     <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-green-400 text-xs font-mono tracking-widest uppercase flex items-center gap-2">
-                            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                        <h4 className="text-positive text-xs font-mono tracking-widest uppercase flex items-center gap-2">
+                            <span className="w-2 h-2 bg-positive rounded-full animate-pulse"></span>
                             Designer Thinking...
                         </h4>
                         {retryInfo.attempt && (
-                            <span className={`text-xs font-mono px-2 py-0.5 rounded ${retryInfo.error ? 'bg-yellow-500/20 text-yellow-400' : 'bg-cyan-500/20 text-cyan-400'}`}>
+                            <span className={`text-xs font-mono px-2 py-0.5 rounded ${retryInfo.error ? 'bg-warn/15 text-warn' : 'bg-accent/15 text-accent'}`}>
                                 Attempt {retryInfo.attempt}/{retryInfo.maxAttempts || 3}
                             </span>
                         )}
                     </div>
                     {retryInfo.error && (
-                        <div className="mb-2 p-2 bg-red-500/10 border border-red-500/30 rounded text-red-400 text-xs font-mono">
-                            <span className="text-red-500 font-bold">⚠ Error:</span> {retryInfo.error}
+                        <div className="mb-2 p-2 bg-danger/10 border border-danger/30 rounded text-danger text-xs font-mono">
+                            <span className="text-danger font-bold">⚠ Error:</span> {retryInfo.error}
                         </div>
                     )}
-                    <div className="flex-1 overflow-y-auto text-green-400/80 text-xs font-mono whitespace-pre-wrap leading-relaxed scrollbar-thin scrollbar-thumb-green-500/30">
+                    <div className="flex-1 overflow-y-auto text-muted text-xs font-mono whitespace-pre-wrap leading-relaxed scrollbar-thin scrollbar-thumb-green-500/30">
                         {thoughts}
                         <div ref={thoughtsEndRef} />
                     </div>
                 </div>
             )}
 
-            <div className="absolute bottom-2 left-2 text-[10px] text-cyan-500/50 font-mono tracking-widest pointer-events-none">
+            <div className="absolute bottom-2 left-2 text-[10px] text-muted font-mono tracking-widest pointer-events-none">
                 CAD_ENGINE_V2: {data?.format?.toUpperCase() || "READY"}
             </div>
         </div>

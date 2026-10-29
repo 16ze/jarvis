@@ -74,26 +74,26 @@ const DocumentsWindow = ({ onClose }) => {
     const supportedFormats = 'PDF, DOCX, TXT, MD, PY, JS, TS, JSON, CSV, HTML';
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="w-[520px] max-h-[80vh] bg-gray-950 border border-cyan-900/40 rounded-xl flex flex-col shadow-2xl shadow-cyan-900/20">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="w-[520px] max-h-[80vh] ada-card rounded-ada-lg flex flex-col">
 
                 {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-cyan-900/30">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-line">
                     <div className="flex items-center gap-2">
-                        <FileText size={16} className="text-cyan-500" />
-                        <span className="text-sm font-mono text-cyan-300 tracking-wider">BASE DE CONNAISSANCES</span>
+                        <FileText size={16} className="text-accent" />
+                        <span className="text-sm font-semibold text-ink tracking-wide">BASE DE CONNAISSANCES</span>
                     </div>
-                    <button onClick={onClose} className="text-gray-600 hover:text-cyan-400 transition-colors">
+                    <button onClick={onClose} className="text-muted hover:text-ink transition-colors">
                         <X size={16} />
                     </button>
                 </div>
 
                 {/* Drop zone */}
                 <div
-                    className={`mx-5 mt-4 border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${
+                    className={`mx-5 mt-4 border-2 border-dashed rounded-ada p-6 text-center cursor-pointer transition-all ${
                         dragging
-                            ? 'border-cyan-400 bg-cyan-900/10'
-                            : 'border-cyan-900/40 hover:border-cyan-700/60 hover:bg-cyan-900/5'
+                            ? 'border-accent bg-accent/5'
+                            : 'border-line hover:border-accent/60 hover:bg-surface2'
                     }`}
                     onDragOver={onDragOver}
                     onDragLeave={onDragLeave}
@@ -109,25 +109,25 @@ const DocumentsWindow = ({ onClose }) => {
                         onChange={(e) => handleFiles(e.target.files)}
                     />
                     {uploading ? (
-                        <div className="flex items-center justify-center gap-2 text-cyan-400">
+                        <div className="flex items-center justify-center gap-2 text-accent">
                             <Loader size={16} className="animate-spin" />
-                            <span className="text-xs font-mono">Indexation en cours...</span>
+                            <span className="text-xs">Indexation en cours...</span>
                         </div>
                     ) : (
                         <>
-                            <Upload size={20} className="mx-auto mb-2 text-cyan-700" />
-                            <p className="text-xs text-cyan-600 font-mono">Glisse un fichier ici ou clique pour uploader</p>
-                            <p className="text-[10px] text-cyan-900 font-mono mt-1">{supportedFormats}</p>
+                            <Upload size={20} className="mx-auto mb-2 text-muted" />
+                            <p className="text-xs text-muted">Glisse un fichier ici ou clique pour uploader</p>
+                            <p className="text-[10px] text-muted mt-1">{supportedFormats}</p>
                         </>
                     )}
                 </div>
 
                 {/* Upload status */}
                 {uploadStatus && (
-                    <div className={`mx-5 mt-2 px-3 py-2 rounded text-xs font-mono ${
+                    <div className={`mx-5 mt-2 px-3 py-2 rounded-ada text-xs ${
                         uploadStatus.type === 'success'
-                            ? 'bg-green-900/20 border border-green-800/40 text-green-400'
-                            : 'bg-red-900/20 border border-red-800/40 text-red-400'
+                            ? 'bg-positive/10 border border-positive/30 text-positive'
+                            : 'bg-danger/10 border border-danger/30 text-danger'
                     }`}>
                         {uploadStatus.msg}
                     </div>
@@ -137,27 +137,27 @@ const DocumentsWindow = ({ onClose }) => {
                 <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2 min-h-0">
                     {documents.length === 0 ? (
                         <div className="text-center py-8">
-                            <p className="text-xs text-cyan-900 font-mono">Aucun document indexé</p>
-                            <p className="text-[10px] text-cyan-950 font-mono mt-1">Ada pourra répondre à des questions sur vos fichiers</p>
+                            <p className="text-xs text-muted">Aucun document indexé</p>
+                            <p className="text-[10px] text-muted mt-1">Ada pourra répondre à des questions sur vos fichiers</p>
                         </div>
                     ) : (
                         documents.map((doc) => (
                             <div
                                 key={doc.filename}
-                                className="flex items-center justify-between px-3 py-2.5 bg-gray-900/50 border border-cyan-900/20 rounded-lg group"
+                                className="flex items-center justify-between px-3 py-2.5 bg-surface2 border border-line rounded-ada group"
                             >
                                 <div className="flex items-center gap-3 min-w-0">
-                                    <FileText size={13} className="text-cyan-700 shrink-0" />
+                                    <FileText size={13} className="text-muted shrink-0" />
                                     <div className="min-w-0">
-                                        <p className="text-xs font-mono text-cyan-300 truncate">{doc.filename}</p>
-                                        <p className="text-[10px] text-cyan-800 font-mono">
+                                        <p className="text-xs font-mono text-ink truncate">{doc.filename}</p>
+                                        <p className="text-[10px] text-muted font-mono">
                                             {doc.chunks} chunks · {doc.added?.slice(0, 10)}
                                         </p>
                                     </div>
                                 </div>
                                 <button
                                     onClick={() => deleteDocument(doc.filename)}
-                                    className="text-gray-700 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 shrink-0 ml-2"
+                                    className="text-muted hover:text-danger transition-colors opacity-0 group-hover:opacity-100 shrink-0 ml-2"
                                 >
                                     <Trash2 size={13} />
                                 </button>
@@ -167,8 +167,8 @@ const DocumentsWindow = ({ onClose }) => {
                 </div>
 
                 {/* Footer */}
-                <div className="px-5 py-3 border-t border-cyan-900/20">
-                    <p className="text-[10px] text-cyan-900 font-mono text-center">
+                <div className="px-5 py-3 border-t border-line">
+                    <p className="text-[10px] text-muted text-center">
                         {documents.length} document{documents.length !== 1 ? 's' : ''} indexé{documents.length !== 1 ? 's' : ''} · Ada les consulte automatiquement
                     </p>
                 </div>

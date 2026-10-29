@@ -32,8 +32,8 @@ const ChatModule = ({
             onMouseDown={onMouseDown}
             className={`absolute px-5 py-4 pointer-events-auto transition-all duration-200
             ${isVisualMinimal ? 'opacity-0 hover:opacity-100 focus-within:opacity-100 translate-y-6' : 'opacity-100'}
-            backdrop-blur-xl bg-white/45 border border-white/80 shadow-[0_20px_48px_rgba(37,99,235,0.10)] rounded-2xl
-            ${isModularMode ? (activeDragElement === 'chat' ? 'ring-2 ring-blue-400/50' : 'ring-1 ring-blue-200/70') : ''}
+            ada-float rounded-ada-lg
+            ${isModularMode ? (activeDragElement === 'chat' ? 'ring-2 ring-accent/50' : 'ring-1 ring-line') : ''}
         `}
             style={{
                 left: position.x,
@@ -46,14 +46,14 @@ const ChatModule = ({
         >
             <div className="relative z-20 mb-3 flex items-center justify-between">
                 <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-blue-500/80">Chat Ada</p>
-                    <p className="text-xs text-slate-500">Ecris une tache locale ou une demande pour Ada.</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">Chat Ada</p>
+                    <p className="text-xs text-muted">Ecris une tache locale ou une demande pour Ada.</p>
                 </div>
                 {onClose && (
                     <button
                         type="button"
                         onClick={onClose}
-                        className="rounded-full border border-blue-100 bg-white/65 p-2 text-blue-500 shadow-sm transition hover:border-red-200 hover:text-red-500"
+                        className="rounded-full border border-line bg-surface p-2 text-muted shadow-ada-sm transition hover:border-danger/40 hover:text-danger"
                         aria-label="Fermer le chat Ada"
                         title="Fermer le chat Ada"
                     >
@@ -66,9 +66,9 @@ const ChatModule = ({
                 style={{ height: height ? `calc(${height}px - 112px)` : '15rem' }}
             >
                 {messages.slice(-5).map((msg, i) => (
-                    <div key={i} className="ada-msg-in text-sm border-l-2 border-blue-300/70 pl-3 py-1">
-                        <span className="text-blue-500 font-mono text-xs opacity-70">[{msg.time}]</span> <span className="font-bold text-[#10294d]">{msg.sender}</span>
-                        <div className="text-slate-600 mt-1 leading-relaxed">{msg.text}</div>
+                    <div key={i} className="ada-msg-in text-sm border-l-2 border-accent/40 pl-3 py-1">
+                        <span className="text-muted text-xs tabular-nums">[{msg.time}]</span> <span className="font-semibold text-ink">{msg.sender}</span>
+                        <div className="text-muted mt-1 leading-relaxed">{msg.text}</div>
                     </div>
                 ))}
                 <div ref={messagesEndRef} />
@@ -81,10 +81,10 @@ const ChatModule = ({
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleSend}
                     placeholder="Demande a Ada d'executer une tache..."
-                    className="flex-1 bg-white/70 border border-blue-200/80 rounded-xl p-3 text-[#10294d] focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300/70 transition-all placeholder:text-slate-400 backdrop-blur-sm"
+                    className="flex-1 bg-surface border border-line rounded-ada p-3 text-ink focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-all placeholder:text-muted"
                 />
             </div>
-            {isModularMode && <div className={`absolute -top-6 left-0 text-xs font-bold tracking-widest ${activeDragElement === 'chat' ? 'text-blue-600' : 'text-blue-400/60'}`}>CHAT MODULE</div>}
+            {isModularMode && <div className={`absolute -top-6 left-0 text-xs font-semibold tracking-widest ${activeDragElement === 'chat' ? 'text-accent' : 'text-muted'}`}>CHAT MODULE</div>}
         </div>
     );
 };
