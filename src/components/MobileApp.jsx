@@ -18,6 +18,7 @@ const MobileApp = ({
     adaSpeaking = false,
     adaPiloting = false,
     micRef = null,
+    audioError = '',
 }) => {
     const messagesEndRef = useRef(null);
     const [showChat, setShowChat] = useState(false);
@@ -154,7 +155,7 @@ const MobileApp = ({
                     type="text"
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    onKeyDown={handleSend}
                     placeholder="Écrire à Ada..."
                     className="flex-1 bg-gray-900/60 border border-cyan-900/50 rounded-full px-4 py-2.5 text-xs text-cyan-100 placeholder-cyan-900 outline-none focus:border-cyan-700"
                 />
@@ -169,19 +170,31 @@ const MobileApp = ({
 
             {/* Mic button */}
             <div className="flex justify-center pb-12 pt-2 shrink-0">
-                <button
-                    onClick={toggleMute}
-                    disabled={!isConnected}
-                    className={`w-20 h-20 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
-                        !isConnected
-                            ? 'border-gray-800 text-gray-800'
-                            : isMuted
-                            ? 'border-red-500 bg-red-500/10 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.2)]'
-                            : 'border-cyan-400 bg-cyan-500/10 text-cyan-400 shadow-[0_0_30px_rgba(6,182,212,0.4)]'
-                    }`}
-                >
-                    {isMuted ? <MicOff size={28} /> : <Mic size={28} />}
-                </button>
+                <div className="flex flex-col items-center gap-2">
+                    {audioError && (
+                        <p className="max-w-[280px] text-center text-[10px] leading-relaxed text-red-400">
+                            {audioError}
+                        </p>
+                    )}
+                    {isMuted && !audioError && (
+                        <p className="text-[10px] tracking-wider text-cyan-700">
+                            TOUCHE LE MICRO POUR PARLER
+                        </p>
+                    )}
+                    <button
+                        onClick={toggleMute}
+                        disabled={!isConnected}
+                        className={`w-20 h-20 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+                            !isConnected
+                                ? 'border-gray-800 text-gray-800'
+                                : isMuted
+                                ? 'border-red-500 bg-red-500/10 text-red-400 shadow-[0_0_20px_rgba(239,68,68,0.2)]'
+                                : 'border-cyan-400 bg-cyan-500/10 text-cyan-400 shadow-[0_0_30px_rgba(6,182,212,0.4)]'
+                        }`}
+                    >
+                        {isMuted ? <MicOff size={28} /> : <Mic size={28} />}
+                    </button>
+                </div>
             </div>
         </div>
     );

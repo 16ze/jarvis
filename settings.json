@@ -1,0 +1,113 @@
+{
+    "face_auth_enabled": false,
+    "tool_permissions": {
+        "generate_cad": true,
+        "run_web_agent": true,
+        "write_file": true,
+        "read_directory": true,
+        "read_file": true,
+        "create_project": true,
+        "switch_project": true,
+        "list_projects": true
+    },
+    "printers": [],
+    "tuya_devices": [
+        {
+            "ip": "192.168.1.78",
+            "alias": "Lanternes",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.21",
+            "alias": "Lanternes",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.5",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.95",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.68",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.164",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.46",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.54",
+            "alias": "Couloir",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.19",
+            "alias": "Couloir",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.48",
+            "alias": "Cuisine",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.9",
+            "alias": "Couloir",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.94",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.159",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.195",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.112",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.146",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.63",
+            "alias": "Salon",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.162",
+            "alias": "CHAMBRE PRINCIPAL",
+            "model": "Tuya"
+        },
+        {
+            "ip": "192.168.1.187",
+            "alias": "camera",
+            "model": "Tuya"
+        }
+    ],
+    "camera_flipped": false,
+    "timezone": "Europe/Paris"
+}

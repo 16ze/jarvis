@@ -4,6 +4,7 @@ import io from 'socket.io-client';
 import Visualizer from './components/Visualizer';
 import Face from './widget/Face';
 import { ADA_TOKEN } from './adaToken';
+import { BACKEND_URL } from './backendUrl';
 import TopAudioBar from './components/TopAudioBar';
 import CadWindow from './components/CadWindow';
 import TerminalWindow from './components/TerminalWindow';
@@ -29,7 +30,6 @@ import {
     clampPointToInteractionBox,
 } from './lib/handTrackingControl';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 const socket = io(BACKEND_URL, {
     transports: ['websocket'],
     upgrade: false,
@@ -75,7 +75,9 @@ function App() {
 
 
     const [isConnected, setIsConnected] = useState(true); // Power state DEFAULT ON
-    const [isMuted, setIsMuted] = useState(false); // Mic state DEFAULT ON
+    // Sur mobile, Safari exige un geste utilisateur avant d'autoriser Web Audio.
+    const [isMuted, setIsMuted] = useState(isMobile);
+    const [audioError, setAudioError] = useState('');
     const [isVideoOn, setIsVideoOn] = useState(false); // Video state
     const [isScreenMode, setIsScreenMode] = useState(false); // Ada sees screen
     const [messages, setMessages] = useState([]);
@@ -433,9 +435,12 @@ function App() {
         if (isConnected && isAuthenticated && socketConnected && micDevices.length > 0 && !hasAutoConnectedRef.current) {
             hasAutoConnectedRef.current = true;
 
-            // Trigger Kasa and Printer Discovery
-            socket.emit('discover_kasa');
-            socket.emit('discover_printers');
+            // Les scans réseau peuvent bloquer brièvement la boucle backend ;
+            // le mobile privilégie donc la conversation et les lance à la demande.
+            if (!isMobile) {
+                socket.emit('discover_kasa');
+                socket.emit('discover_printers');
+            }
 
             // Connect to model with small delay for socket stability
             const timer = setTimeout(() => {
@@ -445,12 +450,14 @@ function App() {
                 console.log("Auto-connecting to model with device:", deviceName, "Index:", index);
 
                 setStatus('Connecting...');
-                // Start frontend mic capture with AEC before telling backend to connect
-                startFrontendMic(selectedMicId);
+                // Safari mobile attend un appui explicite sur le bouton micro.
+                if (!isMobile) {
+                    startFrontendMic(selectedMicId);
+                }
                 socket.emit('start_audio', {
                     device_index: index >= 0 ? index : null,
                     device_name: deviceName,
-                    muted: isMuted
+                    muted: isMobile ? true : isMuted
                 });
             }, 500);
         }
@@ -512,11 +519,12 @@ function App() {
             try {
                 // Lazy-init playback AudioContext at Ada's sample rate (24000 Hz)
                 if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
-                    playbackCtxRef.current = new AudioContext({ sampleRate: 24000 });
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    playbackCtxRef.current = new AudioContextClass({ sampleRate: 24000 });
                     playbackNextTimeRef.current = 0;
                 }
                 const ctx = playbackCtxRef.current;
-                if (ctx.state === 'suspended') ctx.resume();
+                if (ctx.state === 'suspended') ctx.resume().catch(() => {});
 
                 // data is a Buffer/Uint8Array of PCM16 bytes
                 const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(Object.values(data));
@@ -867,6 +875,8 @@ function App() {
             socket.off('vision_mode');
             socket.off('hand_control_status');
 
+            stopFrontendMic();
+            stopPlaybackAudio();
             stopMicVisualizer();
             stopVideo();
         };
@@ -922,7 +932,7 @@ function App() {
 
     // Start/Stop Mic Visualizer
     useEffect(() => {
-        if (selectedMicId) {
+        if (selectedMicId && !isMobile) {
             startMicVisualizer(selectedMicId);
         }
     }, [selectedMicId]);
@@ -932,13 +942,38 @@ function App() {
         if (aecAudioCtxRef.current) { aecAudioCtxRef.current.close(); aecAudioCtxRef.current = null; }
         if (aecStreamRef.current) { aecStreamRef.current.getTracks().forEach(t => t.stop()); aecStreamRef.current = null; }
         aecDeviceIdRef.current = null;
+    };
+
+    const stopPlaybackAudio = () => {
+        playbackSourcesRef.current.forEach(source => {
+            try { source.stop(); } catch (_) {}
+        });
+        playbackSourcesRef.current = [];
         if (playbackCtxRef.current) { playbackCtxRef.current.close(); playbackCtxRef.current = null; }
         playbackNextTimeRef.current = 0;
+    };
+
+    const unlockPlaybackAudio = async () => {
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
+                playbackCtxRef.current = new AudioContextClass({ sampleRate: 24000 });
+                playbackNextTimeRef.current = 0;
+            }
+            if (playbackCtxRef.current.state === 'suspended') {
+                await playbackCtxRef.current.resume();
+            }
+            return playbackCtxRef.current.state === 'running';
+        } catch (err) {
+            console.error('[Audio] Failed to unlock playback:', err);
+            return false;
+        }
     };
 
     const startFrontendMic = async (deviceId) => {
         stopFrontendMic();
         try {
+            setAudioError('');
             const constraints = {
                 audio: {
                     echoCancellation: true,
@@ -953,12 +988,16 @@ function App() {
             aecDeviceIdRef.current = deviceId || null;
 
             // AudioContext at 16kHz — browser resamples from device native rate
-            const ctx = new AudioContext({ sampleRate: 16000 });
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            const ctx = new AudioContextClass({ sampleRate: 16000 });
             aecAudioCtxRef.current = ctx;
+            if (ctx.state === 'suspended') {
+                await ctx.resume();
+            }
 
             const source = ctx.createMediaStreamSource(stream);
-            // ScriptProcessorNode: 2048 samples @ 16kHz = 128ms per chunk
-            const processor = ctx.createScriptProcessor(2048, 1, 1);
+            // 1024 samples @ 16kHz = 64ms : paquets plus réactifs pour Gemini Live.
+            const processor = ctx.createScriptProcessor(1024, 1, 1);
             aecProcessorRef.current = processor;
 
             processor.onaudioprocess = (e) => {
@@ -981,8 +1020,16 @@ function App() {
             source.connect(processor);
             processor.connect(silentGain);
             console.log('[AEC] Frontend mic capture started with echoCancellation: true, sampleRate:', ctx.sampleRate);
+            return true;
         } catch (err) {
             console.error('[AEC] Failed to start frontend mic capture:', err);
+            stopFrontendMic();
+            const message = err?.name === 'NotAllowedError'
+                ? 'Microphone refusé : autorise-le dans les réglages Safari.'
+                : 'Microphone indisponible. Réessaie en touchant le bouton.';
+            setAudioError(message);
+            addMessage('System', message);
+            return false;
         }
     };
 
@@ -1703,6 +1750,7 @@ function App() {
     const togglePower = () => {
         if (isConnected) {
             stopFrontendMic();
+            stopPlaybackAudio();
             socket.emit('stop_audio');
             setIsConnected(false);
             hasAutoConnectedRef.current = false; // Reset so auto-connect can fire again on next power-on
@@ -1722,24 +1770,38 @@ function App() {
         }
     };
 
-    const toggleMute = () => {
+    const toggleMute = async () => {
         if (!isConnected) return; // Can't mute if not connected
 
-        if (isMuted) {
+        if (isMuted || !aecStreamRef.current) {
+            // L'appui est indispensable sur iOS pour déverrouiller micro + haut-parleur.
+            await unlockPlaybackAudio();
+            const started = await startFrontendMic(selectedMicId);
+            if (!started) {
+                setIsMuted(true);
+                return;
+            }
             socket.emit('resume_audio');
             setIsMuted(false);
         } else {
+            stopFrontendMic();
             socket.emit('pause_audio');
             setIsMuted(true);
         }
     };
 
     const handleSend = (e) => {
-        if (e.key === 'Enter' && inputValue.trim()) {
-            socket.emit('user_input', { text: inputValue });
-            addMessage('You', inputValue);
-            setInputValue('');
+        if (e?.key && e.key !== 'Enter') return;
+        const text = inputValue.trim();
+        if (!text) return;
+        if (!socket.connected) {
+            addMessage('System', 'Connexion à Ada interrompue. Réessaie dans un instant.');
+            return;
         }
+
+        socket.emit('user_input', { text });
+        addMessage('Bryan', text);
+        setInputValue('');
     };
 
     const handleMinimize = () => ipcRenderer.send('window-minimize');
@@ -2008,6 +2070,7 @@ function App() {
                 adaSpeaking={adaSpeaking}
                 adaPiloting={adaPiloting}
                 micRef={micAudioDataRef}
+                audioError={audioError}
             />
         );
     }

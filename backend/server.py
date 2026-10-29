@@ -12,6 +12,7 @@ import uvicorn
 from fastapi import FastAPI, UploadFile, File, HTTPException, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.staticfiles import StaticFiles
 import asyncio
 import threading
 import sys
@@ -91,6 +92,21 @@ def _allowed_origins() -> list[str]:
 
 ALLOWED_ORIGINS = _allowed_origins()
 
+
+def _socket_origin_allowed(origin: str | None, environ: dict) -> bool:
+    """Autorise la liste explicite et l'origine HTTPS portée par le proxy local."""
+    if not origin:
+        return True
+    if "*" in ALLOWED_ORIGINS or origin in ALLOWED_ORIGINS:
+        return True
+
+    forwarded_host = environ.get("HTTP_X_FORWARDED_HOST", "").split(",")[0].strip()
+    forwarded_proto = environ.get("HTTP_X_FORWARDED_PROTO", "").split(",")[0].strip()
+    if not forwarded_host or not forwarded_proto:
+        return False
+
+    return origin == f"{forwarded_proto}://{forwarded_host}"
+
 # Token partagé exigé sur le handshake Socket.IO si ADA_API_TOKEN est défini.
 # Non défini → connexions locales autorisées (la restriction d'origine ci-dessus
 # reste la première ligne de défense).
@@ -98,7 +114,7 @@ _SOCKET_TOKEN = os.getenv("ADA_API_TOKEN", "")
 
 
 # Create a Socket.IO server
-sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins=ALLOWED_ORIGINS)
+sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins=_socket_origin_allowed)
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -174,7 +190,13 @@ def load_settings():
                          SETTINGS["tool_permissions"].update(v)
                     else:
                         SETTINGS[k] = v
-            print(f"Loaded settings: {SETTINGS}")
+            print(
+                "Loaded settings: "
+                f"face_auth_enabled={bool(SETTINGS.get('face_auth_enabled'))}, "
+                f"tool_permissions={len(SETTINGS.get('tool_permissions', {}))}, "
+                f"printers={len(SETTINGS.get('printers', []))}, "
+                f"tuya_devices={len(SETTINGS.get('tuya_devices', []))}"
+            )
         except Exception as e:
             print(f"Error loading settings: {e}")
 
@@ -1682,6 +1704,13 @@ async def update_tool_permissions(sid, data):
         audio_loop.update_permissions(SETTINGS["tool_permissions"])
     # Broadcast update to all
     await sio.emit('tool_permissions', SETTINGS["tool_permissions"])
+
+
+# Les routes API ci-dessus gardent la priorité. Le montage racine sert ensuite
+# la build React à Safari/iPhone via le même domaine HTTPS que Socket.IO.
+DIST_DIR = Path(__file__).resolve().parent.parent / "dist"
+if DIST_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(DIST_DIR), html=True), name="web-ui")
 
 if __name__ == "__main__":
     uvicorn.run(

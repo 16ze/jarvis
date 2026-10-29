@@ -10,8 +10,8 @@
  * getUserMedia exige HTTPS → passe par le Tailscale (ou localhost).
  */
 import io from 'socket.io-client';
+import { BACKEND_URL } from '../backendUrl';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 const ADA_TOKEN = import.meta.env.VITE_ADA_API_TOKEN || '';
 const FPS = parseFloat(import.meta.env.VITE_EYE_FPS || '2'); // frames/seconde envoyées
 const W = 640, H = 480;

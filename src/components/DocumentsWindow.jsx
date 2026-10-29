@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Upload, FileText, Trash2, Loader } from 'lucide-react';
+import { BACKEND_URL } from '../backendUrl';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 const ADA_TOKEN = import.meta.env.VITE_ADA_API_TOKEN || '';
 
 const authHeaders = () => ({ Authorization: `Bearer ${ADA_TOKEN}` });

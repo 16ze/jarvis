@@ -1,14 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import io from 'socket.io-client';
 import { ADA_TOKEN } from '../adaToken';
+import { BACKEND_URL } from '../backendUrl';
 
 // Même contrat Socket.IO que l'UI principale (src/App.jsx) :
 //   emit('user_input', { text })          -> envoie un message
 //   on('transcription', { sender, text }) -> réponse en streaming (append par chunk)
 //   on('tool_confirmation_request', { id, tool, args }) -> demande d'approbation
 //   emit('confirm_tool', { id, confirmed })             -> réponse Autoriser/Refuser
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-
 export default function MiniChat({ onClose }) {
     const [connected, setConnected] = useState(false);
     const [messages, setMessages] = useState([]);

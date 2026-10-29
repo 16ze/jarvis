@@ -178,6 +178,16 @@ def _reseau() -> str:
 # ── Façade ────────────────────────────────────────────────────────────────────
 
 _CACHE: tuple[float, MachineContext] | None = None
+_REFRESH_LOCK: asyncio.Lock | None = None
+
+
+async def refresh_context() -> MachineContext:
+    """Rafraîchit le cache sans lancer plusieurs lectures système concurrentes."""
+    global _REFRESH_LOCK
+    if _REFRESH_LOCK is None:
+        _REFRESH_LOCK = asyncio.Lock()
+    async with _REFRESH_LOCK:
+        return await get_context()
 
 
 def _lire_sync() -> MachineContext:

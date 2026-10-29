@@ -10,8 +10,8 @@
 import * as THREE from 'three';
 import { XRButton } from 'three/examples/jsm/webxr/XRButton.js';
 import io from 'socket.io-client';
+import { BACKEND_URL } from '../backendUrl';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 const ADA_TOKEN = import.meta.env.VITE_ADA_API_TOKEN || '';
 
 // ── Three.js : scène, caméra, rendu ─────────────────────────────────────────

@@ -232,7 +232,11 @@ class TuyaAgent:
             dev_id = cfg.get("id")
             key = cfg.get("key")
             if not all([ip, dev_id, key]):
-                print(f"[TuyaAgent] Skipping incomplete entry: {cfg}")
+                missing = [field for field in ("ip", "id", "key") if not cfg.get(field)]
+                print(
+                    f"[TuyaAgent] Skipping incomplete entry: "
+                    f"name={name!r}, missing={','.join(missing)}"
+                )
                 continue
 
             device_type = self._detect_type(cfg)

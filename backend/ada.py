@@ -1047,7 +1047,10 @@ else:
     _PERMISSIVE_SAFETY = None
 
 
-def _build_voice_config(mood_block: str | None = None) -> types.LiveConnectConfig:
+def _build_voice_config(
+    mood_block: str | None = None,
+    startup_context: str = "",
+) -> types.LiveConnectConfig:
     """Construit la config Live API avec un mood frais.
 
     Appelée juste avant chaque live.connect() pour éviter le mood périmé
@@ -1056,9 +1059,28 @@ def _build_voice_config(mood_block: str | None = None) -> types.LiveConnectConfi
     mood = mood_block if mood_block is not None else (get_brain().get_mood_block() or "")
     _base_kwargs = dict(
         response_modalities=["AUDIO"],
-        # output_audio_transcription désactivé — overhead inutile, réduit la latence
+        # Le client web/mobile affiche la réponse vocale dans le chat en temps réel.
+        output_audio_transcription={},
         input_audio_transcription={},
-        system_instruction=SYSTEM_INSTRUCTION_BASE + _bloc_date() + mood,
+        # Réduit l'attente après la fin de parole tout en laissant une courte
+        # marge pour les pauses naturelles. Le seuil reste ajustable sans code.
+        realtime_input_config=types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(
+                start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+                end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+                prefix_padding_ms=20,
+                silence_duration_ms=max(
+                    200,
+                    min(1200, int(os.getenv("ADA_VAD_SILENCE_MS", "350"))),
+                ),
+            ),
+        ),
+        system_instruction=(
+            SYSTEM_INSTRUCTION_BASE
+            + _bloc_date()
+            + mood
+            + (f"\nCONTEXTE DE DÉMARRAGE :\n{startup_context}\n" if startup_context else "")
+        ),
         tools=tools,
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
@@ -1241,6 +1263,7 @@ class AudioLoop:
         # Track last transcription text to calculate deltas (Gemini sends cumulative text)
         self._last_input_transcription = ""
         self._last_output_transcription = ""
+        self._current_voice_transcript = ""
         self._last_local_voice_task = ""
 
         self.session = None
@@ -1588,8 +1611,54 @@ class AudioLoop:
     async def send_realtime(self):
         while True:
             msg = await self.out_queue.get()
-            if self.session:
-                await self.session.send(input=msg, end_of_turn=False)
+            if not self.session:
+                continue
+
+            if msg.get("audio_stream_end"):
+                print("[ADA LATENCY] audio_stream_end envoyé à Gemini Live")
+                await self.session.send_realtime_input(audio_stream_end=True)
+                # Avec la configuration complète (mémoire + outils), ce modèle
+                # n'achève pas toujours le tour audio tout seul. Un court marqueur
+                # turn_complete force la réponse sans modifier la demande vocale.
+                await asyncio.sleep(0.3)
+                transcript = self._current_voice_transcript.strip()
+                if len(transcript) < 2 or not any(ch.isalnum() for ch in transcript):
+                    print("[ADA LATENCY] marqueur ignoré : aucune phrase transcrite")
+                    continue
+                await self.session.send_client_content(
+                    turns=types.Content(
+                        role="user",
+                        parts=[
+                            types.Part(
+                                text=(
+                                    "[Système] La parole de Bryan est terminée. "
+                                    "Réponds immédiatement à sa demande audio précédente, "
+                                    "sans commenter ce marqueur de fin de tour."
+                                )
+                            )
+                        ],
+                    ),
+                    turn_complete=True,
+                )
+                continue
+
+            mime_type = msg.get("mime_type", "")
+            payload = msg.get("data", b"")
+            if isinstance(payload, str):
+                payload = base64.b64decode(payload)
+
+            if mime_type.startswith("audio/"):
+                # L'API temps réel applique son VAD pendant que le micro continue
+                # d'envoyer des paquets ; send(..., end_of_turn=False) gardait le
+                # tour ouvert et ajoutait plusieurs secondes de latence.
+                blob = types.Blob(
+                    data=bytes(payload),
+                    mime_type=f"audio/pcm;rate={SEND_SAMPLE_RATE}",
+                )
+                await self.session.send_realtime_input(media=blob)
+            else:
+                blob = types.Blob(data=bytes(payload), mime_type=mime_type)
+                await self.session.send_realtime_input(media=blob)
 
     async def receive_frontend_audio(self, pcm_bytes: bytes):
         """Receives PCM16 audio chunks from the Electron frontend.
@@ -1609,27 +1678,41 @@ class AudioLoop:
                 self._sleep_audio_buffer = self._sleep_audio_buffer[-max_bytes:]
             return
 
-        try:
-            self.out_queue.put_nowait({"data": pcm_bytes, "mime_type": "audio/pcm"})
-        except asyncio.QueueFull:
-            pass
-
         presence_manager.feed_audio_chunk(pcm_bytes)
 
         # VAD for video frame triggering
         arr = np.frombuffer(pcm_bytes, dtype=np.int16)
         rms = int(np.sqrt(np.mean(arr.astype(np.int32) ** 2))) if len(arr) > 0 else 0
         VAD_THRESHOLD = 800
-        SILENCE_DURATION = 0.5
+        SILENCE_DURATION = max(
+            0.2,
+            min(1.2, int(os.getenv("ADA_VAD_SILENCE_MS", "350")) / 1000),
+        )
 
         if rms > VAD_THRESHOLD:
             self._silence_start_time = None
             if not self._is_speaking:
                 self._is_speaking = True
+                self._last_input_transcription = ""
+                self._current_voice_transcript = ""
                 if self._latest_image_payload and self.out_queue:
                     await self.out_queue.put(self._latest_image_payload)
+            try:
+                self.out_queue.put_nowait(
+                    {"data": pcm_bytes, "mime_type": "audio/pcm"}
+                )
+            except asyncio.QueueFull:
+                pass
         else:
             if self._is_speaking:
+                # Conserver la courte queue silencieuse nécessaire à la détection
+                # de fin de parole, puis fermer explicitement le flux audio.
+                try:
+                    self.out_queue.put_nowait(
+                        {"data": pcm_bytes, "mime_type": "audio/pcm"}
+                    )
+                except asyncio.QueueFull:
+                    pass
                 if self._silence_start_time is None:
                     self._silence_start_time = asyncio.get_event_loop().time()
                 elif (
@@ -1638,6 +1721,11 @@ class AudioLoop:
                 ):
                     self._is_speaking = False
                     self._silence_start_time = None
+                    print(
+                        f"[ADA LATENCY] fin de parole locale après "
+                        f"{SILENCE_DURATION * 1000:.0f} ms de silence"
+                    )
+                    await self.out_queue.put({"audio_stream_end": True})
 
     async def _send_spontaneous_reaction(
         self,
@@ -2773,6 +2861,7 @@ class AudioLoop:
 
                                     # Only send if there's new text
                                     if delta:
+                                        self._current_voice_transcript += delta
                                         delta_lower = delta.strip().lower()
 
                                         # ── RÉVEIL (prioritaire, vérifié en premier) ──
@@ -2905,36 +2994,27 @@ class AudioLoop:
                                             )
                                         except Exception as _e:
                                             print(f"[ADA] appraisal non lancé : {_e}")
-                                        brain.notify_user_message(
-                                            delta,
-                                            audio_features=dict(self._audio_features),
+                                        # Le brain peut parfois prendre plusieurs centaines de
+                                        # millisecondes : il ne doit jamais bloquer le flux audio.
+                                        _bg_task(
+                                            asyncio.to_thread(
+                                                brain.notify_user_message,
+                                                delta,
+                                                audio_features=dict(self._audio_features),
+                                            ),
+                                            "brain_user_message",
                                         )
-                                        mood_update = brain.get_runtime_mood_update()
-                                        # Contexte machine : Ada sait dans quelle
-                                        # app et sur quel document Bryan travaille,
-                                        # sans avoir à le demander.
+                                        # Réchauffe le contexte machine pour les outils explicites,
+                                        # sans injecter de faux message dans le tour vocal en cours.
                                         try:
                                             import machine_context as _mctx
 
-                                            contexte = await _mctx.prompt_block()
-                                            if contexte:
-                                                mood_update = (mood_update or "") + contexte
+                                            _bg_task(
+                                                _mctx.refresh_context(),
+                                                "machine_context_refresh",
+                                            )
                                         except Exception as _e:
                                             print(f"[ADA] contexte machine indisponible : {_e}")
-                                        if mood_update and self.session:
-                                            try:
-                                                # La clé de déduplication porte sur
-                                                # l'ensemble : les anciens marqueurs
-                                                # (« Mood courant : ») n'existent plus.
-                                                dedupe_key = mood_update
-                                                if dedupe_key != self._last_injected_mood:
-                                                    self._last_injected_mood = dedupe_key
-                                                    await self.session.send(
-                                                        input=mood_update,
-                                                        end_of_turn=False,
-                                                    )
-                                            except Exception as e:
-                                                print(f"[BRAIN] runtime mood injection failed: {e}")
                                         # ═══ BRAIN INTEGRATION — fin ═══
                                         # User is speaking, so interrupt model playback!
                                         self.clear_audio_queue()
@@ -5692,7 +5772,21 @@ class AudioLoop:
                 print(f"[ADA DEBUG] [CONNECT] Connecting to Gemini Live API...")
                 # Mood frais à chaque (re)connexion — sinon le system_instruction
                 # reste figé sur le mood capturé à l'import du module.
-                session_config = _build_voice_config()
+                startup_context = ""
+                if not is_reconnect:
+                    mem_ctx = memory.get_startup_context()
+                    user_ctx = presence_manager.get_context_block()
+                    startup_context = "\n".join(
+                        block for block in (mem_ctx, user_ctx) if block
+                    )
+                    if startup_context:
+                        print(
+                            f"[MEMORY] Startup context intégré à la config "
+                            f"({len(startup_context)} caractères)"
+                        )
+                session_config = _build_voice_config(
+                    startup_context=startup_context,
+                )
                 async with (
                     client.aio.live.connect(model=MODEL, config=session_config) as session,
                     asyncio.TaskGroup() as tg,
@@ -5742,17 +5836,6 @@ class AudioLoop:
 
                     # Handle Startup vs Reconnect Logic
                     if not is_reconnect:
-                        # Inject memory context
-                        mem_ctx = memory.get_startup_context()
-                        if mem_ctx:
-                            print(
-                                f"[MEMORY] Injecting startup context ({len(mem_ctx)} chars)"
-                            )
-                            await self.session.send(input=mem_ctx, end_of_turn=False)
-                        user_ctx = presence_manager.get_context_block()
-                        if user_ctx:
-                            await self.session.send(input=user_ctx, end_of_turn=False)
-
                         if start_message:
                             print(
                                 f"[ADA DEBUG] [INFO] Sending start message: {start_message}"

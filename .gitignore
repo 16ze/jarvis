@@ -11,6 +11,8 @@ env/
 .env.local
 .env.*.local
 .env.bak*
+.env.save
+backend/.env.save
 
 # Tokens & clés runtime (coffre : ~/.jarvis/secrets-vault)
 backend/.spotify_token
@@ -96,3 +98,5 @@ backend/memory/vision_timeline.db-shm
 
 # Config connecteurs MCP externes (peut contenir des secrets)
 backend/mcp_servers.json
+
+_sauvegarde_modifs_locales_*.patch

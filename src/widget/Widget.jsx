@@ -3,8 +3,7 @@ import io from 'socket.io-client';
 import Face from './Face';
 import MiniChat from './MiniChat';
 import { ADA_TOKEN } from '../adaToken';
-
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+import { BACKEND_URL } from '../backendUrl';
 
 // IPC (contextIsolation désactivé comme dans App.jsx)
 const ipc = (() => {

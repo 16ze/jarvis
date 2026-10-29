@@ -7,7 +7,7 @@
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && npx electron .\"",
     "web": "vite --mode web",
     "build": "vite build",
-    "build:web": "vite build --mode web",
+    "build:web": "cross-env VITE_BACKEND_URL= vite build --mode web",
     "start": "npx electron ."
   },
   "keywords": [],
