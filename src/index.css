@@ -1,134 +1,160 @@
-@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  background:
-    radial-gradient(circle at 50% 38%, rgba(77, 143, 255, 0.12), transparent 34%),
-    linear-gradient(180deg, #f8fbff 0%, #ffffff 48%, #f3f7ff 100%);
-  color: #14284a;
-  overflow: hidden;
-}
-
+/* ──────────────────────────────────────────────────────────────────────────
+   Ada — Design system (clair / sombre, inspiration Apple)
+   Tokens de couleur en RGB séparés par des espaces → compatibles alpha Tailwind.
+   ────────────────────────────────────────────────────────────────────────── */
 :root {
-  --ada-blue: #0b66ff;
-  --ada-blue-soft: #6ea8ff;
-  --ada-ink: #10294d;
-  --ada-muted: #667085;
-  --ada-glass: rgba(255, 255, 255, 0.68);
-  --ada-glass-border: rgba(255, 255, 255, 0.92);
-  --ada-shadow: 0 26px 58px rgba(31, 96, 196, 0.18);
+  --c-bg: 245 245 247;
+  --c-surface: 255 255 255;
+  --c-surface-2: 247 247 249;
+  --c-ink: 29 29 31;
+  --c-muted: 110 110 115;
+  --c-line: 210 210 215;
+  --c-accent: 0 113 227;
+  --c-accent-soft: 0 113 227;
+  --c-positive: 52 199 89;
+  --c-danger: 255 59 48;
+  --c-warn: 255 149 0;
+
+  --ada-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ada-radius: 14px;
+  --ada-shadow: 0 18px 48px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.06);
+  color-scheme: light;
 }
 
-/* Custom Scrollbar Hide */
-.scrollbar-hide::-webkit-scrollbar {
-    display: none;
+/* Sombre automatique (préférence système), sauf si l'utilisateur a forcé « clair ». */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-bg: 18 18 20;
+    --c-surface: 28 28 30;
+    --c-surface-2: 44 44 46;
+    --c-ink: 245 245 247;
+    --c-muted: 152 152 157;
+    --c-line: 56 56 60;
+    --c-accent: 10 132 255;
+    --c-accent-soft: 10 132 255;
+    --c-positive: 48 209 88;
+    --c-danger: 255 69 58;
+    --c-warn: 255 159 10;
+    --ada-shadow: 0 18px 48px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
 }
-.scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+
+/* Sombre forcé explicitement. */
+:root[data-theme="dark"] {
+  --c-bg: 18 18 20;
+  --c-surface: 28 28 30;
+  --c-surface-2: 44 44 46;
+  --c-ink: 245 245 247;
+  --c-muted: 152 152 157;
+  --c-line: 56 56 60;
+  --c-accent: 10 132 255;
+  --c-accent-soft: 10 132 255;
+  --c-positive: 48 209 88;
+  --c-danger: 255 69 58;
+  --c-warn: 255 159 10;
+  --ada-shadow: 0 18px 48px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
 }
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: rgb(var(--c-bg));
+  color: rgb(var(--c-ink));
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  transition: background-color 0.3s var(--ada-ease), color 0.3s var(--ada-ease);
+}
+
+/* ── Scrollbars discrètes ──────────────────────────────────────────────────── */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: rgb(var(--c-muted) / 0.35); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-muted) / 0.55); background-clip: content-box; }
+*::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 
 .mask-image-gradient {
   mask-image: linear-gradient(to bottom, transparent, rgb(0, 0, 0) 10%, rgb(0, 0, 0) 90%, transparent);
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.3s ease-out forwards;
-}
-
+/* ──────────────────────────────────────────────────────────────────────────
+   Surfaces réutilisables — propres, ombres douces, bordures fines.
+   (Noms historiques conservés pour ne pas casser les composants existants.)
+   ────────────────────────────────────────────────────────────────────────── */
+.ada-shell,
 .ada-soft-shell {
-  background:
-    radial-gradient(circle at 50% 45%, rgba(72, 141, 255, 0.10), transparent 36%),
-    radial-gradient(circle at 78% 16%, rgba(151, 195, 255, 0.18), transparent 28%),
-    linear-gradient(180deg, #f9fbff 0%, #ffffff 50%, #f4f8ff 100%);
+  background: rgb(var(--c-bg));
+}
+
+/* Carte / panneau standard */
+.ada-card,
+.ada-glass-panel {
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-line));
+  border-radius: var(--ada-radius);
+  box-shadow: var(--ada-shadow);
+}
+
+/* Fenêtre flottante translucide (léger flou, reste lisible clair/sombre) */
+.ada-float {
+  background: rgb(var(--c-surface) / 0.82);
+  border: 1px solid rgb(var(--c-line) / 0.9);
+  border-radius: var(--ada-radius);
+  box-shadow: var(--ada-shadow);
+  -webkit-backdrop-filter: saturate(1.4) blur(20px);
+  backdrop-filter: saturate(1.4) blur(20px);
 }
 
 .ada-glass-circle {
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(235, 244, 255, 0.54));
-  border: 1px solid rgba(255, 255, 255, 0.96);
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-line));
   border-radius: 9999px;
-  box-shadow:
-    inset 0 2px 4px rgba(255, 255, 255, 0.95),
-    inset 0 -8px 16px rgba(35, 112, 255, 0.10),
-    0 18px 34px rgba(40, 105, 205, 0.18),
-    0 3px 8px rgba(40, 105, 205, 0.10);
+  box-shadow: var(--ada-shadow);
 }
 
-.ada-glass-panel {
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(228, 240, 255, 0.42));
-  border: 1px solid rgba(255, 255, 255, 0.86);
-  box-shadow:
-    0 28px 70px rgba(45, 105, 202, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.88);
-}
-
+/* ── Workspace : actions / champs ─────────────────────────────────────────── */
 .workspace-action-glass {
   position: relative;
   display: flex;
-  min-height: 190px;
+  min-height: 170px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 14px;
   overflow: hidden;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.94);
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(220, 238, 255, 0.54)),
-    radial-gradient(circle at 50% 0%, rgba(89, 162, 255, 0.20), transparent 44%);
-  box-shadow:
-    inset 0 2px 3px rgba(255, 255, 255, 0.95),
-    inset 0 -18px 30px rgba(37, 99, 235, 0.10),
-    0 28px 58px rgba(37, 99, 235, 0.18),
-    0 7px 14px rgba(37, 99, 235, 0.10);
-  transform: perspective(900px) rotateX(0deg) translateY(0);
-  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
-}
-
-.workspace-action-glass::before {
-  content: "";
-  position: absolute;
-  inset: 12px 18px auto;
-  height: 42%;
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0));
-  pointer-events: none;
+  border: 1px solid rgb(var(--c-line));
+  background: rgb(var(--c-surface));
+  box-shadow: var(--ada-shadow);
+  transition: transform 180ms var(--ada-ease), box-shadow 180ms var(--ada-ease), border-color 180ms var(--ada-ease);
 }
-
 .workspace-action-glass:hover {
-  border-color: rgba(96, 165, 250, 0.72);
-  box-shadow:
-    inset 0 2px 3px rgba(255, 255, 255, 0.95),
-    inset 0 -18px 30px rgba(37, 99, 235, 0.14),
-    0 34px 70px rgba(37, 99, 235, 0.22),
-    0 9px 16px rgba(37, 99, 235, 0.12);
-  transform: perspective(900px) rotateX(4deg) translateY(-6px);
+  border-color: rgb(var(--c-accent) / 0.5);
+  transform: translateY(-3px);
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.14), 0 6px 16px rgba(0, 0, 0, 0.08);
 }
 
 .workspace-action-icon {
   display: grid;
-  height: 74px;
-  width: 74px;
+  height: 64px;
+  width: 64px;
   place-items: center;
   border-radius: 9999px;
-  color: #0b66ff;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(221, 238, 255, 0.66));
-  box-shadow:
-    inset 0 2px 3px rgba(255, 255, 255, 0.96),
-    inset 0 -9px 18px rgba(37, 99, 235, 0.12),
-    0 16px 30px rgba(37, 99, 235, 0.18);
+  color: rgb(var(--c-accent));
+  background: rgb(var(--c-accent) / 0.1);
 }
 
 .workspace-icon-button {
@@ -137,118 +163,102 @@ body {
   width: 38px;
   place-items: center;
   border-radius: 10px;
-  color: #1d4ed8;
-  transition: background-color 160ms ease, transform 160ms ease;
+  color: rgb(var(--c-ink) / 0.75);
+  transition: background-color 160ms var(--ada-ease), color 160ms var(--ada-ease), transform 160ms var(--ada-ease);
 }
-
 .workspace-icon-button:hover {
-  background: rgba(219, 234, 254, 0.78);
-  transform: translateY(-1px);
+  background: rgb(var(--c-ink) / 0.06);
+  color: rgb(var(--c-ink));
 }
 
 .workspace-field {
   width: 100%;
   height: 42px;
-  border-radius: 8px;
-  border: 1px solid rgba(191, 219, 254, 0.9);
-  background: rgba(255, 255, 255, 0.82);
+  border-radius: 10px;
+  border: 1px solid rgb(var(--c-line));
+  background: rgb(var(--c-surface));
+  color: rgb(var(--c-ink));
   padding: 0 12px;
   font-size: 14px;
   outline: none;
+  transition: border-color 160ms var(--ada-ease), box-shadow 160ms var(--ada-ease);
 }
-
+.workspace-field::placeholder { color: rgb(var(--c-muted)); }
 .workspace-field:focus {
-  border-color: rgba(59, 130, 246, 0.9);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  border-color: rgb(var(--c-accent));
+  box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.18);
 }
 
+/* ── Fenêtre caméra ───────────────────────────────────────────────────────── */
 .ada-camera-window {
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.36), rgba(84, 155, 255, 0.22));
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  box-shadow:
-    0 26px 62px rgba(37, 99, 235, 0.26),
-    0 0 0 1px rgba(96, 165, 250, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.74);
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 18px;
+  box-shadow: var(--ada-shadow);
+  overflow: hidden;
 }
-
-.ada-camera-window::before {
-  content: "";
-  position: absolute;
-  inset: -34px 54% -34px -160px;
-  background:
-    linear-gradient(90deg, rgba(37, 99, 235, 0), rgba(37, 99, 235, 0.18), rgba(37, 99, 235, 0));
-  filter: blur(18px);
-  pointer-events: none;
-}
-
 .ada-camera-control {
   display: flex;
-  height: 48px;
-  width: 48px;
+  height: 46px;
+  width: 46px;
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  color: rgba(255, 255, 255, 0.92);
-  background: rgba(20, 35, 60, 0.28);
-  border: 1px solid rgba(255, 255, 255, 0.42);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.32),
-    0 12px 24px rgba(15, 42, 90, 0.24);
+  color: #fff;
+  background: rgb(0 0 0 / 0.42);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
-  transition: transform 180ms ease, background-color 180ms ease;
+  transition: transform 180ms var(--ada-ease), background-color 180ms var(--ada-ease);
 }
-
 .ada-camera-control:hover {
   transform: translateY(-2px);
-  background: rgba(37, 99, 235, 0.34);
+  background: rgb(var(--c-accent) / 0.85);
 }
 
+/* ── Boutons utilitaires ──────────────────────────────────────────────────── */
+.ada-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 38px; padding: 0 16px; border-radius: 10px;
+  font-size: 14px; font-weight: 500; cursor: pointer; border: 1px solid transparent;
+  transition: background-color 150ms var(--ada-ease), transform 120ms var(--ada-ease), border-color 150ms var(--ada-ease);
+}
+.ada-btn-primary { background: rgb(var(--c-accent)); color: #fff; }
+.ada-btn-primary:hover { background: rgb(var(--c-accent) / 0.9); }
+.ada-btn-ghost { background: transparent; color: rgb(var(--c-ink)); border-color: rgb(var(--c-line)); }
+.ada-btn-ghost:hover { background: rgb(var(--c-ink) / 0.06); }
+.ada-btn:active { transform: scale(0.98); }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Animations (conservées)
+   ────────────────────────────────────────────────────────────────────────── */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+
+@keyframes adaMsgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.ada-msg-in { animation: adaMsgIn 0.24s var(--ada-ease); }
+
+@keyframes adaRiseIn  { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes adaScaleIn { from { opacity: 0; transform: scale(0.96); }     to { opacity: 1; transform: none; } }
+.ada-rise-in  { animation: adaRiseIn 0.28s var(--ada-ease) both; }
+.ada-scale-in { animation: adaScaleIn 0.22s var(--ada-ease) both; }
+
+/* ── Mode perfs Electron : coupe les effets coûteux ───────────────────────── */
 .electron-performance .backdrop-blur,
 .electron-performance .backdrop-blur-sm,
 .electron-performance .backdrop-blur-md,
 .electron-performance .backdrop-blur-xl,
-.electron-performance .backdrop-blur-2xl {
+.electron-performance .backdrop-blur-2xl,
+.electron-performance .ada-float {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
-
-.electron-performance .shadow-xl,
-.electron-performance .shadow-2xl,
-.electron-performance [class*="shadow-["] {
-  box-shadow: 0 0 12px rgba(6, 182, 212, 0.08) !important;
-}
-
-.electron-performance [class*="drop-shadow"] {
-  filter: none !important;
-}
-
-.electron-performance .transition-all {
-  transition-property: color, background-color, border-color, opacity, transform !important;
-}
-
+.electron-performance .ada-float { background: rgb(var(--c-surface)); }
+.electron-performance [class*="drop-shadow"] { filter: none !important; }
 .electron-performance .animate-pulse,
-.electron-performance .animate-ping {
-  animation: none !important;
-}
+.electron-performance .animate-ping { animation: none !important; }
 
-/* Polish : entrée fluide des messages du chat (façon Claude) */
-@keyframes adaMsgIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
-.ada-msg-in { animation: adaMsgIn 0.24s cubic-bezier(0.22, 1, 0.36, 1); }
-
-/* ── Polish : couche d'animation cohérente ────────────────────────────────── */
-:root { --ada-ease: cubic-bezier(0.22, 1, 0.36, 1); }
-
-@keyframes adaRiseIn  { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-@keyframes adaScaleIn { from { opacity: 0; transform: scale(0.96); }     to { opacity: 1; transform: none; } }
-
-.ada-rise-in  { animation: adaRiseIn 0.28s var(--ada-ease) both; }
-.ada-scale-in { animation: adaScaleIn 0.22s var(--ada-ease) both; }
-
-/* Accessibilité : respecte la préférence système « réduire les animations ». */
+/* ── Accessibilité : réduire les animations ───────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
