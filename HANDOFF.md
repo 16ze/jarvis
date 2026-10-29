@@ -1,99 +1,159 @@
-# Ada / Jarvis — Passation (handoff)
+# HANDOFF — Jarvis / Ada  (pour Codex)
 
-> Rédigé le 2026-10-27. Branche de travail : **`integration/widget-pc-control`** (poussée sur `16ze/jarvis`). Dernier commit : `2da2758`.
-> Repo sur la machine de Bryan : `/Volumes/disque dev/archives-mars-avril-2026/jarvis` (disque externe).
+> Rédigé le 2026-10-29 par Claude. But : permettre à Codex de reprendre le chantier
+> « maturité » sans perte de contexte. Lis ce fichier en entier avant de coder.
 
 ---
 
-## 1. Comment démarrer / arrêter
+## 0. État du dépôt (vérité au moment du handoff)
+
+- **Repo** : github.com/16ze/jarvis
+- **Branche de travail** : `integration/widget-pc-control`
+- **HEAD poussé sur origin** : `43cbc82` (« feat(maturité 3): robustesse backend — monitoring + 38 tests »)
+- **Mac (machine de Bryan)** : repo sur `/Volumes/Disque dev/Archives-Mars-Avril-2026/jarvis`,
+  conda env `ada_v2` (Python 3.11), node 22.
+- **Déploiement sur le Mac** : double-clic `~/Desktop/Relancer-Ada.command`
+  (= `git pull origin integration/widget-pc-control` + `npm install` + arrêt propre + `bash start_ada.sh`).
+  Alternative manuelle : `bash start_ada.sh` depuis la racine.
+- **Ports** : backend FastAPI+Socket.IO sur `8000`, vite dev sur `5173`.
+
+Avant de commencer : `git fetch origin && git reset --hard origin/integration/widget-pc-control`.
+
+---
+
+## 1. Ce qui a été livré cette session (déjà poussé)
+
+1. **Refonte UI Apple-clean** (tokens CSS clair/sombre, system font, `rounded-ada*`, `shadow-ada*`).
+2. **Shell centré conversation** (mode normal) façon ChatGPT/Claude, **mode modulaire préservé** derrière `isModularMode`.
+3. **Fiabilité** : instance Electron unique (`requestSingleInstanceLock`), anti-race port 8000
+   (`pollBackendPortTaken` ~3 s), arrêt sélectif, `start_ada.sh` idempotent. Fin du `[Errno 48]`.
+4. **Robustesse moteur** (`backend/llm_router.py`) : retries+backoff (erreurs transitoires only),
+   timeouts `asyncio.wait_for`, repli propre (messages FR par cause), masquage des clés. API publique inchangée.
+5. **Historique conversations** : `src/components/ConversationSidebar.jsx` + état dans `App.jsx`
+   (new/switch/rename/delete, persistance localStorage `ada-conversations` / `ada-active-conv`).
+6. **Composants chat** : `src/components/chat/{MarkdownMessage,MessageActions,TypingIndicator,ChatComposer}.jsx`.
+7. **Streaming visuel** : caret clignotant sur le dernier message Ada pendant `isGenerating` (= `adaSpeaking`).
+8. **Fix** : la fenêtre flottante TERMINAL ne s'auto-ouvre plus en mode normal (réservée au modulaire).
+9. **Tests** : `backend/tests/*` → `python -m pytest backend/tests -q` = **79 verts** ;
+   `src/components/chat/__tests__/*` → `npm run test` (vitest) = **20 verts**.
+10. **Monitoring** : `backend/monitoring.py` (`log_exception`, `@guard`, `get_error_stats`),
+    handler d'exception global + endpoint `GET /health/errors` dans `server.py`.
+11. **Code-split** : `vite.config.js` `manualChunks` → `vendor-three` / `vendor-markdown` ;
+    chunk applicatif ~425 ko (< 500 ko).
+
+---
+
+## 2. TÂCHE EN COURS (reprendre ici) : vrai streaming token-par-token
+
+**Objectif** : que la réponse d'Ada s'affiche mot à mot en temps réel (ressenti ChatGPT),
+au lieu d'apparaître par gros blocs.
+
+**Ce qui est déjà en place côté front** (aucune modif nécessaire a priori) :
+- `App.jsx` handler `socket.on('transcription', (data) => …)` : **append par expéditeur**
+  (si `data.sender` == dernier message, concatène `data.text` ; sinon nouveau bloc).
+  Donc si le backend émet de petits chunks, le front streame déjà.
+
+**Point d'investigation backend (là où je me suis arrêté)** :
+- `backend/server.py:857` →
+  ```python
+  def on_transcription(data):
+      asyncio.create_task(sio.emit('transcription', data))
+  ```
+  `data` = `{sender, text}`. Ce callback est fourni à l'AudioLoop (`audio_loop` wiring ~ligne 934)
+  ET doit être alimenté par le chemin texte (TextAgent).
+- **À vérifier/corriger** :
+  1. **Voix** (`backend/ada.py`) : comment `on_transcription` est appelé pour le transcript de sortie
+     d'Ada (Gemini Live). Émet-il par token/segment ou par phrase complète ? Chercher les appels à
+     `on_transcription(` dans `ada.py`. Si c'est par phrase → découper en segments plus fins au fil de l'arrivée.
+  2. **Texte** (`backend/external_bridge.py` `TextAgent` et/ou le chemin `user_input` du front) :
+     la réponse texte est très probablement émise **en une fois**. Il faut streamer la génération
+     (Gemini `generate_content` en mode stream) et appeler `on_transcription({sender:'Ada', text:<chunk>})`
+     à chaque chunk. Garder `sender` constant pour que le front concatène.
+  3. S'assurer que `ada_speaking {on:true}` est émis au début et `{on:false}` à la fin de la réponse texte
+     aussi (pas seulement la voix), pour que le caret + TypingIndicator réagissent. Voir `server.py:388`
+     (`ada_speaking`) et `_speaking_until` dans `ada.py`.
+
+**Contrat à respecter** : `transcription` = `{sender, text}` où `text` est un **delta** (incrément),
+pas le texte complet à chaque fois. `sender` : `'Ada'` (ou ce que le backend utilise déjà — vérifier,
+le front traite tout sender ≠ `'Bryan'` et ≠ `'System'` comme Ada).
+
+---
+
+## 3. Backlog restant pour viser 100 %
+
+1. **(en cours)** Streaming token-par-token (cf. §2) — plus gros gain de ressenti.
+2. **Recherche dans l'historique** + **édition d'un message envoyé** (côté `App.jsx` + sidebar).
+3. **Panneau santé** branché sur `GET /health/errors` (monitoring déjà prêt côté backend).
+4. **CI** : lancer `pytest backend/tests` + `npm run test` à chaque push (GitHub Actions).
+5. **npm audit** : 26 vulnérabilités (3 critiques) préexistantes remontées à l'install — à traiter.
+6. Cosmétique : router les logs `terminal_output` `[PLAN]/[PENSÉE]/[DIAG]` ailleurs que dans le fil
+   (ou dans un panneau latéral discret), pour ne pas polluer la conversation.
+
+---
+
+## 4. Contrats & conventions À NE PAS CASSER
+
+**Socket.IO** (events) :
+- `transcription {sender, text}` (append par sender), `user_input {text}` (envoi depuis le front),
+  `ada_affect` (humeur brain, ~1.5 s), `ada_speaking {on}` (vérité « Ada parle »),
+  `pc_control_state {active}`, `clear_audio`, `tool_confirmation_request` / `confirm_tool {id, confirmed}`,
+  `terminal_output {command, output}`, `status {msg}`, `audio_pcm`, `audio_data {data}`.
+
+**Modèle de messages (front)** : `messages = [{ sender, text, time }]`.
+`sender === 'Bryan'` = utilisateur ; `=== 'System'` = notice ; sinon = Ada.
+
+**Composants chat (API figée — les tests en dépendent)** :
+- `MarkdownMessage({ text, className })`
+- `MessageActions({ onCopy, onRegenerate, canRegenerate })`
+- `TypingIndicator()`
+- `ChatComposer({ value, onChange(str), onSend(), onStop(), isGenerating, disabled, placeholder })`
+
+**Règles projet absolues** :
+- Voix = **Gemini Native Audio uniquement** (voix Kore). Jamais ElevenLabs.
+- **asyncio pur** partout. Jamais LangGraph ni framework agent lourd. Jamais localtuya (tinytuya only).
+- Tous les outils backend retournent une **`str`** (jamais d'exception non catchée).
+- Secrets dans `.env` uniquement — **jamais** commités, jamais collés en clair.
+- Nouvel outil = 3 points de câblage : `mcp_tools_declarations.py` + `ada.py::_execute_text_tool()`
+  + `external_bridge.py::TextAgent._execute_tool()`.
+- Confirmations avant actions irréversibles (envoi email, suppression).
+
+**Attribution des commits** (obligatoire, fin de message de commit) :
+```
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01GgB2RcfHN2UPAwpdFC58ue
+```
+(Codex remplacera évidemment par sa propre attribution.)
+
+---
+
+## 5. Commandes utiles
 
 ```bash
-cd "/Volumes/disque dev/archives-mars-avril-2026/jarvis"
-git checkout integration/widget-pc-control && git pull
-lsof -ti:8000 | xargs kill -9 2>/dev/null   # tue un backend fantôme (bug récurrent)
-bash start_ada.sh                            # backend (port 8000) + frontend (Vite+Electron)
-# arrêt :
-bash stop_ada.sh
+# Tests backend (sans clé ni réseau)
+python -m pytest backend/tests -q           # 79 verts attendus
+
+# Tests + build front
+npm run test                                # vitest, 20 verts
+npm run build                               # chunk applicatif < 500 ko
+
+# Démarrage complet (Mac)
+bash start_ada.sh                           # backend + vite + electron
+bash stop_ada.sh                            # arrêt propre (ports 8000/5173)
+
+# Santé runtime
+curl -s http://127.0.0.1:8000/health/errors # stats d'erreurs (monitoring)
 ```
-- Vérifier d'être sur **`integration/widget-pc-control`** (`git branch --show-current`). Se tromper de branche a plusieurs fois fait croire à des bugs.
-- Attendre `✅ Backend prêt` dans l'onglet backend. Au démarrage on doit voir aussi :
-  `[SERVER] ada_affect broadcaster enregistré` et `[SERVER] ada_speaking broadcaster enregistré`.
 
 ---
 
-## 2. À FAIRE / à vérifier (le plus important)
+## 6. Pièges connus
 
-### 2.1 Vérifier que la vignette/visage est bien connectée (en cours)
-- Dernière correction poussée : Electron injecte le token socket (`ADA_API_TOKEN` de `backend/.env`) dans toutes les fenêtres. **À confirmer au prochain démarrage.**
-- **Point témoin** en bas de la vignette : 🔴 refusé/déconnecté · 🔵 connecté mais 0 donnée · 🟢 données reçues. Objectif = **vert**.
-- Si 🔴 : `ADA_API_TOKEN` n'est pas dans `backend/.env` (le chercher ailleurs : `.env` racine ? variable d'env shell ?). Aligner la source lue par `electron/main.js:readAdaToken()`.
-
-### 2.2 Clé Gemini / facturation (bloquant pour la VOIX)
-- La voix passe **uniquement** par Gemini Native Audio (non négociable). Erreur rencontrée : `1011 ... prepayment credits are depleted`.
-- L'API **Live (native audio) exige un projet avec facturation activée** (le free tier ne suffit pas). Vérifier le crédit/billing du projet de la clé.
-- Clé dans `backend/.env` → `GEMINI_API_KEY`. (Ne jamais coller la clé dans un chat.)
-
-### 2.3 Tailscale (accès distant sécurisé/anonyme) — NON FAIT
-- Objectif : accéder à Ada à distance de façon privée (VPN mesh WireGuard, HTTPS via `tailscale serve`), recommandé plutôt qu'un VPS exposé.
-- **Nécessite les mains + login de Bryan sur chaque appareil** (ne peut pas se faire à distance) :
-  - Mac (le serveur Ada) : installer Tailscale, se connecter, puis `tailscale serve` pour exposer le port 8000 en HTTPS privé. À faire quand Bryan est chez lui.
-  - Téléphone : app Tailscale + login (faisable n'importe où).
-- Une fois en place : pointer `VITE_BACKEND_URL` du mobile vers l'URL Tailscale du Mac.
-
-### 2.4 Tester le stack de bout en bout (runtime)
-- Rien n'a encore été confirmé **en exécution** complète par Bryan (compile/build OK, mais pas le run complet voix+visage+outils).
-- Tester : voix (Gemini OK), chat texte, pilotage PC, et les 3 visages (bureau / vignette / mobile).
-
-### 2.5 Cerveau Claude gratuit (optionnel)
-- `llm_router` sait utiliser Claude Code CLI (`claude -p`) → raisonnement/codage **gratuit** via l'abonnement, sans clé API. La voix reste Gemini.
-- Activer : `JARVIS_BRAIN=claudecli` dans `.env` (ou laisser `hybrid` avec `ANTHROPIC_API_KEY` vide + `claude` installé).
-
----
-
-## 3. Chantiers discutés, non faits (features)
-
-- **VR / casque (WebXR)** : intégrer le visage dans la scène XR. Reporté : la page XR est en Three.js pur (pas React), rendu différent, et pas de casque pour tester. Fusionner aussi la caméra (couche B) dans la page XR.
-- **App mobile native** : la PWA mobile existe ; version native plus tard.
-- **Shell natif pour tuer le lag Electron** : gros chantier (Swift), non commencé. Alternative discutée à la place d'Electron.
-- **Repli chat → cerveau Claude** : quand la session Live est indisponible, faire répondre le chat texte via `claudecli` au lieu d'afficher « pas prête ». Proposé, **non implémenté** (en attente d'accord de Bryan).
-- **Réglage fin des expressions** par émotion : le moteur est continu/variable ; ajuster les signatures (colère plus marquée, etc.) selon le ressenti de Bryan (capture d'écran utile).
-- **Humeur « écoute »** à étendre au mobile / XR.
-
----
-
-## 4. Ce qui a été construit cette session (état)
-
-Visage vivant d'Ada :
-- `src/widget/Face.jsx` — visage SVG « écran » (EMO-like), **moteur d'expression continu** piloté par les hormones du brain (valence/éveil/fatigue) + signatures d'émotion dosées + micro-variations (jamais figé). Clignement, saccades, suivi curseur, larme/sueur/tremblement.
-- Tailles **S/M/L/XL + plein écran** (vignette). `electron/main.js` redimensionne la fenêtre (fix `setResizable` car `resizable:false` ignore `setBounds` sur macOS).
-- Présent sur **3 surfaces** : vignette flottante (`Widget.jsx`), HUD de l'UI principale (`App.jsx`, suit le curseur + micro), mobile (`MobileApp.jsx`).
-
-Signaux temps réel (sockets) :
-- `ada_affect` — humeur du brain, diffusée en continu par `server.py` (`get_affect_snapshot()`).
-- `ada_speaking` — « Ada parle », basé sur la **durée audio réelle** (`ada.py:_speaking_until`), diffusé à toutes les fenêtres → la bouche suit **toute la phrase** (fini le cut au milieu).
-- `pc_control_state` — pilotage PC (visage ambré/focalisé).
-- Token socket auto-injecté par Electron (`src/adaToken.js`).
-
-Rappel des briques des sessions précédentes (déjà en place) : contrôle PC animé façon Claude, cerveau hybride (`llm_router`), agent de code autonome (`dev_agent`), gate de sécurité (`security_gate`), reprompting (`reprompt`), client MCP générique (`external_mcp`), PWA, couches WebXR + caméra, passe perf (electron-performance).
-
----
-
-## 5. Contraintes & règles (à respecter par le relais)
-
-- **Voix = Gemini Native Audio uniquement.** Jamais ElevenLabs. Jamais changer la voix (Kore) sans validation.
-- **Autonome total**, mais garder le filet anti-catastrophe (`safe_exec` HARD_BLOCK : `rm -rf /`, fork bomb, wipe disque).
-- **Jamais** committer de secrets. `.env`, `backend/mcp_servers.json`, tokens → gitignored.
-- **Jamais LangGraph / framework agent lourd** — asyncio pur. Jamais localtuya (tinytuya).
-- Confirmations avant actions irréversibles (email, suppression) — sauf réglage autonome explicite.
-- Attribution des commits (voir CLAUDE.md du repo / la session).
-- Push via l'email noreply si GitHub bloque l'email privé : `git config user.email "16ze@users.noreply.github.com"`.
-
----
-
-## 6. Pièges récurrents rencontrés
-
-- **Port 8000 fantôme** : `address already in use` → `lsof -ti:8000 | xargs kill -9` avant de relancer.
-- **Mauvaise branche** : toujours vérifier `integration/widget-pc-control`.
-- **Chemin du repo** : sur disque externe (`/Volumes/disque dev/...`), pas dans `~`. Le trouver : `find /Volumes ~ -maxdepth 5 -name start_ada.sh`.
-- **Code Electron (`main.js`)** : ne se recharge pas à chaud → vrai redémarrage requis.
-- **Un « crash » d'Ada** a été signalé sans traceback — si ça revient, garder l'onglet backend ouvert et récupérer le `Traceback`.
+- **Double backend** : `start_ada.sh` lance un backend ET Electron peut en lancer un ;
+  le fix (`electron/main.js`) fait qu'Electron **poll le port 8000 ~3 s** et s'attache si pris
+  (message front « A.D.A Already Running »). Ne pas « corriger » en supprimant un des deux sans comprendre ce poll.
+- **Worktrees d'agents** : si tu délègues, repars toujours de `origin/integration/widget-pc-control`
+  (les worktrees ont démarré sur un mauvais commit par le passé).
+- **Volume externe + SSH** : le repo est sur `/Volumes/Disque dev/...` ; certains accès shell distants
+  échouent (Full Disk Access). Le `.command` du Bureau contourne en s'exécutant localement.
+- **Mode modulaire** vs **mode normal** : `isModularMode` sépare l'ancien OS déplaçable (visage flottant,
+  visualiseur hero, chat flottant, fenêtres outils) du nouveau shell conversation. Ne pas mélanger.
