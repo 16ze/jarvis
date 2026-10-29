@@ -22,6 +22,7 @@ import SettingsWindow from './components/SettingsWindow';
 import DocumentsWindow from './components/DocumentsWindow';
 import OsShell from './components/OsShell';
 import MobileApp from './components/MobileApp';
+import ConversationSidebar from './components/ConversationSidebar';
 import MarkdownMessage from './components/chat/MarkdownMessage';
 import MessageActions from './components/chat/MessageActions';
 import TypingIndicator from './components/chat/TypingIndicator';
@@ -87,6 +88,19 @@ function App() {
     const [messages, setMessages] = useState([]);
     const messagesEndRef = useRef(null);
     const [inputValue, setInputValue] = useState('');
+
+    // ── Historique multi-conversations (persistant, côté client) ─────────────
+    const [conversations, setConversations] = useState(() => {
+        try { const raw = localStorage.getItem('ada-conversations'); if (raw) return JSON.parse(raw); } catch (e) {}
+        return [];
+    });
+    const [activeConvId, setActiveConvId] = useState(() => {
+        try { return localStorage.getItem('ada-active-conv') || null; } catch (e) { return null; }
+    });
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+        try { return localStorage.getItem('ada-sidebar-collapsed') === '1'; } catch (e) { return false; }
+    });
+    const convSyncReady = useRef(false);
     const [cadData, setCadData] = useState(null);
     const [cadThoughts, setCadThoughts] = useState(''); // Streaming AI thoughts
     const [cadRetryInfo, setCadRetryInfo] = useState({ attempt: 1, maxAttempts: 3, error: null }); // Retry status
@@ -653,7 +667,9 @@ function App() {
 
         socket.on('terminal_output', (data) => {
             setTerminalEntries(prev => [...prev, { command: data.command, output: data.output }].slice(-100));
-            setShowTerminalWindow(true);
+            // En mode normal (conversation), ne pas couvrir le fil avec la fenêtre flottante.
+            // Les sorties restent accessibles via le terminal du mode modulaire / dock.
+            if (isModularModeRef.current) setShowTerminalWindow(true);
             if (data.command === '[PC]' || data.command === '[CHAT]') {
                 addMessage('System', data.output);
             }
@@ -1757,6 +1773,90 @@ function App() {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, adaSpeaking]);
 
+    // ── Gestion de l'historique de conversations ─────────────────────────────
+    const genConvId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const deriveConvTitle = (msgs, fallback) => {
+        const firstUser = (msgs || []).find((m) => m.sender === 'Bryan');
+        if (firstUser?.text) return firstUser.text.replace(/\s+/g, ' ').trim().slice(0, 40) || (fallback || 'Nouvelle conversation');
+        return fallback || 'Nouvelle conversation';
+    };
+
+    // Hydratation initiale : charge la conversation active (ou en crée une).
+    useEffect(() => {
+        const existing = conversations.find((c) => c.id === activeConvId);
+        if (existing) {
+            setMessages(existing.messages || []);
+        } else if (conversations.length) {
+            setActiveConvId(conversations[0].id);
+            setMessages(conversations[0].messages || []);
+        } else {
+            const id = genConvId();
+            setConversations([{ id, title: 'Nouvelle conversation', messages: [], updatedAt: Date.now() }]);
+            setActiveConvId(id);
+            setMessages([]);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Synchronise le fil vivant -> conversation active (en sautant le 1er run au montage).
+    useEffect(() => {
+        if (!convSyncReady.current) { convSyncReady.current = true; return; }
+        if (!activeConvId) return;
+        setConversations((prev) => prev.map((c) =>
+            c.id === activeConvId
+                ? { ...c, messages: messages.slice(-500), title: deriveConvTitle(messages, c.title), updatedAt: Date.now() }
+                : c
+        ));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [messages]);
+
+    // Persistance localStorage.
+    useEffect(() => {
+        try { localStorage.setItem('ada-conversations', JSON.stringify(conversations.slice(0, 60))); } catch (e) {}
+    }, [conversations]);
+    useEffect(() => {
+        try { if (activeConvId) localStorage.setItem('ada-active-conv', activeConvId); } catch (e) {}
+    }, [activeConvId]);
+    useEffect(() => {
+        try { localStorage.setItem('ada-sidebar-collapsed', sidebarCollapsed ? '1' : '0'); } catch (e) {}
+    }, [sidebarCollapsed]);
+
+    const newConversation = () => {
+        const id = genConvId();
+        setConversations((prev) => [{ id, title: 'Nouvelle conversation', messages: [], updatedAt: Date.now() }, ...prev]);
+        setActiveConvId(id);
+        setMessages([]);
+        setInputValue('');
+    };
+    const selectConversation = (id) => {
+        if (id === activeConvId) return;
+        const conv = conversations.find((c) => c.id === id);
+        setActiveConvId(id);
+        setMessages(conv?.messages || []);
+    };
+    const deleteConversation = (id) => {
+        const next = conversations.filter((c) => c.id !== id);
+        if (id === activeConvId) {
+            if (next.length) { setActiveConvId(next[0].id); setMessages(next[0].messages || []); setConversations(next); }
+            else {
+                const nid = genConvId();
+                setActiveConvId(nid); setMessages([]);
+                setConversations([{ id: nid, title: 'Nouvelle conversation', messages: [], updatedAt: Date.now() }]);
+            }
+        } else {
+            setConversations(next);
+        }
+    };
+    const renameConversation = (id, title) => {
+        setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title: (title || '').trim() || c.title } : c)));
+    };
+
+    // Liste triée pour la sidebar (plus récent d'abord).
+    const sortedConversations = useMemo(
+        () => [...conversations].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
+        [conversations]
+    );
+
     const togglePower = () => {
         if (isConnected) {
             stopFrontendMic();
@@ -2251,7 +2351,18 @@ function App() {
 
                 {/* ── Conversation centrale (mode normal, façon ChatGPT / Claude) ── */}
                 {!isModularMode && (
-                    <div className="relative z-10 flex w-full flex-1 min-h-0 justify-center px-4">
+                    <div className="relative z-10 flex w-full flex-1 min-h-0">
+                        <ConversationSidebar
+                            conversations={sortedConversations}
+                            activeId={activeConvId}
+                            collapsed={sidebarCollapsed}
+                            onToggle={() => setSidebarCollapsed((v) => !v)}
+                            onNew={newConversation}
+                            onSelect={selectConversation}
+                            onDelete={deleteConversation}
+                            onRename={renameConversation}
+                        />
+                        <div className="flex min-h-0 flex-1 justify-center px-4">
                         <div className="flex w-full max-w-3xl flex-col min-h-0">
                             {/* Présence : visage vivant + visualiseur discret + statut */}
                             <div className="flex shrink-0 flex-col items-center gap-2 pt-1 pb-4">
@@ -2322,6 +2433,9 @@ function App() {
                                                 <div key={i} className="ada-msg-in group flex flex-col gap-1">
                                                     <div className="max-w-full rounded-ada-lg border border-line bg-surface px-4 py-3 text-sm leading-relaxed text-ink shadow-ada-sm">
                                                         <MarkdownMessage text={m.text} />
+                                                        {isLastAda && isGenerating && (
+                                                            <span className="ml-0.5 inline-block h-4 w-[2px] translate-y-[3px] animate-pulse bg-accent align-middle" />
+                                                        )}
                                                     </div>
                                                     <div className="opacity-0 transition-opacity group-hover:opacity-100">
                                                         <MessageActions
@@ -2333,7 +2447,11 @@ function App() {
                                                 </div>
                                             );
                                         })}
-                                        {isGenerating && <TypingIndicator />}
+                                        {isGenerating && (() => {
+                                            const last = messages[messages.length - 1];
+                                            const lastIsAda = last && last.sender !== 'Bryan' && last.sender !== 'System';
+                                            return lastIsAda ? null : <TypingIndicator />;
+                                        })()}
                                         <div ref={messagesEndRef} />
                                     </div>
                                 )}
@@ -2350,6 +2468,7 @@ function App() {
                                     disabled={!socketConnected}
                                 />
                             </div>
+                        </div>
                         </div>
                     </div>
                 )}
