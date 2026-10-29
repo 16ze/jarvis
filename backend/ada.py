@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import io
+import inspect
 import os
 import sys
 import traceback
@@ -18,6 +19,12 @@ import numpy as np
 
 from google import genai
 from google.genai import types
+from text_streaming import (
+    TextDeltaCallback,
+    collect_gemini_stream,
+    decode_image_payload,
+    deduplicate_function_calls,
+)
 
 if sys.version_info < (3, 11, 0):
     import taskgroup, exceptiongroup
@@ -5920,8 +5927,14 @@ class AudioLoop:
 
     # ─── MODE TEXTE (Telegram / WhatsApp / bridges) ───────────────────────────
 
-    async def process_text_message(self, text: str) -> str:
-        """Traite un message texte avec TOUS les outils Ada (pour Telegram/WhatsApp)."""
+    async def process_text_message(
+        self,
+        text: str,
+        on_delta: TextDeltaCallback | None = None,
+        image_payload: dict[str, object] | None = None,
+        source: str = "Bryan",
+    ) -> str:
+        """Traite un message texte avec tous les outils Ada et streame la réponse."""
         try:
             from os_control_agent import is_local_first_task
 
@@ -5991,7 +6004,15 @@ class AudioLoop:
 
         text_tools = _strip_behavior(tools)
 
-        messages = [types.Content(role="user", parts=[types.Part(text=text)])]
+        user_parts = [types.Part(text=text)]
+        decoded_image = decode_image_payload(image_payload)
+        if decoded_image is not None:
+            image_bytes, mime_type = decoded_image
+            user_parts.insert(
+                0,
+                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+            )
+        messages = [types.Content(role="user", parts=user_parts)]
 
         for _ in range(8):
             # ═══ BRAIN INTEGRATION — début ═══
@@ -6000,8 +6021,7 @@ class AudioLoop:
                 default_thinking_budget=0,
             )
             # ═══ BRAIN INTEGRATION — fin ═══
-            response = await asyncio.to_thread(
-                client.models.generate_content,
+            stream = await client.aio.models.generate_content_stream(
                 model="gemini-2.5-flash",
                 contents=messages,
                 config=types.GenerateContentConfig(
@@ -6014,25 +6034,28 @@ class AudioLoop:
                     ),
                 ),
             )
+            streamed = await collect_gemini_stream(stream, on_delta=on_delta)
             # ═══ BRAIN INTEGRATION — début ═══
             brain.notify_llm_response()
             # ═══ BRAIN INTEGRATION — fin ═══
-            candidate = response.candidates[0]
-            content = candidate.content
-            parts = content.parts if (content and content.parts) else []
+            parts = deduplicate_function_calls(streamed.parts)
 
             function_calls = [p for p in parts if p.function_call]
             if not function_calls:
-                reply = "\n".join(p.text for p in parts if p.text).strip() or "..."
+                reply = streamed.text.strip() or "..."
+                if reply == "..." and on_delta is not None:
+                    callback_result = on_delta(reply)
+                    if inspect.isawaitable(callback_result):
+                        await callback_result
                 # Sauvegarder l'échange en mémoire persistante
                 try:
-                    memory.append_to_session(f"Bryan (Telegram): {text}")
+                    memory.append_to_session(f"{source}: {text}")
                     memory.append_to_session(f"ADA: {reply}")
                 except Exception:
                     pass
                 return reply
 
-            messages.append(content)
+            messages.append(types.Content(role="model", parts=parts))
 
             async def _exec_one(p):
                 fc = p.function_call
@@ -6046,7 +6069,12 @@ class AudioLoop:
             tool_parts = await asyncio.gather(*[_exec_one(p) for p in function_calls])
             messages.append(types.Content(role="user", parts=list(tool_parts)))
 
-        return "Désolé, je n'ai pas pu terminer cette tâche."
+        reply = "Désolé, je n'ai pas pu terminer cette tâche."
+        if on_delta is not None:
+            callback_result = on_delta(reply)
+            if inspect.isawaitable(callback_result):
+                await callback_result
+        return reply
 
     async def _ensure_vision_agent(self) -> VisionObjectAgent:
         """Lazy-init du singleton VisionObjectAgent (partage la frame avec MediaPipe)."""

@@ -1981,7 +1981,10 @@ async def handle_external_message(
         except Exception as _e:
             print(f"[REPROMPT] skip: {_e}")
         if _ada_loop is not None:
-            reply = await _ada_loop.process_text_message(text)
+            reply = await _ada_loop.process_text_message(
+                text,
+                source=f"Bryan ({source})",
+            )
         else:
             reply = await _agent.run(text)
     except Exception as e:

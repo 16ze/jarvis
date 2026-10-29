@@ -129,6 +129,7 @@ app_socketio = socketio.ASGIApp(sio, app)
 # journalisée via monitoring (compteur interrogeable) et renvoyée en 500 JSON
 # propre — plus aucune erreur « en silence ». Voir GET /health/errors.
 import monitoring
+from text_streaming import TextGenerationState, run_streamed_text_turn
 from fastapi.responses import JSONResponse
 
 
@@ -172,10 +173,23 @@ standalone_web_agent = WebAgent()
 cast_agent = CastAgent()
 hand_gesture_os_controller = HandGestureOsController()
 standalone_os_control_agent = OsControlAgent()
+text_generation_state = TextGenerationState()
 JARVIS_ROOT = Path(os.getenv("JARVIS_ROOT", Path(__file__).parent.parent)).resolve()
 workspace_manager = WorkspaceManager(JARVIS_ROOT)
 workspace_policy = WorkspacePolicy()
 SETTINGS_FILE = "settings.json"
+
+
+def _ada_response_active() -> bool:
+    """Retourne l'état UI commun aux réponses audio et texte."""
+    import time as _time
+
+    audio_active = bool(
+        audio_loop
+        and _time.monotonic() < getattr(audio_loop, "_speaking_until", 0.0)
+    )
+    return audio_active or text_generation_state.is_active
+
 
 DEFAULT_SETTINGS = {
     "face_auth_enabled": False, # Default OFF as requested
@@ -373,16 +387,14 @@ async def startup_event():
         asyncio.create_task(_affect_loop())
         print("[SERVER] ada_affect broadcaster enregistré")
 
-    # « Ada parle » → animation de la bouche du visage, sur TOUTES les fenêtres.
-    # Source de vérité unique : audio_loop._speaking_until (durée réelle du son
-    # envoyé). Diffusé seulement au changement, à ~20 Hz pour une bouche réactive.
+    # « Ada répond » → animation de la bouche et état de génération du chat sur
+    # TOUTES les fenêtres. L'audio suit sa durée réelle ; le texte suit le tour
+    # de génération, y compris quand la session Gemini Live est indisponible.
     async def _speaking_loop():
-        import time as _t
         last = None
         while True:
             try:
-                al = audio_loop
-                on = bool(al and _t.monotonic() < getattr(al, "_speaking_until", 0.0))
+                on = _ada_response_active()
                 if on != last:
                     last = on
                     await sio.emit("ada_speaking", {"on": on})
@@ -1171,33 +1183,38 @@ async def user_input(sid, data):
         }, room=sid)
         return
 
-    if not audio_loop.session:
-        print("[SERVER DEBUG] [Error] Session is None. Cannot send text.")
-        await sio.emit('terminal_output', {
-            "command": "[CHAT]",
-            "output": "La session Ada Live n'est pas encore prête. Réessaie dans quelques secondes ou démarre Ada."
-        }, room=sid)
-        return
-
     if text:
-        print(f"[SERVER DEBUG] Sending message to model: '{text}'")
+        print(f"[SERVER DEBUG] Streaming text message to model: '{text}'")
         
         # Log User Input to Project History
         if audio_loop and audio_loop.project_manager:
             audio_loop.project_manager.log_chat("User", text)
-            
-        # Use the same 'send' method that worked for audio, as 'send_realtime_input' and 'send_client_content' seem unstable in this env
-        # INJECT VIDEO FRAME IF AVAILABLE (VAD-style logic for Text Input)
-        if audio_loop and audio_loop._latest_image_payload:
-            print(f"[SERVER DEBUG] Piggybacking video frame with text input.")
-            try:
-                # Send frame first
-                await audio_loop.session.send(input=audio_loop._latest_image_payload, end_of_turn=False)
-            except Exception as e:
-                print(f"[SERVER DEBUG] Failed to send piggyback frame: {e}")
-                
-        await audio_loop.session.send(input=text, end_of_turn=True)
-        print(f"[SERVER DEBUG] Message sent to model successfully.")
+
+        async def _emit_delta(delta: str) -> None:
+            if not delta:
+                return
+            await sio.emit('transcription', {"sender": "ADA", "text": delta})
+
+        async def _set_active(on: bool) -> None:
+            await sio.emit("ada_speaking", {"on": on})
+
+        async def _generate(on_delta) -> str:
+            return await audio_loop.process_text_message(
+                text,
+                on_delta=on_delta,
+                image_payload=audio_loop._latest_image_payload,
+                source="Bryan (desktop)",
+            )
+
+        await run_streamed_text_turn(
+            generate=_generate,
+            emit_delta=_emit_delta,
+            set_active=_set_active,
+            state=text_generation_state,
+            remaining_active=_ada_response_active,
+            on_error=lambda exc: monitoring.log_exception("socket:user_input", exc),
+        )
+        print("[SERVER DEBUG] Text response streamed successfully.")
 
 import json
 from datetime import datetime
