@@ -22,6 +22,10 @@ import SettingsWindow from './components/SettingsWindow';
 import DocumentsWindow from './components/DocumentsWindow';
 import OsShell from './components/OsShell';
 import MobileApp from './components/MobileApp';
+import MarkdownMessage from './components/chat/MarkdownMessage';
+import MessageActions from './components/chat/MessageActions';
+import TypingIndicator from './components/chat/TypingIndicator';
+import ChatComposer from './components/chat/ChatComposer';
 import {
     DEFAULT_HAND_CONTROL_CONFIG,
     OneEuroFilter2D,
@@ -81,6 +85,7 @@ function App() {
     const [isVideoOn, setIsVideoOn] = useState(false); // Video state
     const [isScreenMode, setIsScreenMode] = useState(false); // Ada sees screen
     const [messages, setMessages] = useState([]);
+    const messagesEndRef = useRef(null);
     const [inputValue, setInputValue] = useState('');
     const [cadData, setCadData] = useState(null);
     const [cadThoughts, setCadThoughts] = useState(''); // Streaming AI thoughts
@@ -1747,6 +1752,11 @@ function App() {
         setMessages(prev => [...prev, { sender, text, time: new Date().toLocaleTimeString() }]);
     };
 
+    // Autoscroll du fil de conversation (mode normal).
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, adaSpeaking]);
+
     const togglePower = () => {
         if (isConnected) {
             stopFrontendMic();
@@ -1803,6 +1813,31 @@ function App() {
         addMessage('Bryan', text);
         setInputValue('');
     };
+
+    // ── Actions de conversation (niveau ChatGPT/Claude) ──────────────────────
+    // Copie le texte d'un message dans le presse-papier.
+    const handleCopyMessage = async (text) => {
+        try { await navigator.clipboard.writeText(text || ''); } catch (e) { /* refusé */ }
+    };
+
+    // Régénère : renvoie le dernier message de Bryan au backend (nouvelle réponse d'Ada).
+    const handleRegenerate = () => {
+        if (!socket.connected) {
+            addMessage('System', 'Connexion à Ada interrompue. Réessaie dans un instant.');
+            return;
+        }
+        const lastUser = [...messages].reverse().find((m) => m.sender === 'Bryan');
+        if (lastUser?.text) socket.emit('user_input', { text: lastUser.text });
+    };
+
+    // Stop : coupe immédiatement la voix d'Ada côté client (barge-in local).
+    const handleStopGeneration = () => {
+        try { stopPlaybackAudio(); } catch (e) { /* hors audio */ }
+        try { socket.emit('clear_audio'); } catch (e) { /* best-effort */ }
+    };
+
+    // Ada « répond » tant que le backend joue de l'audio (source de vérité ada_speaking).
+    const isGenerating = adaSpeaking;
 
     const handleMinimize = () => ipcRenderer.send('window-minimize');
     const handleMaximize = () => ipcRenderer.send('window-maximize');
@@ -2176,16 +2211,19 @@ function App() {
 
             {/* Main Content */}
             <div className="flex-1 relative z-10 flex flex-col items-center justify-center">
-                {/* Visage vivant d'Ada — l'expression montre l'humeur, sans texte */}
-                <div className="absolute top-[76px] left-4 z-40 flex flex-col items-center pointer-events-none select-none">
-                    <Face affect={adaAffect} talking={adaSpeaking} acting={adaPiloting} followCursor micRef={micAudioDataRef} size={96} />
-                </div>
+                {/* Visage vivant d'Ada — flottant, mode modulaire uniquement */}
+                {isModularMode && (
+                    <div className="absolute top-[76px] left-4 z-40 flex flex-col items-center pointer-events-none select-none">
+                        <Face affect={adaAffect} talking={adaSpeaking} acting={adaPiloting} followCursor micRef={micAudioDataRef} size={96} />
+                    </div>
+                )}
 
-                {/* Central Visualizer (AI Audio) */}
+                {/* Central Visualizer (AI Audio) — hero déplaçable du mode modulaire */}
+                {isModularMode && (
                 <div
                     id="visualizer"
                     className={`absolute flex items-center justify-center transition-all duration-200 overflow-visible
-                        ${isModularMode ? (activeDragElement === 'visualizer' ? 'ring-2 ring-accent/40 bg-ink/[0.05]' : 'ring-1 ring-line bg-ink/[0.03]') + ' rounded-2xl pointer-events-auto' : 'pointer-events-none'}
+                        ${activeDragElement === 'visualizer' ? 'ring-2 ring-accent/40 bg-ink/[0.05]' : 'ring-1 ring-line bg-ink/[0.03]'} rounded-2xl pointer-events-auto
                     `}
                     style={{
                         left: elementPositions.visualizer.x,
@@ -2207,8 +2245,114 @@ function App() {
                             reduceMotion={isElectron}
                         />
                     </div>
-                    {isModularMode && <div className={`absolute top-2 right-2 text-xs font-semibold tracking-widest z-20 ${activeDragElement === 'visualizer' ? 'text-accent' : 'text-muted'}`}>VISUALIZER</div>}
+                    <div className={`absolute top-2 right-2 text-xs font-semibold tracking-widest z-20 ${activeDragElement === 'visualizer' ? 'text-accent' : 'text-muted'}`}>VISUALIZER</div>
                 </div>
+                )}
+
+                {/* ── Conversation centrale (mode normal, façon ChatGPT / Claude) ── */}
+                {!isModularMode && (
+                    <div className="relative z-10 flex w-full flex-1 min-h-0 justify-center px-4">
+                        <div className="flex w-full max-w-3xl flex-col min-h-0">
+                            {/* Présence : visage vivant + visualiseur discret + statut */}
+                            <div className="flex shrink-0 flex-col items-center gap-2 pt-1 pb-4">
+                                <div className="relative grid place-items-center">
+                                    <div className="pointer-events-none absolute opacity-60">
+                                        <Visualizer
+                                            audioData={aiAudioData}
+                                            audioDataRef={aiAudioDataRef}
+                                            isListening={isConnected && !isMuted}
+                                            intensity={isElectron ? null : audioAmp}
+                                            width={148}
+                                            height={148}
+                                            reduceMotion={isElectron}
+                                        />
+                                    </div>
+                                    <Face
+                                        affect={adaAffect}
+                                        talking={adaSpeaking}
+                                        acting={adaPiloting}
+                                        micRef={isMuted ? null : micAudioDataRef}
+                                        size={72}
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2 text-[12px] text-muted">
+                                    <span className={`inline-block h-1.5 w-1.5 rounded-full transition-colors ${socketConnected ? 'bg-positive' : 'bg-muted/50'}`} />
+                                    <span>
+                                        {!socketConnected
+                                            ? 'Reconnexion…'
+                                            : adaPiloting
+                                            ? 'Ada pilote l’écran'
+                                            : isGenerating
+                                            ? 'Ada répond…'
+                                            : isConnected && !isMuted
+                                            ? 'À l’écoute'
+                                            : 'En veille'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Fil de conversation */}
+                            <div className="min-h-0 flex-1 overflow-y-auto px-1">
+                                {messages.length === 0 ? (
+                                    <div className="flex h-full flex-col items-center justify-center text-center">
+                                        <p className="text-lg font-medium text-ink">Bonjour Bryan.</p>
+                                        <p className="mt-1 text-sm text-muted">Parle à Ada ou écris un message pour commencer.</p>
+                                    </div>
+                                ) : (
+                                    <div className="mx-auto flex max-w-2xl flex-col gap-5 py-2">
+                                        {messages.map((m, i) => {
+                                            if (m.sender === 'System') {
+                                                return (
+                                                    <div key={i} className="ada-msg-in mx-auto max-w-[90%] text-center">
+                                                        <span className="rounded-full border border-line bg-surface px-3 py-1 text-[11px] text-muted">{m.text}</span>
+                                                    </div>
+                                                );
+                                            }
+                                            if (m.sender === 'Bryan') {
+                                                return (
+                                                    <div key={i} className="ada-msg-in flex justify-end">
+                                                        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-ada-lg bg-accent px-4 py-2.5 text-sm leading-relaxed text-white shadow-ada-sm">
+                                                            {m.text}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+                                            const isLastAda = i === messages.length - 1;
+                                            return (
+                                                <div key={i} className="ada-msg-in group flex flex-col gap-1">
+                                                    <div className="max-w-full rounded-ada-lg border border-line bg-surface px-4 py-3 text-sm leading-relaxed text-ink shadow-ada-sm">
+                                                        <MarkdownMessage text={m.text} />
+                                                    </div>
+                                                    <div className="opacity-0 transition-opacity group-hover:opacity-100">
+                                                        <MessageActions
+                                                            onCopy={() => handleCopyMessage(m.text)}
+                                                            onRegenerate={handleRegenerate}
+                                                            canRegenerate={isLastAda}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        {isGenerating && <TypingIndicator />}
+                                        <div ref={messagesEndRef} />
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Zone de saisie */}
+                            <div className="shrink-0 pt-3 pb-1">
+                                <ChatComposer
+                                    value={inputValue}
+                                    onChange={setInputValue}
+                                    onSend={() => handleSend()}
+                                    onStop={handleStopGeneration}
+                                    isGenerating={isGenerating}
+                                    disabled={!socketConnected}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Video Feed Overlay */}
                 {/* Floating Project Label */}
@@ -2393,8 +2537,8 @@ function App() {
                     </div>
                 )}
 
-                {/* Chat Module */}
-                {showChatWindow && (
+                {/* Chat Module — fenêtre flottante, mode modulaire uniquement (le mode normal a le fil central) */}
+                {showChatWindow && isModularMode && (
                     <ChatModule
                         messages={messages}
                         inputValue={inputValue}

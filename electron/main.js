@@ -43,6 +43,29 @@ let pythonProcess;
 let shuttingDown = false;
 let backendHealthOk = false;
 let pythonStderrBuf = '';
+// Vrai uniquement si CE process Electron a lui-même spawné le backend. On ne
+// tue au shutdown QUE ce backend-là : jamais un backend externe (start_ada.sh,
+// lancement manuel) auquel on s'est seulement attaché.
+let backendSpawnedByUs = false;
+
+// ─── INSTANCE UNIQUE ─────────────────────────────────────────────────────────
+// Empêche plusieurs fenêtres Electron (donc plusieurs backends concurrents sur
+// le port 8000). Si le verrou n'est pas obtenu, une instance tourne déjà : on
+// quitte proprement et on lui redonne le focus via l'événement 'second-instance'.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+    console.log('[Instance] Une instance d\'Ada tourne déjà — fermeture de ce doublon.');
+    app.quit();
+} else {
+    app.on('second-instance', () => {
+        // Un second lancement a été tenté : on refocalise la fenêtre existante.
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            if (!mainWindow.isVisible()) mainWindow.show();
+            mainWindow.focus();
+        }
+    });
+}
 
 const reactiveBrainDefaults = {
     BRAIN_ENABLED: 'true',
@@ -376,6 +399,7 @@ function startPythonBackend() {
         cwd: path.join(__dirname, '../backend'),
         env: withReactiveBrainDefaults({ ...process.env, PYTHONUNBUFFERED: '1' }),
     });
+    backendSpawnedByUs = true;
 
     pythonProcess.on('error', (err) => {
         console.error(`[Python spawn error]: ${err.message}`);
@@ -542,11 +566,16 @@ app.whenReady().then(() => {
         safeOpenExternal(payload.url);
     });
 
-    checkBackendPort(8000).then((isTaken) => {
+    // On NE décide de spawner un backend qu'après un court sondage du port 8000
+    // (~3 s). Cela ferme la race « double backend » : si start_ada.sh (ou un
+    // lancement manuel) est en train de binder le port, le poll le détecte avant
+    // qu'Electron n'en lance un second.
+    pollBackendPortTaken(8000, 3000).then((isTaken) => {
         if (isTaken) {
-            console.log('Port 8000 is taken. Assuming backend is already running manually.');
+            console.log('[Backend] Port 8000 déjà occupé — backend externe détecté, on s\'y attache (aucun spawn).');
             waitForBackend().then(createWindow);
         } else {
+            console.log('[Backend] Port 8000 libre — démarrage du backend par Electron.');
             startPythonBackend();
             // Imports lourds + disque lent : laisser le temps avant le healthcheck
             setTimeout(() => {
@@ -576,6 +605,27 @@ function checkBackendPort(port) {
             resolve(false);
         });
         server.listen(port);
+    });
+}
+
+// Sonde le port à répétition pendant `timeoutMs` (poll ~250 ms). Renvoie `true`
+// dès que le port est occupé, sinon `false` à l'expiration. Absorbe la race où
+// un backend externe est en cours de bind quand Electron démarre.
+function pollBackendPortTaken(port, timeoutMs = 3000) {
+    const deadline = Date.now() + timeoutMs;
+    return new Promise((resolve) => {
+        const attempt = () => {
+            checkBackendPort(port).then((taken) => {
+                if (taken) {
+                    resolve(true);
+                } else if (Date.now() >= deadline) {
+                    resolve(false);
+                } else {
+                    setTimeout(attempt, 250);
+                }
+            });
+        };
+        attempt();
     });
 }
 
@@ -638,6 +688,13 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
     shuttingDown = true;
+    // On ne tue QUE le backend qu'Electron a lui-même spawné. Un backend externe
+    // (start_ada.sh, lancement manuel) auquel on s'est seulement attaché doit
+    // survivre à la fermeture de cette fenêtre.
+    if (!backendSpawnedByUs || !pythonProcess) {
+        console.log('App closing... Aucun backend spawné par Electron à arrêter (backend externe laissé intact).');
+        return;
+    }
     console.log('App closing... Killing Python backend.');
     if (pythonProcess) {
         if (process.platform === 'win32') {

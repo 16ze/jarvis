@@ -22,6 +22,8 @@ pkill -f "$JARVIS_ROOT" 2>/dev/null
 #    dans sa ligne de commande : on cible aussi server.py de ce dossier.
 pkill -f "python .*${JARVIS_ROOT}/backend/server.py" 2>/dev/null
 pkill -f "npm exec electron" 2>/dev/null
+# Electron lancé depuis ce projet (argv contient le chemin du projet).
+pkill -f "[Ee]lectron .*${JARVIS_ROOT}" 2>/dev/null
 
 sleep 2
 
