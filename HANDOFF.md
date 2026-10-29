@@ -5,6 +5,25 @@
 
 ---
 
+## MISSION (objectif prioritaire)
+
+**Amener Ada à un niveau de maturité équivalent à ChatGPT et Codex — côté UX/UI
+ET côté moteur. Objectif : 100 %.**
+
+- Style visé : propre et mature façon **Apple** (sobre), **pas** cyberpunk/néon.
+- Disponible sur **plusieurs devices** : desktop (Electron), mobile et tablette,
+  la même Ada partout.
+- Exigence absolue de Bryan : **aucune régression, aucun conflit, aucun bug.**
+  Déléguer à plusieurs agents en périmètres disjoints quand c'est pertinent, et
+  toujours vérifier (build + tests) avant de pousser/déployer.
+- Mode de travail attendu : **autonomie maximale** — lancer, intégrer, builder,
+  pousser, déployer sur le Mac et montrer le résultat ; ne demander que si réellement bloqué.
+
+État d'avancement estimé au handoff : **~60–65 %** de la maturité « produit grand
+public » façon ChatGPT (voir §1 pour le détail livré, §2–§3 pour ce qui reste).
+
+---
+
 ## 0. État du dépôt (vérité au moment du handoff)
 
 - **Repo** : github.com/16ze/jarvis
