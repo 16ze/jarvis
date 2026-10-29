@@ -1,9 +1,10 @@
 :root {
-    --jv-cyan: #22d3ee;
-    --jv-cyan-dim: #0e7490;
-    --jv-bg: rgba(6, 12, 16, 0.92);
-    --jv-bg-soft: rgba(12, 24, 30, 0.6);
-    --jv-border: rgba(34, 211, 238, 0.28);
+    /* Accent sobre (bleu doux) cohérent avec le visage et le thème Apple-clean. */
+    --jv-cyan: #6e9fd4;
+    --jv-cyan-dim: #41678f;
+    --jv-bg: rgba(22, 24, 28, 0.94);
+    --jv-bg-soft: rgba(40, 42, 48, 0.7);
+    --jv-border: rgba(255, 255, 255, 0.12);
 }
 
 * { box-sizing: border-box; }
