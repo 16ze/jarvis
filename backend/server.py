@@ -124,6 +124,26 @@ app.add_middleware(
 )
 app_socketio = socketio.ASGIApp(sio, app)
 
+# ─── MONITORING (additif, non intrusif) ───────────────────────────────────────
+# Gestionnaire d'exception global : toute erreur non catchée d'une route est
+# journalisée via monitoring (compteur interrogeable) et renvoyée en 500 JSON
+# propre — plus aucune erreur « en silence ». Voir GET /health/errors.
+import monitoring
+from fastapi.responses import JSONResponse
+
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request, exc):
+    # On ne masque pas les HTTPException volontaires (laissées au handler FastAPI).
+    if isinstance(exc, HTTPException):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    monitoring.log_exception(f"http:{request.method} {request.url.path}", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Erreur interne du serveur.", "type": type(exc).__name__},
+    )
+
+
 import signal
 
 # --- SHUTDOWN HANDLER ---
@@ -428,6 +448,15 @@ async def health_endpoint():
     if not _health_report:
         _health_report = await build_health_report()
     return _health_report
+
+
+@app.get("/health/errors")
+async def health_errors_endpoint():
+    """Statistiques d'erreurs observées (compteur monitoring en mémoire).
+
+    Permet de vérifier d'un coup d'œil qu'aucune erreur n'est passée en silence :
+    total, répartition par contexte/type, et les dernières erreurs (secrets masqués)."""
+    return monitoring.get_error_stats()
 
 
 @app.get("/status")

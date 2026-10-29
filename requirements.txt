@@ -51,6 +51,7 @@ arxiv
 # ultralytics>=8.4.0  # ← décommenter pour activer YOLO (vérifier compat numpy 2.x avant)
 torch>=2.2.0
 torchvision>=0.17.0
+pytest>=7.0
 pytest-asyncio>=0.23
 
 # Cerveau hybride : modèles Claude pour le raisonnement/codage (voix reste Gemini)
