@@ -54,5 +54,5 @@ jobs:
         # que le build et les tests unitaires ne voient pas.
         run: |
           npm run web > /tmp/vite.log 2>&1 &
-          npx wait-on -t 60000 http://127.0.0.1:5173/
+          npx wait-on -t 90000 http://127.0.0.1:5173/ || { echo "::error::vite non prêt (wait-on timeout)"; echo '--- vite.log ---'; cat /tmp/vite.log; exit 1; }
           SMOKE_URL=http://127.0.0.1:5173/ npm run smoke

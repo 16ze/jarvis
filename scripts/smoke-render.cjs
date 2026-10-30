@@ -23,9 +23,16 @@ const VIEWPORTS = [
 (async () => {
     const { chromium } = require('playwright');
     let failed = false;
-    // --no-proxy-server : le serveur local ne doit jamais passer par un proxy
-    // (sans effet en CI ; indispensable dans un environnement derrière proxy).
-    const browser = await chromium.launch({ args: ['--no-proxy-server'] });
+    let browser;
+    try {
+        // --no-sandbox : requis sur la plupart des runners CI (conteneur non-root).
+        // --no-proxy-server : le serveur local ne doit jamais passer par un proxy
+        // (sans effet en CI ; indispensable dans un environnement derrière proxy).
+        browser = await chromium.launch({ args: ['--no-sandbox', '--no-proxy-server'] });
+    } catch (e) {
+        console.log(`::error::smoke: échec du lancement de Chromium — ${e.message.split('\n')[0]}`);
+        process.exit(1);
+    }
     try {
         for (const vp of VIEWPORTS) {
             const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
@@ -69,7 +76,7 @@ const VIEWPORTS = [
             }
         }
     } finally {
-        await browser.close().catch(() => {});
+        if (browser) await browser.close().catch(() => {});
     }
     process.exit(failed ? 1 : 0);
 })();
