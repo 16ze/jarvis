@@ -23,7 +23,10 @@ jobs:
         with:
           python-version: '3.11'
       - name: Dépendances de test (lean)
-        run: python -m pip install --upgrade pip && pip install "pytest>=7.0" "pytest-asyncio>=0.23" "fastapi>=0.110"
+        # numpy est requis par conftest.py et la couche vision (yolo/vision_*) ;
+        # fastapi par api_auth. Les modules lourds (opencv, chromadb, torch,
+        # mediapipe, ultralytics) ne sont pas importés au chargement des tests.
+        run: python -m pip install --upgrade pip && pip install "pytest>=7.0" "pytest-asyncio>=0.23" "fastapi>=0.110" "numpy"
       - name: pytest
         run: python -m pytest backend/tests -q
 
