@@ -1,0 +1,57 @@
+#!/usr/bin/env node
+/*
+ * Smoke-test de rendu — garde-fou anti « écran blanc ».
+ *
+ * Suppose qu'un serveur vite sert déjà l'application (par défaut localhost:5173 ;
+ * surchargeable via SMOKE_URL). La CI lance `npm run web` en arrière-plan puis
+ * `npx wait-on tcp:5173` avant d'appeler ce script.
+ *
+ * Charge l'app en Chromium headless sur un gabarit desktop ET mobile et échoue
+ * si une erreur de page survient au render (p.ex. un ReferenceError/TDZ comme
+ * « Cannot access 'adaSpeaking' before initialization ») ou si #root reste vide.
+ * Les erreurs console de WebSocket (pas de backend en CI) sont ignorées.
+ *
+ * Sortie : 0 si tout rend, 1 sinon.
+ */
+const URL = process.env.SMOKE_URL || 'http://localhost:5173/';
+const MIN_ROOT_LEN = 500;
+const VIEWPORTS = [
+    { name: 'desktop', width: 1280, height: 800 },
+    { name: 'mobile', width: 390, height: 844 },
+];
+
+(async () => {
+    const { chromium } = require('playwright');
+    let failed = false;
+    // --no-proxy-server : le serveur local ne doit jamais passer par un proxy
+    // (sans effet en CI ; indispensable dans un environnement derrière proxy).
+    const browser = await chromium.launch({ args: ['--no-proxy-server'] });
+    try {
+        for (const vp of VIEWPORTS) {
+            const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
+            const pageErrors = [];
+            page.on('pageerror', (e) => pageErrors.push(String((e && (e.stack || e.message)) || e)));
+            try {
+                await page.goto(URL, { waitUntil: 'load', timeout: 20000 });
+            } catch (e) {
+                pageErrors.push('goto: ' + e.message);
+            }
+            await page.waitForTimeout(2500);
+            const rootLen = await page.evaluate(
+                () => (document.getElementById('root')?.innerHTML || '').length
+            );
+            await page.close();
+
+            const ok = pageErrors.length === 0 && rootLen >= MIN_ROOT_LEN;
+            console.log(`[smoke:${vp.name}] root=${rootLen} pageErrors=${pageErrors.length} -> ${ok ? 'OK' : 'ECHEC'}`);
+            if (!ok) {
+                failed = true;
+                pageErrors.slice(0, 3).forEach((e) => console.error('  - ' + e.split('\n')[0]));
+                if (rootLen < MIN_ROOT_LEN) console.error(`  - #root quasi vide (${rootLen} < ${MIN_ROOT_LEN})`);
+            }
+        }
+    } finally {
+        await browser.close().catch(() => {});
+    }
+    process.exit(failed ? 1 : 0);
+})();

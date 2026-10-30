@@ -46,3 +46,13 @@ jobs:
         run: npm run test
       - name: Build de production
         run: npm run build
+      - name: Navigateur de smoke-test (chromium)
+        run: npx playwright install --with-deps chromium
+      - name: Smoke-test de rendu (anti écran blanc)
+        # Lance vite, attend qu'il réponde, puis vérifie que l'app rend (desktop
+        # + mobile) sans erreur de page. Attrape les crashs de render (TDZ, etc.)
+        # que le build et les tests unitaires ne voient pas.
+        run: |
+          npm run web > /tmp/vite.log 2>&1 &
+          npx wait-on -t 60000 http://127.0.0.1:5173/
+          SMOKE_URL=http://127.0.0.1:5173/ npm run smoke
