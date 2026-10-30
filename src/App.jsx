@@ -1858,9 +1858,11 @@ function App() {
     };
 
     // Autoscroll du fil de conversation (mode normal).
+    // NB : on dépend des states bruts (déclarés plus haut) et non de la const
+    // dérivée `adaSpeaking` (déclarée plus bas) pour éviter un TDZ au render.
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages, adaSpeaking]);
+    }, [messages, adaVoiceSpeaking, adaTextSpeaking, requestPending]);
 
     // ── Gestion de l'historique de conversations ─────────────────────────────
     const genConvId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
