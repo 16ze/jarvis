@@ -2575,6 +2575,9 @@ function App() {
                     inputValue={inputValue}
                     setInputValue={setInputValue}
                     handleSend={handleSend}
+                    attachment={pendingAttachment}
+                    onPickImage={handlePickImage}
+                    onClearAttachment={handleClearAttachment}
                     handleStopGeneration={handleStopGeneration}
                     handleEditMessage={handleEditMessage}
                     handleCopyMessage={handleCopyMessage}

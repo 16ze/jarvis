@@ -31,6 +31,9 @@ const MobileApp = ({
     inputValue,
     setInputValue,
     handleSend,
+    attachment = null,
+    onPickImage,
+    onClearAttachment,
     handleStopGeneration,
     handleEditMessage,
     handleCopyMessage,
@@ -193,15 +196,25 @@ const MobileApp = ({
                 }
                 if (mine) {
                     return (
-                        <EditableUserMessage
-                            key={messageIndex}
-                            text={msg.text}
-                            edited={msg.edited}
-                            disabled={adaSpeaking}
-                            alwaysShowActions
-                            onCopy={() => handleCopyMessage?.(msg.text)}
-                            onSave={(nextText) => handleEditMessage?.(messageIndex, nextText)}
-                        />
+                        <div key={messageIndex} className="flex flex-col items-end gap-1">
+                            {msg.image && (
+                                <img
+                                    src={msg.image}
+                                    alt="pièce jointe"
+                                    className="max-h-52 max-w-[80%] rounded-ada-lg border border-line object-cover shadow-ada-sm"
+                                />
+                            )}
+                            {(msg.text || !msg.image) && (
+                                <EditableUserMessage
+                                    text={msg.text}
+                                    edited={msg.edited}
+                                    disabled={adaSpeaking}
+                                    alwaysShowActions
+                                    onCopy={() => handleCopyMessage?.(msg.text)}
+                                    onSave={(nextText) => handleEditMessage?.(messageIndex, nextText)}
+                                />
+                            )}
+                        </div>
                     );
                 }
                 return (
@@ -231,6 +244,9 @@ const MobileApp = ({
             isGenerating={adaSpeaking}
             disabled={!socket?.connected}
             placeholder="Écrire à Ada…"
+            attachment={attachment}
+            onPickImage={onPickImage}
+            onClearAttachment={onClearAttachment}
         />
     );
 
