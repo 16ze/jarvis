@@ -2018,30 +2018,72 @@ function App() {
         }
     };
 
-    const startTextRequest = (text) => {
+    // Pièce jointe image en attente d'envoi (format { name, mimeType, data(base64), previewUrl }).
+    const [pendingAttachment, setPendingAttachment] = useState(null);
+
+    const startTextRequest = (text, image = null) => {
         if (requestPendingRef.current) return false;
         const requestId = globalThis.crypto?.randomUUID?.()
             || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
         currentRequestIdRef.current = requestId;
         requestPendingRef.current = true;
         setRequestPending(true);
-        socket.emit('user_input', { text, requestId });
+        const payload = { text, requestId };
+        if (image?.data) payload.image = { mime_type: image.mimeType, data: image.data };
+        socket.emit('user_input', payload);
         return true;
+    };
+
+    // Sélection d'une image dans le composer → base64 + aperçu.
+    const handlePickImage = (file) => {
+        if (!file || !String(file.type || '').startsWith('image/')) return;
+        if (file.size > 6 * 1024 * 1024) {
+            addMessage('System', 'Image trop lourde (max 6 Mo).');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = String(reader.result || '');
+            const comma = result.indexOf(',');
+            const data = comma === -1 ? '' : result.slice(comma + 1);
+            if (!data) return;
+            try { if (pendingAttachment?.previewUrl) URL.revokeObjectURL(pendingAttachment.previewUrl); } catch (e) {}
+            setPendingAttachment({ name: file.name, mimeType: file.type, data, previewUrl: URL.createObjectURL(file) });
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleClearAttachment = () => {
+        try { if (pendingAttachment?.previewUrl) URL.revokeObjectURL(pendingAttachment.previewUrl); } catch (e) {}
+        setPendingAttachment(null);
     };
 
     const handleSend = (e) => {
         if (e?.key && e.key !== 'Enter') return;
         if (requestPendingRef.current || adaVoiceSpeaking || adaTextSpeaking) return;
         const text = inputValue.trim();
-        if (!text) return;
+        const image = pendingAttachment;
+        if (!text && !image) return;
         if (!socket.connected) {
             addMessage('System', 'Connexion à Ada interrompue. Réessaie dans un instant.');
             return;
         }
 
-        startTextRequest(text);
-        addMessage('Bryan', text);
+        // Image seule : on envoie une consigne par défaut à Ada, la bulle reste visuelle.
+        const started = startTextRequest(text || 'Regarde cette image et décris-la.', image);
+        if (!started) return;
+        setMessages((prev) => [
+            ...prev,
+            {
+                sender: 'Bryan',
+                text,
+                time: new Date().toLocaleTimeString(),
+                ...(image?.previewUrl ? { image: image.previewUrl } : {}),
+            },
+        ]);
         setInputValue('');
+        // On NE révoque PAS le previewUrl : il reste affiché dans la bulle pour la session.
+        if (image) setPendingAttachment(null);
     };
 
     // ── Actions de conversation (niveau ChatGPT/Claude) ──────────────────────
@@ -2780,14 +2822,24 @@ function App() {
                                             }
                                             if (m.sender === 'Bryan') {
                                                 return (
-                                                    <EditableUserMessage
-                                                        key={i}
-                                                        text={m.text}
-                                                        edited={m.edited}
-                                                        disabled={isGenerating}
-                                                        onCopy={() => handleCopyMessage(m.text)}
-                                                        onSave={(nextText) => handleEditMessage(i, nextText)}
-                                                    />
+                                                    <div key={i} className="flex flex-col items-end gap-1">
+                                                        {m.image && (
+                                                            <img
+                                                                src={m.image}
+                                                                alt="pièce jointe"
+                                                                className="max-h-56 max-w-[70%] rounded-ada-lg border border-line object-cover shadow-ada-sm"
+                                                            />
+                                                        )}
+                                                        {(m.text || !m.image) && (
+                                                            <EditableUserMessage
+                                                                text={m.text}
+                                                                edited={m.edited}
+                                                                disabled={isGenerating}
+                                                                onCopy={() => handleCopyMessage(m.text)}
+                                                                onSave={(nextText) => handleEditMessage(i, nextText)}
+                                                            />
+                                                        )}
+                                                    </div>
                                                 );
                                             }
                                             const isLastAda = i === messages.length - 1;
@@ -2828,6 +2880,9 @@ function App() {
                                     onStop={handleStopGeneration}
                                     isGenerating={isGenerating}
                                     disabled={!socketConnected}
+                                    attachment={pendingAttachment}
+                                    onPickImage={handlePickImage}
+                                    onClearAttachment={handleClearAttachment}
                                 />
                             </div>
                         </div>

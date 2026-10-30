@@ -119,6 +119,7 @@ app_socketio = socketio.ASGIApp(sio, app)
 import monitoring
 from generation_registry import GenerationRegistry
 from conversation_store import ConversationStore
+from chat_attachments import normalize_image_attachment
 from text_streaming import TextGenerationState, run_streamed_text_turn
 from fastapi.responses import JSONResponse
 
@@ -1272,11 +1273,16 @@ async def _handle_user_input(sid, data, request_id: str):
                 room=sid,
             )
 
+        # Pièce jointe image du fil (prioritaire) ; sinon dernière frame caméra/écran.
+        attached_image = normalize_image_attachment(data.get('image'))
+        if attached_image:
+            print("[SERVER DEBUG] Pièce jointe image reçue avec le message.")
+
         async def _generate(on_delta) -> str:
             return await audio_loop.process_text_message(
                 text,
                 on_delta=on_delta,
-                image_payload=audio_loop._latest_image_payload,
+                image_payload=attached_image or audio_loop._latest_image_payload,
                 source="Bryan (desktop)",
             )
 
