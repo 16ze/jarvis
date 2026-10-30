@@ -54,7 +54,7 @@ echo "🌐 Démarrage du frontend..."
 osascript <<EOF
 tell application "Terminal"
     activate
-    do script "cd \"$JARVIS_ROOT\" && npm run dev"
+    do script "export ADA_BACKEND_EXTERNAL=1 && cd \"$JARVIS_ROOT\" && npm run dev"
 end tell
 EOF
 

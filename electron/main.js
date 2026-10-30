@@ -566,23 +566,30 @@ app.whenReady().then(() => {
         safeOpenExternal(payload.url);
     });
 
-    // On NE décide de spawner un backend qu'après un court sondage du port 8000
-    // (~3 s). Cela ferme la race « double backend » : si start_ada.sh (ou un
-    // lancement manuel) est en train de binder le port, le poll le détecte avant
-    // qu'Electron n'en lance un second.
-    pollBackendPortTaken(8000, 3000).then((isTaken) => {
-        if (isTaken) {
-            console.log('[Backend] Port 8000 déjà occupé — backend externe détecté, on s\'y attache (aucun spawn).');
-            waitForBackend().then(createWindow);
-        } else {
-            console.log('[Backend] Port 8000 libre — démarrage du backend par Electron.');
-            startPythonBackend();
-            // Imports lourds + disque lent : laisser le temps avant le healthcheck
-            setTimeout(() => {
+    // Fix déterministe de la race « double backend » : quand Ada est lancée via
+    // start_ada.sh, celui-ci possède et démarre le backend, et pose
+    // ADA_BACKEND_EXTERNAL=1 dans l'environnement du `npm run dev`. Dans ce cas
+    // Electron ne spawne JAMAIS son propre backend (plus de collision [Errno 48]).
+    // En lancement standalone (npm run dev direct, sans start_ada.sh), on retombe
+    // sur le sondage du port 8000 (~3 s) comme fallback.
+    if (process.env.ADA_BACKEND_EXTERNAL === '1') {
+        console.log('[Backend] ADA_BACKEND_EXTERNAL=1 — backend géré par start_ada.sh, aucun spawn Electron.');
+        waitForBackend().then(createWindow);
+    } else {
+        pollBackendPortTaken(8000, 3000).then((isTaken) => {
+            if (isTaken) {
+                console.log('[Backend] Port 8000 déjà occupé — backend externe détecté, on s\'y attache (aucun spawn).');
                 waitForBackend().then(createWindow);
-            }, 3500);
-        }
-    });
+            } else {
+                console.log('[Backend] Port 8000 libre — démarrage du backend par Electron.');
+                startPythonBackend();
+                // Imports lourds + disque lent : laisser le temps avant le healthcheck
+                setTimeout(() => {
+                    waitForBackend().then(createWindow);
+                }, 3500);
+            }
+        });
+    }
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
