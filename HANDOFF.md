@@ -19,7 +19,7 @@ ET côté moteur. Objectif : 100 %.**
 - Mode de travail attendu : **autonomie maximale** — lancer, intégrer, builder,
   pousser, déployer sur le Mac et montrer le résultat ; ne demander que si réellement bloqué.
 
-État d'avancement estimé au handoff : **~60–65 %** de la maturité « produit grand
+État d'avancement estimé au handoff : **~70–75 %** de la maturité « produit grand
 public » façon ChatGPT (voir §1 pour le détail livré, §2–§3 pour ce qui reste).
 
 ---
@@ -28,7 +28,7 @@ public » façon ChatGPT (voir §1 pour le détail livré, §2–§3 pour ce qui
 
 - **Repo** : github.com/16ze/jarvis
 - **Branche de travail** : `integration/widget-pc-control`
-- **HEAD fonctionnel poussé sur origin** : `f7501e4` (« feat(maturité 4): streaming texte token par token »)
+- **HEAD fonctionnel du lot** : `9021a8c` (« feat(maturité 5): historique et annulation multi-device »)
 - **Mac (machine de Bryan)** : repo sur `/Volumes/Disque dev/Archives-Mars-Avril-2026/jarvis`,
   conda env `ada_v2` (Python 3.11), node 22.
 - **Déploiement sur le Mac** : double-clic `~/Desktop/Relancer-Ada.command`
@@ -53,12 +53,18 @@ Avant de commencer : `git fetch origin && git reset --hard origin/integration/wi
 6. **Composants chat** : `src/components/chat/{MarkdownMessage,MessageActions,TypingIndicator,ChatComposer}.jsx`.
 7. **Streaming visuel** : caret clignotant sur le dernier message Ada pendant `isGenerating` (= `adaSpeaking`).
 8. **Fix** : la fenêtre flottante TERMINAL ne s'auto-ouvre plus en mode normal (réservée au modulaire).
-9. **Tests** : `backend/tests/*` → `python -m pytest backend/tests -q` = **87 verts** ;
-   `src/components/chat/__tests__/*` → `npm run test` (vitest) = **20 verts**.
+9. **Tests** : `backend/tests/*` → `python -m pytest backend/tests -q` = **89 verts** ;
+   `npm run test` (vitest) = **44 verts**.
 10. **Monitoring** : `backend/monitoring.py` (`log_exception`, `@guard`, `get_error_stats`),
     handler d'exception global + endpoint `GET /health/errors` dans `server.py`.
 11. **Code-split** : `vite.config.js` `manualChunks` → `vendor-three` / `vendor-markdown` ;
-    chunk applicatif ~425 ko (< 500 ko).
+    chunk applicatif ~446 ko (< 500 ko).
+12. **Historique mature** : recherche accent-insensible dans les titres et messages, extraits de
+    contexte, édition d'un message Bryan avec création d'une nouvelle branche, régénération sans doublon.
+13. **Parité mobile/tablette** : tiroir d'historique, recherche, nouvelle conversation, suppression
+    confirmée, édition tactile et compositeur partagé avec le desktop.
+14. **Annulation réelle** : chaque tour texte possède un `requestId`; le bouton Stop annule la tâche
+    `asyncio` correspondante côté serveur et attend `generation_finished` avant de libérer l'UI.
 
 ---
 
@@ -75,13 +81,14 @@ Livré dans `f7501e4`. Les réponses tapées utilisent désormais
 - le contexte caméra/écran et les function calls restent disponibles en mode texte ;
 - test runtime Socket.IO : 4 chunks reçus dans l'ordre, réponse reconstruite sans doublon.
 
-**Validation** : 87 tests backend, 20 tests front, build Vite réussi, `/health/errors` à zéro.
+**Validation** : 89 tests backend, 44 tests front, build Vite réussi, `/health/errors` à zéro.
 
 ---
 
 ## 3. Backlog restant pour viser 100 %
 
-1. **Recherche dans l'historique** + **édition d'un message envoyé** (côté `App.jsx` + sidebar).
+1. **Synchronisation multi-device réelle** : l'historique est encore dans `localStorage`; ajouter un
+   stockage serveur authentifié avec résolution simple des conflits pour retrouver les conversations partout.
 2. **Panneau santé** branché sur `GET /health/errors` (monitoring déjà prêt côté backend).
 3. **CI** : lancer `pytest backend/tests` + `npm run test` à chaque push (GitHub Actions).
 4. **npm audit** : 26 vulnérabilités (3 critiques) préexistantes remontées à l'install — à traiter.
@@ -93,8 +100,9 @@ Livré dans `f7501e4`. Les réponses tapées utilisent désormais
 ## 4. Contrats & conventions À NE PAS CASSER
 
 **Socket.IO** (events) :
-- `transcription {sender, text}` (append par sender), `user_input {text}` (envoi depuis le front),
-  `ada_affect` (humeur brain, ~1.5 s), `ada_speaking {on}` (vérité « Ada parle »),
+- `transcription {sender, text, requestId?}` (append par sender), `user_input {text, requestId}`
+  (envoi depuis le front), `generation_finished {requestId, status}`, `cancel_generation {requestId}`,
+  `ada_affect` (humeur brain, ~1.5 s), `ada_speaking {on, mode?, requestId?}` (vérité « Ada parle »),
   `pc_control_state {active}`, `clear_audio`, `tool_confirmation_request` / `confirm_tool {id, confirmed}`,
   `terminal_output {command, output}`, `status {msg}`, `audio_pcm`, `audio_data {data}`.
 
@@ -129,10 +137,10 @@ Claude-Session: https://claude.ai/code/session_01GgB2RcfHN2UPAwpdFC58ue
 
 ```bash
 # Tests backend (sans clé ni réseau)
-python -m pytest backend/tests -q           # 87 verts attendus
+python -m pytest backend/tests -q           # 89 verts attendus
 
 # Tests + build front
-npm run test                                # vitest, 20 verts
+npm run test                                # vitest, 44 verts
 npm run build                               # chunk applicatif < 500 ko
 
 # Démarrage complet (Mac)
