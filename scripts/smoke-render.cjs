@@ -32,11 +32,22 @@ const VIEWPORTS = [
             const pageErrors = [];
             page.on('pageerror', (e) => pageErrors.push(String((e && (e.stack || e.message)) || e)));
             try {
-                await page.goto(URL, { waitUntil: 'load', timeout: 20000 });
+                await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
             } catch (e) {
                 pageErrors.push('goto: ' + e.message);
             }
-            await page.waitForTimeout(2500);
+            // Attente active : sur un runner à froid, vite pré-optimise les deps au
+            // 1er chargement → #root peut rester vide quelques secondes. On patiente
+            // jusqu'à 20 s qu'il se remplisse (tant qu'aucune erreur de page).
+            try {
+                await page.waitForFunction(
+                    (min) => (document.getElementById('root')?.innerHTML || '').length >= min,
+                    MIN_ROOT_LEN,
+                    { timeout: 20000 }
+                );
+            } catch (_) {
+                /* restera signalé par rootLen ci-dessous */
+            }
             const rootLen = await page.evaluate(
                 () => (document.getElementById('root')?.innerHTML || '').length
             );
@@ -46,8 +57,15 @@ const VIEWPORTS = [
             console.log(`[smoke:${vp.name}] root=${rootLen} pageErrors=${pageErrors.length} -> ${ok ? 'OK' : 'ECHEC'}`);
             if (!ok) {
                 failed = true;
-                pageErrors.slice(0, 3).forEach((e) => console.error('  - ' + e.split('\n')[0]));
-                if (rootLen < MIN_ROOT_LEN) console.error(`  - #root quasi vide (${rootLen} < ${MIN_ROOT_LEN})`);
+                // Annotations GitHub (visibles même sans accès aux logs bruts).
+                if (rootLen < MIN_ROOT_LEN) {
+                    console.log(`::error::[smoke:${vp.name}] #root quasi vide (${rootLen} < ${MIN_ROOT_LEN})`);
+                }
+                pageErrors.slice(0, 3).forEach((e) => {
+                    const line = e.split('\n')[0];
+                    console.error('  - ' + line);
+                    console.log(`::error::[smoke:${vp.name}] ${line}`);
+                });
             }
         }
     } finally {
