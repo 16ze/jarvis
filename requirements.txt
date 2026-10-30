@@ -28,7 +28,8 @@ resemblyzer
 # CAD Generation
 build123d
 # Browser-use (navigation web avancée via LLM)
-browser-use>=0.1.0
+# Version utilisée par Ada ; elle verrouille les dépendances audio/HTTP compatibles.
+browser-use==0.12.6
 langchain-google-genai>=2.0.0
 # OS Control (keyboard & mouse automation)
 pynput>=1.7.0
