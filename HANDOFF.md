@@ -28,7 +28,8 @@ public » façon ChatGPT (voir §1 pour le détail livré, §2–§3 pour ce qui
 
 - **Repo** : github.com/16ze/jarvis
 - **Branche de travail** : `integration/widget-pc-control`
-- **HEAD fonctionnel du lot** : `ee74206` (« feat(maturité 6): synchroniser les conversations multi-device »)
+- **HEAD fonctionnel du lot** : `4dd8701` (« fix(auth): fiabiliser les réponses Bearer HTTP »),
+  après `ee74206` (« feat(maturité 6): synchroniser les conversations multi-device »)
 - **Mac (machine de Bryan)** : repo sur `/Volumes/Disque dev/Archives-Mars-Avril-2026/jarvis`,
   conda env `ada_v2` (Python 3.11), node 22.
 - **Déploiement sur le Mac** : double-clic `~/Desktop/Relancer-Ada.command`
@@ -53,7 +54,7 @@ Avant de commencer : `git fetch origin && git reset --hard origin/integration/wi
 6. **Composants chat** : `src/components/chat/{MarkdownMessage,MessageActions,TypingIndicator,ChatComposer}.jsx`.
 7. **Streaming visuel** : caret clignotant sur le dernier message Ada pendant `isGenerating` (= `adaSpeaking`).
 8. **Fix** : la fenêtre flottante TERMINAL ne s'auto-ouvre plus en mode normal (réservée au modulaire).
-9. **Tests** : `backend/tests/*` → `python -m pytest backend/tests -q` = **100 verts** ;
+9. **Tests** : `backend/tests/*` → `python -m pytest backend/tests -q` = **104 verts** ;
    `npm run test` (vitest) = **58 verts**.
 10. **Monitoring** : `backend/monitoring.py` (`log_exception`, `@guard`, `get_error_stats`),
     handler d'exception global + endpoint `GET /health/errors` dans `server.py`.
@@ -84,7 +85,7 @@ Livré dans `f7501e4`. Les réponses tapées utilisent désormais
 - le contexte caméra/écran et les function calls restent disponibles en mode texte ;
 - test runtime Socket.IO : 4 chunks reçus dans l'ordre, réponse reconstruite sans doublon.
 
-**Validation** : 100 tests backend, 58 tests front, build Vite réussi, `/health/errors` à zéro.
+**Validation** : 104 tests backend, 58 tests front, build Vite réussi, `/health/errors` à zéro.
 
 ---
 
@@ -141,7 +142,7 @@ Claude-Session: https://claude.ai/code/session_01GgB2RcfHN2UPAwpdFC58ue
 
 ```bash
 # Tests backend (sans clé ni réseau)
-python -m pytest backend/tests -q           # 100 verts attendus
+python -m pytest backend/tests -q           # 104 verts attendus
 
 # Tests + build front
 npm run test                                # vitest, 58 verts
