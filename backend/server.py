@@ -130,6 +130,7 @@ app_socketio = socketio.ASGIApp(sio, app)
 # propre — plus aucune erreur « en silence ». Voir GET /health/errors.
 import monitoring
 from generation_registry import GenerationRegistry
+from conversation_store import ConversationStore
 from text_streaming import TextGenerationState, run_streamed_text_turn
 from fastapi.responses import JSONResponse
 
@@ -179,6 +180,14 @@ text_generation_registry = GenerationRegistry()
 JARVIS_ROOT = Path(os.getenv("JARVIS_ROOT", Path(__file__).parent.parent)).resolve()
 workspace_manager = WorkspaceManager(JARVIS_ROOT)
 workspace_policy = WorkspacePolicy()
+conversation_store = ConversationStore(
+    Path(
+        os.getenv(
+            "CONVERSATION_DB_PATH",
+            Path(__file__).resolve().parent / "memory" / "conversations" / "history.sqlite3",
+        )
+    )
+)
 SETTINGS_FILE = "settings.json"
 
 
@@ -476,6 +485,32 @@ async def health_errors_endpoint():
 @app.get("/status")
 async def status():
     return {"status": "running", "service": "A.D.A Backend"}
+
+
+@app.post("/api/conversations/sync")
+async def sync_conversations(payload: dict, _: None = Security(require_token)):
+    """Fusionne le cache d'un appareil avec l'historique canonique d'Ada."""
+    source_id = str(payload.get("sourceId") or "")[:128]
+    try:
+        result = await asyncio.to_thread(
+            conversation_store.sync,
+            payload.get("deviceId"),
+            payload.get("conversations", []),
+            payload.get("tombstones", []),
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    if result.get("changed"):
+        await sio.emit(
+            "conversations_changed",
+            {
+                "revision": result.get("revision", 0),
+                "deviceId": payload.get("deviceId"),
+                "sourceId": source_id,
+            },
+        )
+    return result
 
 
 @app.get("/api/workspace")

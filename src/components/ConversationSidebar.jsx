@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, MessageSquare, Trash2, Check, X, PanelLeftClose, PanelLeftOpen, Pencil, Search } from 'lucide-react';
+import { Cloud, CloudOff, Loader2, Plus, MessageSquare, Trash2, Check, X, PanelLeftClose, PanelLeftOpen, Pencil, Search } from 'lucide-react';
 import { filterConversations, getConversationMatchSnippet } from '../lib/conversationHistory';
 
 /*
@@ -27,6 +27,7 @@ export default function ConversationSidebar({
     onDelete,
     onRename,
     disabled = false,
+    syncStatus = 'local',
 }) {
     const [editingId, setEditingId] = useState(null);
     const [draft, setDraft] = useState('');
@@ -213,6 +214,23 @@ export default function ConversationSidebar({
                         </div>
                     );
                 })}
+            </div>
+
+            <div className="flex items-center gap-1.5 border-t border-line px-4 py-2.5 text-[11px] text-muted">
+                {syncStatus === 'syncing' ? (
+                    <Loader2 size={12} className="animate-spin" aria-hidden="true" />
+                ) : syncStatus === 'synced' ? (
+                    <Cloud size={12} aria-hidden="true" />
+                ) : (
+                    <CloudOff size={12} aria-hidden="true" />
+                )}
+                <span>
+                    {syncStatus === 'syncing'
+                        ? 'Synchronisation…'
+                        : syncStatus === 'synced'
+                        ? 'Synchronisé sur vos appareils'
+                        : 'Sauvegarde locale'}
+                </span>
             </div>
         </div>
     );

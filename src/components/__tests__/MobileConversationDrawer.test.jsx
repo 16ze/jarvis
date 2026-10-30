@@ -78,4 +78,15 @@ describe('MobileConversationDrawer', () => {
         fireEvent.keyDown(document, { key: 'Escape' });
         expect(onClose).toHaveBeenCalledTimes(1);
     });
+
+    it('rend visible la sauvegarde locale quand le serveur est indisponible', () => {
+        render(
+            <MobileConversationDrawer
+                open
+                conversations={conversations}
+                syncStatus="offline"
+            />
+        );
+        expect(screen.getByText('Sauvegarde locale')).toBeInTheDocument();
+    });
 });

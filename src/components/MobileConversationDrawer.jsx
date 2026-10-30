@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { MessageSquare, Plus, Search, Trash2, X } from 'lucide-react';
+import { Cloud, CloudOff, Loader2, MessageSquare, Plus, Search, Trash2, X } from 'lucide-react';
 import { filterConversations, getConversationMatchSnippet } from '../lib/conversationHistory';
 import useDialogFocus from '../hooks/useDialogFocus';
 
@@ -8,6 +8,7 @@ export default function MobileConversationDrawer({
     conversations = [],
     activeId,
     disabled = false,
+    syncStatus = 'local',
     onClose,
     onNew,
     onSelect,
@@ -137,6 +138,23 @@ export default function MobileConversationDrawer({
                             </div>
                         );
                     })}
+                </div>
+
+                <div className="flex items-center gap-1.5 border-t border-line pt-3 text-xs text-muted">
+                    {syncStatus === 'syncing' ? (
+                        <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+                    ) : syncStatus === 'synced' ? (
+                        <Cloud size={13} aria-hidden="true" />
+                    ) : (
+                        <CloudOff size={13} aria-hidden="true" />
+                    )}
+                    <span>
+                        {syncStatus === 'syncing'
+                            ? 'Synchronisation…'
+                            : syncStatus === 'synced'
+                            ? 'Synchronisé sur vos appareils'
+                            : 'Sauvegarde locale'}
+                    </span>
                 </div>
             </aside>
         </div>

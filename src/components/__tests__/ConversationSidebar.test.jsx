@@ -80,4 +80,14 @@ describe('ConversationSidebar', () => {
         expect(onRename).not.toHaveBeenCalled();
         expect(screen.queryByDisplayValue('Nouveau titre')).not.toBeInTheDocument();
     });
+
+    it('affiche l’état de synchronisation multi-device', () => {
+        const { rerender } = render(
+            <ConversationSidebar conversations={conversations} syncStatus="syncing" />
+        );
+        expect(screen.getByText('Synchronisation…')).toBeInTheDocument();
+
+        rerender(<ConversationSidebar conversations={conversations} syncStatus="synced" />);
+        expect(screen.getByText('Synchronisé sur vos appareils')).toBeInTheDocument();
+    });
 });

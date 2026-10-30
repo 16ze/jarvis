@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import io from 'socket.io-client';
 
 import Visualizer from './components/Visualizer';
@@ -31,6 +31,12 @@ import EditableUserMessage from './components/chat/EditableUserMessage';
 import ConfirmDialog from './components/ConfirmDialog';
 import { editMessageBranch, getRegenerationBranch } from './lib/conversationHistory';
 import {
+    conversationSnapshotSignature,
+    getConversationDeviceId,
+    mergeConversationSnapshots,
+    syncConversationSnapshot,
+} from './lib/conversationSync';
+import {
     DEFAULT_HAND_CONTROL_CONFIG,
     OneEuroFilter2D,
     CursorEngine,
@@ -58,6 +64,12 @@ const ipcRenderer = (() => {
 
 const isMobile = window.innerWidth < 768 || /iPhone|iPad|Android/i.test(navigator.userAgent);
 const isElectron = Boolean(window?.process?.versions?.electron);
+
+const isBlankConversation = (conversation) => (
+    conversation
+    && (!conversation.messages || conversation.messages.length === 0)
+    && (!conversation.title || conversation.title === 'Nouvelle conversation')
+);
 
 function App() {
     const [status, setStatus] = useState('Disconnected');
@@ -100,10 +112,45 @@ function App() {
     const [activeConvId, setActiveConvId] = useState(() => {
         try { return localStorage.getItem('ada-active-conv') || null; } catch (e) { return null; }
     });
+    const [conversationTombstones, setConversationTombstones] = useState(() => {
+        try {
+            const raw = localStorage.getItem('ada-conversation-tombstones');
+            if (raw) return JSON.parse(raw);
+        } catch (e) { /* cache local indisponible */ }
+        return [];
+    });
+    const [conversationHydrated, setConversationHydrated] = useState(false);
+    const [conversationSyncStatus, setConversationSyncStatus] = useState('local');
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
         try { return localStorage.getItem('ada-sidebar-collapsed') === '1'; } catch (e) { return false; }
     });
     const convSyncReady = useRef(false);
+    const conversationHydratedRef = useRef(false);
+    const conversationRemoteReadyRef = useRef(false);
+    const conversationSyncDisabledRef = useRef(false);
+    const conversationSyncInFlightRef = useRef(false);
+    const conversationSyncQueuedRef = useRef(false);
+    const conversationGenerationActiveRef = useRef(false);
+    const lastSyncedConversationSignatureRef = useRef('');
+    const skipNextMessageConversationSyncRef = useRef(false);
+    const conversationDeviceIdRef = useRef(null);
+    const conversationClientIdRef = useRef(null);
+    const conversationsRef = useRef(conversations);
+    const conversationTombstonesRef = useRef(conversationTombstones);
+    const activeConvIdRef = useRef(activeConvId);
+    const messagesRef = useRef(messages);
+    const conversationRevisionRef = useRef(0);
+    if (!conversationDeviceIdRef.current) {
+        conversationDeviceIdRef.current = getConversationDeviceId();
+    }
+    if (!conversationClientIdRef.current) {
+        conversationClientIdRef.current = globalThis.crypto?.randomUUID?.()
+            || `client-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+    conversationsRef.current = conversations;
+    conversationTombstonesRef.current = conversationTombstones;
+    activeConvIdRef.current = activeConvId;
+    messagesRef.current = messages;
     const [cadData, setCadData] = useState(null);
     const [cadThoughts, setCadThoughts] = useState(''); // Streaming AI thoughts
     const [cadRetryInfo, setCadRetryInfo] = useState({ attempt: 1, maxAttempts: 3, error: null }); // Retry status
@@ -1837,12 +1884,18 @@ function App() {
             setActiveConvId(id);
             setMessages([]);
         }
+        conversationHydratedRef.current = true;
+        setConversationHydrated(true);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Synchronise le fil vivant -> conversation active (en sautant le 1er run au montage).
     useEffect(() => {
         if (!convSyncReady.current) { convSyncReady.current = true; return; }
+        if (skipNextMessageConversationSyncRef.current) {
+            skipNextMessageConversationSyncRef.current = false;
+            return;
+        }
         if (!activeConvId) return;
         setConversations((prev) => prev.map((c) =>
             c.id === activeConvId
@@ -1856,6 +1909,14 @@ function App() {
     useEffect(() => {
         try { localStorage.setItem('ada-conversations', JSON.stringify(conversations.slice(0, 60))); } catch (e) {}
     }, [conversations]);
+    useEffect(() => {
+        try {
+            localStorage.setItem(
+                'ada-conversation-tombstones',
+                JSON.stringify(conversationTombstones.slice(0, 500))
+            );
+        } catch (e) { /* cache local indisponible */ }
+    }, [conversationTombstones]);
     useEffect(() => {
         try { if (activeConvId) localStorage.setItem('ada-active-conv', activeConvId); } catch (e) {}
     }, [activeConvId]);
@@ -1877,6 +1938,11 @@ function App() {
         setMessages(conv?.messages || []);
     };
     const deleteConversation = (id) => {
+        const deletedAt = Date.now();
+        setConversationTombstones((prev) => {
+            const next = prev.filter((item) => item.id !== id);
+            return [{ id, deletedAt }, ...next].slice(0, 500);
+        });
         const next = conversations.filter((c) => c.id !== id);
         if (id === activeConvId) {
             if (next.length) { setActiveConvId(next[0].id); setMessages(next[0].messages || []); setConversations(next); }
@@ -1896,7 +1962,11 @@ function App() {
         if (conversation) setConversationToDelete(conversation);
     };
     const renameConversation = (id, title) => {
-        setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title: (title || '').trim() || c.title } : c)));
+        setConversations((prev) => prev.map((c) => (
+            c.id === id
+                ? { ...c, title: (title || '').trim() || c.title, updatedAt: Date.now() }
+                : c
+        )));
     };
 
     // Liste triée pour la sidebar (plus récent d'abord).
@@ -2018,6 +2088,185 @@ function App() {
     // Ada « répond » tant que le backend joue de l'audio (source de vérité ada_speaking).
     const adaSpeaking = adaVoiceSpeaking || adaTextSpeaking;
     const isGenerating = requestPending || adaSpeaking;
+    conversationGenerationActiveRef.current = isGenerating;
+
+    const applyConversationSnapshot = useCallback((remoteSnapshot) => {
+        let localConversations = conversationsRef.current;
+        const remoteConversations = remoteSnapshot?.conversations || [];
+
+        // La conversation vide créée au premier rendu est un placeholder local :
+        // elle ne doit pas polluer un historique déjà présent sur le serveur.
+        if (
+            !conversationRemoteReadyRef.current
+            && remoteConversations.length > 0
+            && localConversations.length === 1
+            && isBlankConversation(localConversations[0])
+        ) {
+            localConversations = [];
+        }
+
+        const merged = mergeConversationSnapshots({
+            localConversations,
+            localTombstones: conversationTombstonesRef.current,
+            remoteConversations,
+            remoteTombstones: remoteSnapshot?.tombstones || [],
+            preferRemoteOnTie: true,
+        });
+
+        let nextConversations = merged.conversations;
+        if (nextConversations.length === 0) {
+            nextConversations = [{
+                id: genConvId(),
+                title: 'Nouvelle conversation',
+                messages: [],
+                updatedAt: Date.now(),
+            }];
+        }
+
+        const currentActiveId = activeConvIdRef.current;
+        const activeConversation = nextConversations.find((item) => item.id === currentActiveId)
+            || nextConversations[0];
+        const nextMessages = activeConversation.messages || [];
+
+        conversationsRef.current = nextConversations;
+        conversationTombstonesRef.current = merged.tombstones;
+        activeConvIdRef.current = activeConversation.id;
+        setConversations(nextConversations);
+        setConversationTombstones(merged.tombstones);
+        setActiveConvId(activeConversation.id);
+
+        if (JSON.stringify(messagesRef.current) !== JSON.stringify(nextMessages)) {
+            skipNextMessageConversationSyncRef.current = true;
+            messagesRef.current = nextMessages;
+            setMessages(nextMessages);
+        }
+
+        return conversationSnapshotSignature(nextConversations, merged.tombstones);
+    }, []);
+
+    const syncConversationsNow = useCallback(async ({ force = false } = {}) => {
+        if (
+            !conversationHydratedRef.current
+            || conversationSyncDisabledRef.current
+            || !socket.connected
+        ) {
+            return false;
+        }
+        if (conversationGenerationActiveRef.current) {
+            conversationSyncQueuedRef.current = true;
+            return false;
+        }
+        if (conversationSyncInFlightRef.current) {
+            conversationSyncQueuedRef.current = true;
+            return false;
+        }
+        conversationSyncQueuedRef.current = false;
+
+        const currentConversations = conversationsRef.current;
+        const currentTombstones = conversationTombstonesRef.current;
+        const currentSignature = conversationSnapshotSignature(
+            currentConversations,
+            currentTombstones
+        );
+        if (
+            !force
+            && conversationRemoteReadyRef.current
+            && currentSignature === lastSyncedConversationSignatureRef.current
+        ) {
+            return true;
+        }
+
+        const initialPlaceholderOnly = (
+            !conversationRemoteReadyRef.current
+            && currentConversations.length === 1
+            && isBlankConversation(currentConversations[0])
+        );
+        conversationSyncInFlightRef.current = true;
+        setConversationSyncStatus('syncing');
+        try {
+            const result = await syncConversationSnapshot({
+                backendUrl: BACKEND_URL,
+                token: ADA_TOKEN,
+                deviceId: conversationDeviceIdRef.current,
+                sourceId: conversationClientIdRef.current,
+                conversations: initialPlaceholderOnly ? [] : currentConversations,
+                tombstones: currentTombstones,
+                knownRevision: conversationRevisionRef.current,
+            });
+            conversationRevisionRef.current = result.revision || 0;
+            lastSyncedConversationSignatureRef.current = conversationSnapshotSignature(
+                result.conversations,
+                result.tombstones
+            );
+            const appliedSignature = applyConversationSnapshot(result);
+            conversationRemoteReadyRef.current = true;
+            if (appliedSignature !== lastSyncedConversationSignatureRef.current) {
+                conversationSyncQueuedRef.current = true;
+            }
+            setConversationSyncStatus('synced');
+            return true;
+        } catch (error) {
+            if ([401, 403].includes(error?.status)) {
+                conversationSyncDisabledRef.current = true;
+                setConversationSyncStatus('error');
+            } else {
+                setConversationSyncStatus('offline');
+            }
+            return false;
+        } finally {
+            conversationSyncInFlightRef.current = false;
+            if (conversationSyncQueuedRef.current && !conversationGenerationActiveRef.current) {
+                conversationSyncQueuedRef.current = false;
+                window.setTimeout(() => {
+                    void syncConversationsNow({ force: true });
+                }, 0);
+            }
+        }
+    }, [applyConversationSnapshot]);
+
+    // Cache local immédiat, puis écriture serveur regroupée après les deltas.
+    useEffect(() => {
+        if (!conversationHydrated || !socketConnected || isGenerating) return undefined;
+        const delay = conversationRemoteReadyRef.current ? 900 : 0;
+        const timer = window.setTimeout(() => {
+            void syncConversationsNow();
+        }, delay);
+        return () => window.clearTimeout(timer);
+    }, [
+        conversations,
+        conversationTombstones,
+        conversationHydrated,
+        socketConnected,
+        isGenerating,
+        syncConversationsNow,
+    ]);
+
+    // Une mutation distante pousse un signal léger ; chaque appareil recharge
+    // ensuite l'état canonique via l'API authentifiée.
+    useEffect(() => {
+        const handleRemoteChange = (data) => {
+            if (data?.sourceId === conversationClientIdRef.current) return;
+            void syncConversationsNow({ force: true });
+        };
+        socket.on('conversations_changed', handleRemoteChange);
+        return () => socket.off('conversations_changed', handleRemoteChange);
+    }, [syncConversationsNow]);
+
+    // Filet de sécurité si un événement Socket.IO a été manqué pendant la veille.
+    useEffect(() => {
+        if (!conversationHydrated || !socketConnected) return undefined;
+        const refresh = () => {
+            if (document.visibilityState === 'visible') {
+                void syncConversationsNow({ force: true });
+            }
+        };
+        const interval = window.setInterval(refresh, 30_000);
+        document.addEventListener('visibilitychange', refresh);
+        return () => {
+            window.clearInterval(interval);
+            document.removeEventListener('visibilitychange', refresh);
+        };
+    }, [conversationHydrated, socketConnected, syncConversationsNow]);
 
     const handleMinimize = () => ipcRenderer.send('window-minimize');
     const handleMaximize = () => ipcRenderer.send('window-maximize');
@@ -2287,6 +2536,7 @@ function App() {
                     handleCopyMessage={handleCopyMessage}
                     conversations={sortedConversations}
                     activeConversationId={activeConvId}
+                    conversationSyncStatus={conversationSyncStatus}
                     onNewConversation={newConversation}
                     onSelectConversation={selectConversation}
                     onDeleteConversation={requestDeleteConversation}
@@ -2299,7 +2549,7 @@ function App() {
                 <ConfirmDialog
                     open={Boolean(conversationToDelete)}
                     title="Supprimer cette conversation ?"
-                    description={`« ${conversationToDelete?.title || 'Nouvelle conversation'} » sera supprimée de cet appareil.`}
+                    description={`« ${conversationToDelete?.title || 'Nouvelle conversation'} » sera supprimée de tous vos appareils synchronisés.`}
                     confirmLabel="Supprimer"
                     onCancel={() => setConversationToDelete(null)}
                     onConfirm={() => deleteConversation(conversationToDelete?.id)}
@@ -2314,7 +2564,7 @@ function App() {
             <ConfirmDialog
                 open={Boolean(conversationToDelete)}
                 title="Supprimer cette conversation ?"
-                description={`« ${conversationToDelete?.title || 'Nouvelle conversation'} » sera supprimée de cet appareil.`}
+                description={`« ${conversationToDelete?.title || 'Nouvelle conversation'} » sera supprimée de tous vos appareils synchronisés.`}
                 confirmLabel="Supprimer"
                 onCancel={() => setConversationToDelete(null)}
                 onConfirm={() => deleteConversation(conversationToDelete?.id)}
@@ -2469,6 +2719,7 @@ function App() {
                             onDelete={requestDeleteConversation}
                             onRename={renameConversation}
                             disabled={isGenerating}
+                            syncStatus={conversationSyncStatus}
                         />
                         <div className="flex min-h-0 flex-1 justify-center px-4">
                         <div className="flex w-full max-w-3xl flex-col min-h-0">

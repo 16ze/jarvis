@@ -36,6 +36,7 @@ const MobileApp = ({
     handleCopyMessage,
     conversations = [],
     activeConversationId,
+    conversationSyncStatus = 'local',
     onNewConversation,
     onSelectConversation,
     onDeleteConversation,
@@ -248,6 +249,7 @@ const MobileApp = ({
                 conversations={conversations}
                 activeId={activeConversationId}
                 disabled={adaSpeaking}
+                syncStatus={conversationSyncStatus}
                 onClose={() => setShowHistory(false)}
                 onNew={() => {
                     onNewConversation?.();
