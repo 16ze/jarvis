@@ -41,10 +41,18 @@ SEND_SAMPLE_RATE = 16000
 RECEIVE_SAMPLE_RATE = 24000
 CHUNK_SIZE = 1024
 
-MODEL = "models/gemini-2.5-flash-native-audio-preview-12-2025"
+load_dotenv()
+
+MODEL = os.getenv("ADA_VOICE_MODEL", "gemini-3.8-live").strip() or "gemini-3.8-live"
+try:
+    VAD_RMS_THRESHOLD = max(1, int(os.getenv("ADA_VAD_RMS_THRESHOLD", "800")))
+except ValueError:
+    VAD_RMS_THRESHOLD = 800
+LOG_INPUT_TRANSCRIPTION = os.getenv(
+    "ADA_LOG_INPUT_TRANSCRIPTION", "true"
+).lower() in {"1", "true", "yes", "on"}
 DEFAULT_MODE = "camera"
 
-load_dotenv()
 client = genai.Client(
     http_options={"api_version": "v1beta"}, api_key=os.getenv("GEMINI_API_KEY")
 )
@@ -1054,6 +1062,20 @@ else:
     _PERMISSIVE_SAFETY = None
 
 
+def _build_input_transcription_config() -> types.AudioTranscriptionConfig:
+    """Configure la transcription française et les noms propres fréquents."""
+    raw_vocabulary = os.getenv(
+        "ADA_TRANSCRIPTION_VOCABULARY", "Ada,Bryan,Jarvis,Kairo Digital"
+    )
+    vocabulary = [
+        term.strip() for term in raw_vocabulary.split(",") if term.strip()
+    ][:100]
+    return types.AudioTranscriptionConfig(
+        language_codes=["fr-FR"],
+        custom_vocabulary=vocabulary,
+    )
+
+
 def _build_voice_config(
     mood_block: str | None = None,
     startup_context: str = "",
@@ -1068,7 +1090,7 @@ def _build_voice_config(
         response_modalities=["AUDIO"],
         # Le client web/mobile affiche la réponse vocale dans le chat en temps réel.
         output_audio_transcription={},
-        input_audio_transcription={},
+        input_audio_transcription=_build_input_transcription_config(),
         # Réduit l'attente après la fin de parole tout en laissant une courte
         # marge pour les pauses naturelles. Le seuil reste ajustable sans code.
         realtime_input_config=types.RealtimeInputConfig(
@@ -1269,6 +1291,7 @@ class AudioLoop:
 
         # Track last transcription text to calculate deltas (Gemini sends cumulative text)
         self._last_input_transcription = ""
+        self._last_interim_input_transcription = ""
         self._last_output_transcription = ""
         self._current_voice_transcript = ""
         self._last_local_voice_task = ""
@@ -1517,6 +1540,7 @@ class AudioLoop:
             self.chat_buffer = {"sender": None, "text": ""}
         # Reset transcription tracking for new turn
         self._last_input_transcription = ""
+        self._last_interim_input_transcription = ""
         self._last_output_transcription = ""
 
     def update_permissions(self, new_perms):
@@ -1621,34 +1645,6 @@ class AudioLoop:
             if not self.session:
                 continue
 
-            if msg.get("audio_stream_end"):
-                print("[ADA LATENCY] audio_stream_end envoyé à Gemini Live")
-                await self.session.send_realtime_input(audio_stream_end=True)
-                # Avec la configuration complète (mémoire + outils), ce modèle
-                # n'achève pas toujours le tour audio tout seul. Un court marqueur
-                # turn_complete force la réponse sans modifier la demande vocale.
-                await asyncio.sleep(0.3)
-                transcript = self._current_voice_transcript.strip()
-                if len(transcript) < 2 or not any(ch.isalnum() for ch in transcript):
-                    print("[ADA LATENCY] marqueur ignoré : aucune phrase transcrite")
-                    continue
-                await self.session.send_client_content(
-                    turns=types.Content(
-                        role="user",
-                        parts=[
-                            types.Part(
-                                text=(
-                                    "[Système] La parole de Bryan est terminée. "
-                                    "Réponds immédiatement à sa demande audio précédente, "
-                                    "sans commenter ce marqueur de fin de tour."
-                                )
-                            )
-                        ],
-                    ),
-                    turn_complete=True,
-                )
-                continue
-
             mime_type = msg.get("mime_type", "")
             payload = msg.get("data", b"")
             if isinstance(payload, str):
@@ -1687,10 +1683,20 @@ class AudioLoop:
 
         presence_manager.feed_audio_chunk(pcm_bytes)
 
-        # VAD for video frame triggering
+        # Gemini 3.8 Live reçoit le flux continu et gère lui-même les tours de
+        # parole. Le VAD local reste auxiliaire (UI, frame vidéo, diagnostic) :
+        # il ne doit jamais supprimer les syllabes faibles.
+        try:
+            self.out_queue.put_nowait(
+                {"data": pcm_bytes, "mime_type": "audio/pcm"}
+            )
+        except asyncio.QueueFull:
+            pass
+
+        # VAD auxiliaire pour le déclenchement de la frame vidéo.
         arr = np.frombuffer(pcm_bytes, dtype=np.int16)
         rms = int(np.sqrt(np.mean(arr.astype(np.int32) ** 2))) if len(arr) > 0 else 0
-        VAD_THRESHOLD = 800
+        VAD_THRESHOLD = VAD_RMS_THRESHOLD
         SILENCE_DURATION = max(
             0.2,
             min(1.2, int(os.getenv("ADA_VAD_SILENCE_MS", "350")) / 1000),
@@ -1701,25 +1707,12 @@ class AudioLoop:
             if not self._is_speaking:
                 self._is_speaking = True
                 self._last_input_transcription = ""
+                self._last_interim_input_transcription = ""
                 self._current_voice_transcript = ""
                 if self._latest_image_payload and self.out_queue:
                     await self.out_queue.put(self._latest_image_payload)
-            try:
-                self.out_queue.put_nowait(
-                    {"data": pcm_bytes, "mime_type": "audio/pcm"}
-                )
-            except asyncio.QueueFull:
-                pass
         else:
             if self._is_speaking:
-                # Conserver la courte queue silencieuse nécessaire à la détection
-                # de fin de parole, puis fermer explicitement le flux audio.
-                try:
-                    self.out_queue.put_nowait(
-                        {"data": pcm_bytes, "mime_type": "audio/pcm"}
-                    )
-                except asyncio.QueueFull:
-                    pass
                 if self._silence_start_time is None:
                     self._silence_start_time = asyncio.get_event_loop().time()
                 elif (
@@ -1729,10 +1722,10 @@ class AudioLoop:
                     self._is_speaking = False
                     self._silence_start_time = None
                     print(
-                        f"[ADA LATENCY] fin de parole locale après "
-                        f"{SILENCE_DURATION * 1000:.0f} ms de silence"
+                        f"[ADA VAD LOCAL] silence détecté après "
+                        f"{SILENCE_DURATION * 1000:.0f} ms ; "
+                        "Gemini conserve la décision de fin de tour"
                     )
-                    await self.out_queue.put({"audio_stream_end": True})
 
     async def _send_spontaneous_reaction(
         self,
@@ -2191,7 +2184,7 @@ class AudioLoop:
             kwargs = {}
 
         # VAD Constants
-        VAD_THRESHOLD = 800  # Normal speech detection threshold
+        VAD_THRESHOLD = VAD_RMS_THRESHOLD
         BARGE_IN_THRESHOLD = 2500  # Interruption threshold while Ada speaks (must exceed speaker echo level)
         BARGE_IN_FRAMES = 3  # Consecutive frames above threshold to confirm barge-in (avoids false positives)
         SILENCE_DURATION = 0.5  # Seconds of silence to consider "done speaking"
@@ -2291,6 +2284,9 @@ class AudioLoop:
                     if not self._is_speaking:
                         # NEW Speech Utterance Started
                         self._is_speaking = True
+                        self._last_input_transcription = ""
+                        self._last_interim_input_transcription = ""
+                        self._current_voice_transcript = ""
                         print(
                             f"[ADA DEBUG] [VAD] Speech Detected (RMS: {rms}). Sending Video Frame."
                         )
@@ -2849,6 +2845,23 @@ class AudioLoop:
 
                     # 2. Handle Transcription (User & Model)
                     if response.server_content:
+                        interim_input = getattr(
+                            response.server_content,
+                            "interim_input_transcription",
+                            None,
+                        )
+                        interim_text = getattr(interim_input, "text", "") or ""
+                        if (
+                            LOG_INPUT_TRANSCRIPTION
+                            and interim_text
+                            and interim_text
+                            != self._last_interim_input_transcription
+                        ):
+                            self._last_interim_input_transcription = interim_text
+                            print(
+                                f"[ADA ENTEND][intermédiaire] {interim_text.strip()}"
+                            )
+
                         if response.server_content.input_transcription:
                             transcript = (
                                 response.server_content.input_transcription.text
@@ -2856,6 +2869,11 @@ class AudioLoop:
                             if transcript:
                                 # Skip if this is an exact duplicate event
                                 if transcript != self._last_input_transcription:
+                                    if LOG_INPUT_TRANSCRIPTION:
+                                        print(
+                                            f"[ADA ENTEND][final] {transcript.strip()}"
+                                        )
+                                    self._last_interim_input_transcription = ""
                                     # Calculate delta (Gemini may send cumulative or chunk-based text)
                                     delta = transcript
                                     if transcript.startswith(
@@ -5812,6 +5830,10 @@ class AudioLoop:
                         )
                 session_config = _build_voice_config(
                     startup_context=startup_context,
+                )
+                print(
+                    f"[ADA VOICE] connexion modèle={MODEL} "
+                    f"transcription_entrée=active vad=Gemini"
                 )
                 async with (
                     client.aio.live.connect(model=MODEL, config=session_config) as session,

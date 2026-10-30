@@ -2,8 +2,8 @@ fastapi
 uvicorn
 python-socketio
 python-multipart
-# Google GenAI SDK (v1beta)
-google-genai
+# Google GenAI SDK — 2.34+ requis pour Gemini 3.8 Live et sa transcription
+google-genai>=2.34.0
 # Computer Vision & Audio
 opencv-python
 pyaudio

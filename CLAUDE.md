@@ -1,7 +1,7 @@
 # Jarvis / Ada — Contexte projet complet
 
 ## Vue d'ensemble
-Assistant personnel IA basé sur **Google Gemini 2.5 Flash Native Audio** (voix Kore).
+Assistant personnel IA basé sur **Google Gemini 3.8 Live** (voix Kore).
 Mode voix via Live API + mode texte via Telegram/WhatsApp (external_bridge).
 Propriétaire : Bryan Hilaire / Kairo Digital — repo : github.com/16ze/jarvis
 
@@ -13,8 +13,7 @@ Propriétaire : Bryan Hilaire / Kairo Digital — repo : github.com/16ze/jarvis
 ┌─────────────────────────────────────────────────────────┐
 │                      ada.py                             │
 │          AudioLoop — orchestrateur principal            │
-│   Gemini 2.5 Flash Native Audio (models/gemini-2.5-     │
-│   flash-native-audio-preview-12-2025), voix Kore        │
+│   Gemini 3.8 Live (gemini-3.8-live), voix Kore          │
 │   Écoute micro → envoie audio → reçoit audio+texte      │
 └────────────────────┬────────────────────────────────────┘
                      │ tool_calls

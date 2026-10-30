@@ -9,7 +9,7 @@
 
 - **Nom** : Ada — Advanced Design Assistant
 - **Créée par** : Bryan Hilaire (Kairo Digital)
-- **Modèle voix** : `gemini-2.5-flash-native-audio-preview-12-2025` (Live API Gemini)
+- **Modèle voix** : `gemini-3.8-live` (Live API Gemini, configurable via `ADA_VOICE_MODEL`)
 - **Modèle texte (bridge)** : `gemini-2.5-flash`
 - **Auto-correction** : Gemini 2.5 Flash (`self_correction_agent.py`) — gratuit, zéro coût Anthropic
 - **Langue** : Français exclusivement — même les résultats d'outils en anglais sont traduits
@@ -223,8 +223,10 @@ WHATSAPP_INSTANCE=ada
 
 ### Ada ne répond plus en voix
 1. Vérifier que `GEMINI_API_KEY` est valide
-2. Vérifier que le modèle `gemini-2.5-flash-native-audio-preview-12-2025` est accessible
-3. Chercher `[ADA]` dans les logs — l'AudioLoop log toutes ses erreurs avec ce préfixe
+2. Vérifier que `ADA_VOICE_MODEL=gemini-3.8-live`
+3. Chercher `[ADA ENTEND]` dans les logs pour contrôler la transcription d'entrée
+4. Tester le niveau réel avec `python backend/microphone_diagnostic.py`
+5. Chercher `[ADA]` dans les logs — l'AudioLoop log toutes ses erreurs avec ce préfixe
 
 ### Un outil ne fonctionne pas
 1. Vérifier qu'il est dans `mcp_tools_declarations.py` (liste `MCP_TOOLS`)
