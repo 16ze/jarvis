@@ -58,15 +58,42 @@ const VIEWPORTS = [
             const rootLen = await page.evaluate(
                 () => (document.getElementById('root')?.innerHTML || '').length
             );
+
+            // Le compositeur doit rester réellement cliquable. Ce contrôle attrape
+            // notamment les overlays transparents à z-index élevé qui peuvent
+            // couvrir la saisie sans provoquer d'erreur JavaScript.
+            let composerOk = false;
+            let visibleTools = 0;
+            let toolsOk = vp.name !== 'desktop';
+            try {
+                const composer = page.locator('textarea[aria-label="Message pour Ada"]:visible').first();
+                await composer.click({ timeout: 5000 });
+                await composer.fill('Vérification de saisie');
+                composerOk = (await composer.inputValue()) === 'Vérification de saisie';
+                visibleTools = await page.locator('#tools:visible').count();
+                if (vp.name === 'desktop') {
+                    await page.getByRole('button', { name: 'Ouvrir les outils' }).click();
+                    toolsOk = await page.getByRole('dialog', { name: 'Outils Ada' }).isVisible();
+                    await page.getByRole('button', { name: 'Fermer les outils' }).click();
+                }
+            } catch (e) {
+                pageErrors.push('interaction UI impossible: ' + e.message);
+            }
             await page.close();
 
-            const ok = pageErrors.length === 0 && rootLen >= MIN_ROOT_LEN;
-            console.log(`[smoke:${vp.name}] root=${rootLen} pageErrors=${pageErrors.length} -> ${ok ? 'OK' : 'ECHEC'}`);
+            const ok = pageErrors.length === 0 && rootLen >= MIN_ROOT_LEN && composerOk && toolsOk;
+            console.log(`[smoke:${vp.name}] root=${rootLen} composer=${composerOk ? 'OK' : 'ECHEC'} tools=${visibleTools}/${toolsOk ? 'OK' : 'ECHEC'} pageErrors=${pageErrors.length} -> ${ok ? 'OK' : 'ECHEC'}`);
             if (!ok) {
                 failed = true;
                 // Annotations GitHub (visibles même sans accès aux logs bruts).
                 if (rootLen < MIN_ROOT_LEN) {
                     console.log(`::error::[smoke:${vp.name}] #root quasi vide (${rootLen} < ${MIN_ROOT_LEN})`);
+                }
+                if (!composerOk) {
+                    console.log(`::error::[smoke:${vp.name}] compositeur non interactif`);
+                }
+                if (!toolsOk) {
+                    console.log(`::error::[smoke:${vp.name}] panneau outils non interactif`);
                 }
                 pageErrors.slice(0, 3).forEach((e) => {
                     const line = e.split('\n')[0];

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Box, Monitor, BookOpen, MessageSquareText, Layout, Activity, Cpu } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, Lightbulb, Printer, Box, Monitor, BookOpen, MessageSquareText, Layout, Activity, Cpu, Wrench, X } from 'lucide-react';
 
 const ToolBubble = ({ icon, label, active, disabled, onClick, title, className = '' }) => (
     <button
@@ -63,12 +63,31 @@ const ToolsModule = ({
     onMouseDown
 }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const menuRef = useRef(null);
 
     useEffect(() => {
         if (showChatWindow) {
             setIsOpen(false);
         }
     }, [showChatWindow]);
+
+    useEffect(() => {
+        if (!isOpen || isModularMode) return undefined;
+
+        const closeOnOutsideClick = (event) => {
+            if (!menuRef.current?.contains(event.target)) setIsOpen(false);
+        };
+        const closeOnEscape = (event) => {
+            if (event.key === 'Escape') setIsOpen(false);
+        };
+
+        document.addEventListener('pointerdown', closeOnOutsideClick);
+        document.addEventListener('keydown', closeOnEscape);
+        return () => {
+            document.removeEventListener('pointerdown', closeOnOutsideClick);
+            document.removeEventListener('keydown', closeOnEscape);
+        };
+    }, [isOpen, isModularMode]);
 
     const runToolAction = (action) => {
         setIsOpen(false);
@@ -176,6 +195,62 @@ const ToolsModule = ({
             onClick: onTogglePower,
         },
     ];
+
+    if (!isModularMode) {
+        const conversationTools = tools.filter((tool) => tool.key !== 'chat');
+
+        return (
+            <div
+                id="tools"
+                ref={menuRef}
+                className="pointer-events-auto fixed right-5 top-[112px] z-[500]"
+            >
+                <button
+                    type="button"
+                    onClick={() => setIsOpen((open) => !open)}
+                    className="inline-flex h-11 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-medium text-ink shadow-ada transition hover:bg-surface2 focus:outline-none focus-visible:shadow-[0_0_0_3px_rgb(var(--c-accent)/0.18)]"
+                    aria-expanded={isOpen}
+                    aria-controls="conversation-tools-menu"
+                    aria-label={isOpen ? 'Fermer les outils' : 'Ouvrir les outils'}
+                >
+                    {isOpen ? <X size={17} /> : <Wrench size={17} />}
+                    <span>Outils</span>
+                </button>
+
+                {isOpen && (
+                    <div
+                        id="conversation-tools-menu"
+                        role="dialog"
+                        aria-label="Outils Ada"
+                        className="absolute right-0 top-[52px] w-[min(440px,calc(100vw-32px))] rounded-ada-lg border border-line bg-surface p-3 shadow-ada-lg"
+                    >
+                        <div className="mb-2 px-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted">
+                            Capacités d’Ada
+                        </div>
+                        <div className="grid max-h-[min(520px,calc(100vh-150px))] grid-cols-2 gap-2 overflow-y-auto p-1 sm:grid-cols-3">
+                            {conversationTools.map(({ key, icon, label, active, disabled, onClick }) => (
+                                <button
+                                    key={key}
+                                    type="button"
+                                    onClick={() => runToolAction(onClick)}
+                                    disabled={disabled}
+                                    aria-pressed={Boolean(active)}
+                                    className={`flex min-h-16 items-center gap-3 rounded-ada border px-3 py-2.5 text-left text-sm transition focus:outline-none focus-visible:shadow-[0_0_0_3px_rgb(var(--c-accent)/0.18)] disabled:cursor-not-allowed disabled:opacity-40 ${
+                                        active
+                                            ? 'border-accent/40 bg-accent/10 text-accent'
+                                            : 'border-line bg-surface2 text-ink hover:border-accent/30 hover:bg-accent/5'
+                                    }`}
+                                >
+                                    <span className="shrink-0 text-accent">{icon}</span>
+                                    <span className="min-w-0 truncate font-medium">{label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
 
     return (
         <div

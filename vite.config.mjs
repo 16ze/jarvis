@@ -15,13 +15,13 @@ export default defineConfig({
         rollupOptions: {
             input: {
                 // UI principale
-                main: resolve(__dirname, 'index.html'),
+                main: resolve(import.meta.dirname, 'index.html'),
                 // Vignette flottante Jarvis (fenêtre Electron séparée)
-                widget: resolve(__dirname, 'widget.html'),
+                widget: resolve(import.meta.dirname, 'widget.html'),
                 // Client WebXR (casque VR/MR) — Couche A
-                xr: resolve(__dirname, 'xr.html'),
+                xr: resolve(import.meta.dirname, 'xr.html'),
                 // « Yeux » d'Ada : flux caméra (tél/webcam) -> vision — Couche B
-                eye: resolve(__dirname, 'eye.html'),
+                eye: resolve(import.meta.dirname, 'eye.html'),
             },
             output: {
                 // Code-splitting : on isole les grosses dépendances vendors dans

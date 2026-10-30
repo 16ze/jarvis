@@ -2884,7 +2884,6 @@ function App() {
                                     onSend={() => handleSend()}
                                     onStop={handleStopGeneration}
                                     isGenerating={isGenerating}
-                                    disabled={!socketConnected}
                                     attachment={pendingAttachment}
                                     onPickImage={handlePickImage}
                                     onClearAttachment={handleClearAttachment}
@@ -3096,8 +3095,8 @@ function App() {
                     />
                 )}
 
-                {/* Footer Controls / Tools Module */}
-                <div className="z-20 flex justify-center pb-10 pointer-events-none">
+                {/* Outils : panneau compact en conversation, menu radial en mode modulaire. */}
+                <div className="z-20 flex justify-center pb-10">
                     <ToolsModule
                         isConnected={isConnected}
                         isMuted={isMuted}

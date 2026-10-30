@@ -148,7 +148,7 @@ export default function ChatComposer({
                     disabled={disabled}
                     placeholder={placeholder}
                     aria-label="Message pour Ada"
-                    className="min-h-[24px] flex-1 resize-none border-0 bg-transparent py-1 text-[15px] leading-relaxed text-ink placeholder:text-muted focus:outline-none disabled:opacity-60 scrollbar-hide"
+                    className="min-h-11 flex-1 resize-none border-0 bg-transparent py-[11px] text-[15px] leading-[22px] text-ink placeholder:text-muted focus:outline-none disabled:opacity-60 scrollbar-hide"
                 />
 
                 <button

@@ -242,7 +242,6 @@ const MobileApp = ({
             onSend={() => handleSend?.()}
             onStop={handleStopGeneration}
             isGenerating={adaSpeaking}
-            disabled={!socket?.connected}
             placeholder="Écrire à Ada…"
             attachment={attachment}
             onPickImage={onPickImage}
