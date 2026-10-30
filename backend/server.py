@@ -129,6 +129,7 @@ app_socketio = socketio.ASGIApp(sio, app)
 # journalisée via monitoring (compteur interrogeable) et renvoyée en 500 JSON
 # propre — plus aucune erreur « en silence ». Voir GET /health/errors.
 import monitoring
+from generation_registry import GenerationRegistry
 from text_streaming import TextGenerationState, run_streamed_text_turn
 from fastapi.responses import JSONResponse
 
@@ -174,21 +175,22 @@ cast_agent = CastAgent()
 hand_gesture_os_controller = HandGestureOsController()
 standalone_os_control_agent = OsControlAgent()
 text_generation_state = TextGenerationState()
+text_generation_registry = GenerationRegistry()
 JARVIS_ROOT = Path(os.getenv("JARVIS_ROOT", Path(__file__).parent.parent)).resolve()
 workspace_manager = WorkspaceManager(JARVIS_ROOT)
 workspace_policy = WorkspacePolicy()
 SETTINGS_FILE = "settings.json"
 
 
-def _ada_response_active() -> bool:
-    """Retourne l'état UI commun aux réponses audio et texte."""
+def _audio_response_active() -> bool:
+    """Retourne l'état de lecture audio, diffusé globalement aux interfaces."""
     import time as _time
 
     audio_active = bool(
         audio_loop
         and _time.monotonic() < getattr(audio_loop, "_speaking_until", 0.0)
     )
-    return audio_active or text_generation_state.is_active
+    return audio_active
 
 
 DEFAULT_SETTINGS = {
@@ -394,7 +396,7 @@ async def startup_event():
         last = None
         while True:
             try:
-                on = _ada_response_active()
+                on = _audio_response_active()
                 if on != last:
                     last = on
                     await sio.emit("ada_speaking", {"on": on})
@@ -702,6 +704,7 @@ async def browser_result(sid, data):
 
 @sio.event
 async def disconnect(sid):
+    text_generation_registry.cancel(sid)
     print(f"Client disconnected: {sid}")
 
 
@@ -1132,6 +1135,46 @@ async def shutdown(sid, data=None):
 
 @sio.event
 async def user_input(sid, data):
+    """Encadre tous les chemins texte avec un cycle de vie annulable."""
+    request_id = str((data or {}).get("requestId") or "")
+    current_task = asyncio.current_task()
+    if current_task is None:
+        return
+    if not text_generation_registry.register(sid, request_id, current_task):
+        await sio.emit(
+            "generation_finished",
+            {"requestId": request_id, "status": "busy"},
+            room=sid,
+        )
+        return
+
+    status = "completed"
+    try:
+        await _handle_user_input(sid, data or {}, request_id)
+    except asyncio.CancelledError:
+        status = "cancelled"
+    except Exception as exc:
+        status = "error"
+        monitoring.log_exception("socket:user_input", exc)
+        await sio.emit(
+            "transcription",
+            {
+                "sender": "ADA",
+                "text": "Désolé, la réponse a été interrompue par une erreur.",
+                "requestId": request_id,
+            },
+            room=sid,
+        )
+    finally:
+        text_generation_registry.remove(sid, current_task)
+        await sio.emit(
+            "generation_finished",
+            {"requestId": request_id, "status": status},
+            room=sid,
+        )
+
+
+async def _handle_user_input(sid, data, request_id: str):
     raw_text = data.get('text')
     # Couche de reprompting : clarifie l'intention avant le LLM (fallback = brut).
     text = raw_text
@@ -1193,10 +1236,18 @@ async def user_input(sid, data):
         async def _emit_delta(delta: str) -> None:
             if not delta:
                 return
-            await sio.emit('transcription', {"sender": "ADA", "text": delta})
+            await sio.emit(
+                'transcription',
+                {"sender": "ADA", "text": delta, "requestId": request_id},
+                room=sid,
+            )
 
         async def _set_active(on: bool) -> None:
-            await sio.emit("ada_speaking", {"on": on})
+            await sio.emit(
+                "ada_speaking",
+                {"on": on, "mode": "text", "requestId": request_id},
+                room=sid,
+            )
 
         async def _generate(on_delta) -> str:
             return await audio_loop.process_text_message(
@@ -1211,10 +1262,30 @@ async def user_input(sid, data):
             emit_delta=_emit_delta,
             set_active=_set_active,
             state=text_generation_state,
-            remaining_active=_ada_response_active,
+            remaining_active=lambda: False,
             on_error=lambda exc: monitoring.log_exception("socket:user_input", exc),
         )
         print("[SERVER DEBUG] Text response streamed successfully.")
+
+
+@sio.event
+async def cancel_generation(sid, data=None):
+    """Annule uniquement la génération texte active de ce client."""
+    request_id = str((data or {}).get("requestId") or "") or None
+    cancelled = text_generation_registry.cancel(sid, request_id)
+    if not cancelled:
+        await sio.emit(
+            "generation_cancelled",
+            {"requestId": request_id, "cancelled": False},
+            room=sid,
+        )
+
+
+@sio.event
+async def clear_audio(sid, data=None):
+    """Interrompt aussi la file audio backend lors d'un Stop côté UI."""
+    if audio_loop:
+        audio_loop.clear_audio_queue()
 
 import json
 from datetime import datetime

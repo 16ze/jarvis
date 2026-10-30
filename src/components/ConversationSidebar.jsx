@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
-import { Plus, MessageSquare, Trash2, Check, X, PanelLeftClose, PanelLeftOpen, Pencil } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Plus, MessageSquare, Trash2, Check, X, PanelLeftClose, PanelLeftOpen, Pencil, Search } from 'lucide-react';
+import { filterConversations, getConversationMatchSnippet } from '../lib/conversationHistory';
 
 /*
  * ConversationSidebar — rail d'historique des conversations, « propre comme Apple ».
  * 100 % tokenisé (bg/surface/surface2/ink/muted/line/accent), beau en clair/sombre.
  *
  * Props :
- *   conversations : [{ id, title, updatedAt }]  (triées par le parent, plus récent d'abord)
+ *   conversations : [{ id, title, messages, updatedAt }]  (triées par le parent)
  *   activeId      : id de la conversation active
  *   collapsed     : bool
  *   onToggle()    : plier/déplier
@@ -14,6 +15,7 @@ import { Plus, MessageSquare, Trash2, Check, X, PanelLeftClose, PanelLeftOpen, P
  *   onSelect(id)  : sélectionner
  *   onDelete(id)  : supprimer
  *   onRename(id, title) : renommer
+ *   disabled      : verrouille les mutations pendant une génération
  */
 export default function ConversationSidebar({
     conversations = [],
@@ -24,15 +26,29 @@ export default function ConversationSidebar({
     onSelect,
     onDelete,
     onRename,
+    disabled = false,
 }) {
     const [editingId, setEditingId] = useState(null);
     const [draft, setDraft] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
 
-    const startRename = (c) => { setEditingId(c.id); setDraft(c.title || ''); };
-    const commitRename = () => {
-        if (editingId) onRename?.(editingId, draft);
+    const filteredConversations = useMemo(
+        () => filterConversations(conversations, searchQuery),
+        [conversations, searchQuery]
+    );
+
+    const startRename = (c) => {
+        if (disabled) return;
+        setEditingId(c.id);
+        setDraft(c.title || '');
+    };
+    const cancelRename = () => {
         setEditingId(null);
         setDraft('');
+    };
+    const commitRename = () => {
+        if (editingId) onRename?.(editingId, draft);
+        cancelRename();
     };
 
     // ── Rail replié : juste les icônes (nouveau + déplier) ───────────────────
@@ -47,9 +63,10 @@ export default function ConversationSidebar({
                     <PanelLeftOpen size={18} />
                 </button>
                 <button
-                    onClick={onNew}
+                    onClick={() => { setSearchQuery(''); onNew?.(); }}
+                    disabled={disabled}
                     title="Nouvelle conversation"
-                    className="grid h-9 w-9 place-items-center rounded-ada border border-line text-accent transition-colors hover:bg-accent/10"
+                    className="grid h-9 w-9 place-items-center rounded-ada border border-line text-accent transition-colors enabled:hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-35"
                 >
                     <Plus size={18} />
                 </button>
@@ -62,8 +79,9 @@ export default function ConversationSidebar({
             {/* En-tête : nouvelle conversation + replier */}
             <div className="flex items-center gap-2 p-3">
                 <button
-                    onClick={onNew}
-                    className="ada-btn flex h-9 flex-1 items-center justify-center gap-2 rounded-ada border border-line bg-surface text-sm font-medium text-ink transition-colors hover:bg-ink/[0.04]"
+                    onClick={() => { setSearchQuery(''); onNew?.(); }}
+                    disabled={disabled}
+                    className="ada-btn flex h-9 flex-1 items-center justify-center gap-2 rounded-ada border border-line bg-surface text-sm font-medium text-ink transition-colors enabled:hover:bg-ink/[0.04] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                     <Plus size={16} />
                     Nouvelle conversation
@@ -77,14 +95,53 @@ export default function ConversationSidebar({
                 </button>
             </div>
 
+            <div className="px-3 pb-3">
+                <div className="flex h-9 items-center gap-2 rounded-ada border border-line bg-surface px-2.5 text-muted transition-colors focus-within:border-accent/60 focus-within:text-ink">
+                    <Search size={15} aria-hidden="true" />
+                    <input
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Escape') setSearchQuery('');
+                        }}
+                        aria-label="Rechercher dans les conversations"
+                        placeholder="Rechercher"
+                        className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
+                    />
+                    {searchQuery && (
+                        <button
+                            type="button"
+                            onClick={() => setSearchQuery('')}
+                            aria-label="Effacer la recherche"
+                            className="rounded p-0.5 text-muted transition-colors hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+                        >
+                            <X size={14} />
+                        </button>
+                    )}
+                </div>
+            </div>
+
             {/* Liste */}
             <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
                 {conversations.length === 0 && (
                     <p className="px-3 py-6 text-center text-xs text-muted">Aucune conversation.</p>
                 )}
-                {conversations.map((c) => {
+                {conversations.length > 0 && filteredConversations.length === 0 && (
+                    <div className="px-3 py-6 text-center">
+                        <p className="text-xs text-muted">Aucune conversation trouvée.</p>
+                        <button
+                            type="button"
+                            onClick={() => setSearchQuery('')}
+                            className="mt-2 text-xs font-medium text-accent hover:underline focus:outline-none focus-visible:underline"
+                        >
+                            Effacer la recherche
+                        </button>
+                    </div>
+                )}
+                {filteredConversations.map((c) => {
                     const active = c.id === activeId;
                     const editing = editingId === c.id;
+                    const matchSnippet = getConversationMatchSnippet(c, searchQuery);
                     return (
                         <div
                             key={c.id}
@@ -92,7 +149,7 @@ export default function ConversationSidebar({
                                 active ? 'bg-accent/10 text-ink' : 'text-muted hover:bg-ink/[0.04] hover:text-ink'
                             }`}
                         >
-                            <MessageSquare size={15} className={active ? 'text-accent' : 'text-muted'} />
+                            <MessageSquare size={15} className={`shrink-0 ${matchSnippet ? 'mt-0.5 self-start' : ''} ${active ? 'text-accent' : 'text-muted'}`} />
                             {editing ? (
                                 <input
                                     autoFocus
@@ -100,32 +157,55 @@ export default function ConversationSidebar({
                                     onChange={(e) => setDraft(e.target.value)}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') commitRename();
-                                        if (e.key === 'Escape') { setEditingId(null); setDraft(''); }
+                                        if (e.key === 'Escape') cancelRename();
                                     }}
-                                    onBlur={commitRename}
+                                    onBlur={cancelRename}
                                     className="min-w-0 flex-1 rounded-sm border border-line bg-surface px-1.5 py-0.5 text-sm text-ink outline-none focus:border-accent"
                                 />
                             ) : (
                                 <button
                                     onClick={() => onSelect?.(c.id)}
                                     onDoubleClick={() => startRename(c)}
-                                    className="min-w-0 flex-1 truncate text-left"
+                                    disabled={disabled}
+                                    aria-current={active ? 'page' : undefined}
+                                    className="min-w-0 flex-1 text-left disabled:cursor-not-allowed"
                                     title={c.title}
                                 >
-                                    {c.title || 'Nouvelle conversation'}
+                                    <span className="block truncate">{c.title || 'Nouvelle conversation'}</span>
+                                    {matchSnippet && (
+                                        <span className="mt-0.5 block truncate text-[11px] text-muted">{matchSnippet}</span>
+                                    )}
                                 </button>
                             )}
 
                             {editing ? (
-                                <button onClick={commitRename} title="Valider" className="shrink-0 text-muted hover:text-positive">
+                                <button
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={commitRename}
+                                    title="Valider"
+                                    aria-label="Valider le nouveau nom"
+                                    className="shrink-0 text-muted hover:text-positive"
+                                >
                                     <Check size={15} />
                                 </button>
                             ) : (
-                                <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                                    <button onClick={() => startRename(c)} title="Renommer" className="text-muted hover:text-ink">
+                                <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                                    <button
+                                        onClick={() => startRename(c)}
+                                        disabled={disabled}
+                                        title="Renommer"
+                                        aria-label={`Renommer ${c.title || 'la conversation'}`}
+                                        className="text-muted enabled:hover:text-ink disabled:cursor-not-allowed disabled:opacity-35"
+                                    >
                                         <Pencil size={14} />
                                     </button>
-                                    <button onClick={() => onDelete?.(c.id)} title="Supprimer" className="text-muted hover:text-danger">
+                                    <button
+                                        onClick={() => onDelete?.(c.id)}
+                                        disabled={disabled}
+                                        title="Supprimer"
+                                        aria-label={`Supprimer ${c.title || 'la conversation'}`}
+                                        className="text-muted enabled:hover:text-danger disabled:cursor-not-allowed disabled:opacity-35"
+                                    >
                                         <Trash2 size={14} />
                                     </button>
                                 </div>

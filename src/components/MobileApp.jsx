@@ -1,6 +1,10 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Power, Mic, MicOff, Send } from 'lucide-react';
+import { History, Power, Mic, MicOff } from 'lucide-react';
 import Face from '../widget/Face';
+import ChatComposer from './chat/ChatComposer';
+import EditableUserMessage from './chat/EditableUserMessage';
+import MarkdownMessage from './chat/MarkdownMessage';
+import MobileConversationDrawer from './MobileConversationDrawer';
 
 /*
  * MobileApp — interface mobile ET tablette d'Ada, « propre comme Apple ».
@@ -27,6 +31,14 @@ const MobileApp = ({
     inputValue,
     setInputValue,
     handleSend,
+    handleStopGeneration,
+    handleEditMessage,
+    handleCopyMessage,
+    conversations = [],
+    activeConversationId,
+    onNewConversation,
+    onSelectConversation,
+    onDeleteConversation,
     adaAffect = null,
     adaSpeaking = false,
     adaPiloting = false,
@@ -35,6 +47,7 @@ const MobileApp = ({
 }) => {
     const messagesEndRef = useRef(null);
     const [showChat, setShowChat] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
 
     // Largeur de fenêtre → choix des tailles (visage, colonnes). Le composant est
     // rendu jusqu'à ~1180px ; on adapte donc le visage au palier téléphone/tablette.
@@ -60,7 +73,13 @@ const MobileApp = ({
     const faceSize = Math.round(diskSize * 0.74);
     const live = isConnected && !isMuted;
 
-    const statusLabel = !isConnected ? 'Hors ligne' : isMuted ? 'En veille' : 'À l’écoute';
+    const statusLabel = !isConnected
+        ? 'Hors ligne'
+        : adaSpeaking
+        ? 'Ada répond…'
+        : isMuted
+        ? 'En veille'
+        : 'À l’écoute';
 
     // ── Briques réutilisées par les deux mises en page ───────────────────────
     const Brand = (
@@ -83,7 +102,7 @@ const MobileApp = ({
         <button
             onClick={togglePower}
             aria-label={isConnected ? 'Éteindre Ada' : 'Allumer Ada'}
-            className={`grid h-10 w-10 place-items-center rounded-full border transition-all active:scale-95 ${
+            className={`grid h-11 w-11 place-items-center rounded-full border transition-all active:scale-95 ${
                 isConnected
                     ? 'border-positive/40 text-positive bg-positive/10'
                     : 'border-line text-muted bg-surface'
@@ -161,24 +180,39 @@ const MobileApp = ({
                     </p>
                 </div>
             )}
-            {messages.slice(-30).map((msg, i) => {
+            {messages.slice(-100).map((msg, i) => {
                 const mine = msg.sender === 'Bryan';
+                const messageIndex = Math.max(0, messages.length - 100) + i;
+                if (msg.sender === 'System') {
+                    return (
+                        <div key={messageIndex} className="ada-msg-in mx-auto max-w-[90%] text-center">
+                            <span className="rounded-full border border-line bg-surface px-3 py-1 text-[11px] text-muted">{msg.text}</span>
+                        </div>
+                    );
+                }
+                if (mine) {
+                    return (
+                        <EditableUserMessage
+                            key={messageIndex}
+                            text={msg.text}
+                            edited={msg.edited}
+                            disabled={adaSpeaking}
+                            alwaysShowActions
+                            onCopy={() => handleCopyMessage?.(msg.text)}
+                            onSave={(nextText) => handleEditMessage?.(messageIndex, nextText)}
+                        />
+                    );
+                }
                 return (
                     <div
-                        key={i}
-                        className={`ada-msg-in flex flex-col gap-1 ${mine ? 'items-end' : 'items-start'}`}
+                        key={messageIndex}
+                        className="ada-msg-in flex flex-col items-start gap-1"
                     >
                         <span className="px-1 text-[10px] font-medium tracking-wide text-muted">
-                            {msg.sender}
+                            Ada
                         </span>
-                        <div
-                            className={`max-w-[85%] rounded-ada px-3.5 py-2.5 text-sm leading-relaxed shadow-ada-sm ${
-                                mine
-                                    ? 'bg-accent text-white'
-                                    : 'border border-line bg-surface text-ink'
-                            }`}
-                        >
-                            {msg.text}
+                        <div className="max-w-[92%] rounded-ada border border-line bg-surface px-3.5 py-2.5 text-sm leading-relaxed text-ink shadow-ada-sm">
+                            <MarkdownMessage text={msg.text} />
                         </div>
                     </div>
                 );
@@ -188,24 +222,15 @@ const MobileApp = ({
     );
 
     const InputBar = (
-        <div className="flex items-center gap-2">
-            <input
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleSend}
-                placeholder="Écrire à Ada…"
-                className="h-11 flex-1 rounded-full border border-line bg-surface px-4 text-sm text-ink placeholder:text-muted outline-none transition-all focus:border-accent focus:shadow-[0_0_0_3px_rgb(var(--c-accent)/0.18)]"
-            />
-            <button
-                onClick={handleSend}
-                disabled={!inputValue.trim()}
-                aria-label="Envoyer"
-                className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-accent text-white transition-all active:scale-95 disabled:opacity-30"
-            >
-                <Send size={17} />
-            </button>
-        </div>
+        <ChatComposer
+            value={inputValue}
+            onChange={setInputValue}
+            onSend={() => handleSend?.()}
+            onStop={handleStopGeneration}
+            isGenerating={adaSpeaking}
+            disabled={!socket?.connected}
+            placeholder="Écrire à Ada…"
+        />
     );
 
     return (
@@ -218,13 +243,38 @@ const MobileApp = ({
                 paddingRight: 'env(safe-area-inset-right)',
             }}
         >
+            <MobileConversationDrawer
+                open={showHistory}
+                conversations={conversations}
+                activeId={activeConversationId}
+                disabled={adaSpeaking}
+                onClose={() => setShowHistory(false)}
+                onNew={() => {
+                    onNewConversation?.();
+                    setShowChat(true);
+                }}
+                onSelect={(id) => {
+                    onSelectConversation?.(id);
+                    setShowChat(true);
+                }}
+                onDelete={onDeleteConversation}
+            />
+
             {/* ── En-tête téléphone (masqué en tablette) ─────────────────────── */}
-            <header className="flex shrink-0 items-center justify-between px-5 pb-3 pt-4 lg:hidden">
+            <header className="flex shrink-0 items-center justify-between px-5 pb-3 pt-4 md:hidden">
                 {Brand}
                 <div className="flex items-center gap-2.5">
                     <button
+                        type="button"
+                        onClick={() => setShowHistory(true)}
+                        aria-label="Afficher l’historique"
+                        className="grid h-11 w-11 place-items-center rounded-full border border-line text-muted transition active:scale-95"
+                    >
+                        <History size={16} />
+                    </button>
+                    <button
                         onClick={() => setShowChat(!showChat)}
-                        className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all active:scale-95 ${
+                        className={`min-h-11 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all active:scale-95 ${
                             showChat
                                 ? 'border-accent/40 bg-accent/10 text-accent'
                                 : 'border-line text-muted'
@@ -237,37 +287,47 @@ const MobileApp = ({
             </header>
 
             {/* ── Contenu : 1 colonne (téléphone) / 2 colonnes (tablette) ─────── */}
-            <div className="mx-auto flex w-full min-h-0 max-w-6xl flex-1 flex-col lg:flex-row lg:gap-6 lg:px-6 lg:py-5">
+            <div className="mx-auto flex w-full min-h-0 max-w-6xl flex-1 flex-col md:flex-row md:gap-6 md:px-6 md:py-5">
                 {/* Présence : visage + contrôles */}
                 <section
-                    className={`${showChat ? 'hidden' : 'flex'} min-h-0 flex-1 flex-col lg:flex lg:max-w-[46%] lg:rounded-ada-lg lg:border lg:border-line lg:bg-surface lg:p-6 lg:shadow-ada`}
+                    className={`${showChat ? 'hidden' : 'flex'} min-h-0 flex-1 flex-col md:flex md:max-w-[46%] md:rounded-ada-lg md:border md:border-line md:bg-surface md:p-6 md:shadow-ada`}
                 >
                     {/* Marque + power (tablette uniquement) */}
-                    <div className="hidden items-center justify-between lg:flex">
+                    <div className="hidden items-center justify-between md:flex">
                         {Brand}
-                        {PowerButton}
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowHistory(true)}
+                                aria-label="Afficher l’historique"
+                                className="grid h-11 w-11 place-items-center rounded-full border border-line text-muted hover:bg-ink/[0.05]"
+                            >
+                                <History size={17} />
+                            </button>
+                            {PowerButton}
+                        </div>
                     </div>
 
                     <div className="grid flex-1 place-items-center">{FaceStage}</div>
 
                     {/* Micro (tablette : sous le visage) */}
-                    <div className="hidden justify-center pt-2 lg:flex">{MicButton}</div>
+                    <div className="hidden justify-center pt-2 md:flex">{MicButton}</div>
                 </section>
 
                 {/* Conversation : fil + saisie */}
                 <section
-                    className={`${showChat ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col lg:flex lg:rounded-ada-lg lg:border lg:border-line lg:bg-surface lg:p-5 lg:shadow-ada`}
+                    className={`${showChat ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col md:flex md:rounded-ada-lg md:border md:border-line md:bg-surface md:p-5 md:shadow-ada`}
                 >
-                    <div className="min-h-0 flex-1 px-4 py-2 lg:px-0 lg:py-0">
+                    <div className="min-h-0 flex-1 px-4 py-2 md:px-0 md:py-0">
                         {renderMessages()}
                     </div>
                     {/* Saisie (tablette : au bas de la colonne) */}
-                    <div className="hidden pt-4 lg:block">{InputBar}</div>
+                    <div className="hidden pt-4 md:block">{InputBar}</div>
                 </section>
             </div>
 
             {/* ── Barre basse téléphone : saisie + micro (masquée en tablette) ── */}
-            <div className="shrink-0 px-4 pb-4 pt-1 lg:hidden">
+            <div className="shrink-0 px-4 pb-4 pt-1 md:hidden">
                 <div className="pb-3">{InputBar}</div>
                 <div className="flex justify-center">{MicButton}</div>
             </div>

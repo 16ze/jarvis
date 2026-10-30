@@ -27,6 +27,9 @@ import MarkdownMessage from './components/chat/MarkdownMessage';
 import MessageActions from './components/chat/MessageActions';
 import TypingIndicator from './components/chat/TypingIndicator';
 import ChatComposer from './components/chat/ChatComposer';
+import EditableUserMessage from './components/chat/EditableUserMessage';
+import ConfirmDialog from './components/ConfirmDialog';
+import { editMessageBranch, getRegenerationBranch } from './lib/conversationHistory';
 import {
     DEFAULT_HAND_CONTROL_CONFIG,
     OneEuroFilter2D,
@@ -130,7 +133,12 @@ function App() {
     // Visage vivant d'Ada (piloté par le brain via le socket ada_affect)
     const [adaAffect, setAdaAffect] = useState(null);
     const [adaPiloting, setAdaPiloting] = useState(false);
-    const [adaSpeaking, setAdaSpeaking] = useState(false);
+    const [adaVoiceSpeaking, setAdaVoiceSpeaking] = useState(false);
+    const [adaTextSpeaking, setAdaTextSpeaking] = useState(false);
+    const [requestPending, setRequestPending] = useState(false);
+    const requestPendingRef = useRef(false);
+    const currentRequestIdRef = useRef(null);
+    const [conversationToDelete, setConversationToDelete] = useState(null);
 
 
     // RESTORED STATE
@@ -492,6 +500,11 @@ function App() {
         socket.on('disconnect', () => {
             setStatus('Disconnected');
             setSocketConnected(false);
+            setRequestPending(false);
+            requestPendingRef.current = false;
+            currentRequestIdRef.current = null;
+            setAdaVoiceSpeaking(false);
+            setAdaTextSpeaking(false);
         });
         // Pilotage PC : rétracte la fenêtre pendant qu'Ada contrôle l'écran (façon Claude).
         socket.on('pc_control_state', (data) => {
@@ -505,7 +518,32 @@ function App() {
             if (data && typeof data === 'object') setAdaAffect(data);
         });
         // « Ada parle » (source de vérité backend, dure toute la phrase).
-        socket.on('ada_speaking', (data) => setAdaSpeaking(!!(data && data.on)));
+        socket.on('ada_speaking', (data) => {
+            const on = !!(data && data.on);
+            const isTextResponse = data?.mode === 'text';
+            if (isTextResponse) {
+                if (data.requestId !== currentRequestIdRef.current) return;
+                setAdaTextSpeaking(on);
+            } else {
+                setAdaVoiceSpeaking(on);
+            }
+            if (isTextResponse && on) {
+                requestPendingRef.current = false;
+                setRequestPending(false);
+            }
+        });
+        socket.on('generation_cancelled', (data) => {
+            if (data?.requestId !== currentRequestIdRef.current) return;
+            // `cancelled:false` signifie que la tâche est déjà terminée ou que
+            // l'identifiant ne correspond pas : attendre generation_finished.
+        });
+        socket.on('generation_finished', (data) => {
+            if (data?.requestId !== currentRequestIdRef.current) return;
+            currentRequestIdRef.current = null;
+            requestPendingRef.current = false;
+            setRequestPending(false);
+            setAdaTextSpeaking(false);
+        });
         socket.on('status', (data) => {
             addMessage('System', data.msg);
             // Update status bar based on backend messages
@@ -677,6 +715,7 @@ function App() {
 
         // Handle streaming transcription
         socket.on('transcription', (data) => {
+            if (data?.requestId && data.requestId !== currentRequestIdRef.current) return;
             setMessages(prev => {
                 const lastMsg = prev[prev.length - 1];
 
@@ -895,6 +934,9 @@ function App() {
             socket.off('error');
             socket.off('vision_mode');
             socket.off('hand_control_status');
+            socket.off('ada_speaking');
+            socket.off('generation_cancelled');
+            socket.off('generation_finished');
 
             stopFrontendMic();
             stopPlaybackAudio();
@@ -1846,6 +1888,12 @@ function App() {
         } else {
             setConversations(next);
         }
+        setConversationToDelete(null);
+    };
+    const requestDeleteConversation = (id) => {
+        if (requestPendingRef.current || adaVoiceSpeaking || adaTextSpeaking) return;
+        const conversation = conversations.find((item) => item.id === id);
+        if (conversation) setConversationToDelete(conversation);
     };
     const renameConversation = (id, title) => {
         setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title: (title || '').trim() || c.title } : c)));
@@ -1900,8 +1948,20 @@ function App() {
         }
     };
 
+    const startTextRequest = (text) => {
+        if (requestPendingRef.current) return false;
+        const requestId = globalThis.crypto?.randomUUID?.()
+            || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+        currentRequestIdRef.current = requestId;
+        requestPendingRef.current = true;
+        setRequestPending(true);
+        socket.emit('user_input', { text, requestId });
+        return true;
+    };
+
     const handleSend = (e) => {
         if (e?.key && e.key !== 'Enter') return;
+        if (requestPendingRef.current || adaVoiceSpeaking || adaTextSpeaking) return;
         const text = inputValue.trim();
         if (!text) return;
         if (!socket.connected) {
@@ -1909,7 +1969,7 @@ function App() {
             return;
         }
 
-        socket.emit('user_input', { text });
+        startTextRequest(text);
         addMessage('Bryan', text);
         setInputValue('');
     };
@@ -1920,24 +1980,44 @@ function App() {
         try { await navigator.clipboard.writeText(text || ''); } catch (e) { /* refusé */ }
     };
 
+    const handleEditMessage = (index, nextText) => {
+        if (!socket.connected || requestPendingRef.current || adaVoiceSpeaking || adaTextSpeaking) {
+            if (!socket.connected) addMessage('System', 'Connexion à Ada interrompue. Réessaie dans un instant.');
+            return false;
+        }
+        const nextMessages = editMessageBranch(messages, index, nextText);
+        if (nextMessages === messages) return false;
+        setMessages(nextMessages);
+        startTextRequest(nextText.trim());
+        return true;
+    };
+
     // Régénère : renvoie le dernier message de Bryan au backend (nouvelle réponse d'Ada).
     const handleRegenerate = () => {
+        if (requestPendingRef.current || adaVoiceSpeaking || adaTextSpeaking) return;
         if (!socket.connected) {
             addMessage('System', 'Connexion à Ada interrompue. Réessaie dans un instant.');
             return;
         }
-        const lastUser = [...messages].reverse().find((m) => m.sender === 'Bryan');
-        if (lastUser?.text) socket.emit('user_input', { text: lastUser.text });
+        const branch = getRegenerationBranch(messages);
+        if (!branch) return;
+        setMessages(branch.messages);
+        startTextRequest(branch.prompt);
     };
 
     // Stop : coupe immédiatement la voix d'Ada côté client (barge-in local).
     const handleStopGeneration = () => {
         try { stopPlaybackAudio(); } catch (e) { /* hors audio */ }
+        const requestId = currentRequestIdRef.current;
+        if (requestId) {
+            try { socket.emit('cancel_generation', { requestId }); } catch (e) { /* best-effort */ }
+        }
         try { socket.emit('clear_audio'); } catch (e) { /* best-effort */ }
     };
 
     // Ada « répond » tant que le backend joue de l'audio (source de vérité ada_speaking).
-    const isGenerating = adaSpeaking;
+    const adaSpeaking = adaVoiceSpeaking || adaTextSpeaking;
+    const isGenerating = requestPending || adaSpeaking;
 
     const handleMinimize = () => ipcRenderer.send('window-minimize');
     const handleMaximize = () => ipcRenderer.send('window-maximize');
@@ -2189,29 +2269,56 @@ function App() {
 
     if (isMobile) {
         return (
-            <MobileApp
-                socket={socket}
-                isConnected={isConnected}
-                isMuted={isMuted}
-                togglePower={togglePower}
-                toggleMute={toggleMute}
-                messages={messages}
-                aiAudioData={aiAudioData}
-                audioAmp={audioAmp}
-                inputValue={inputValue}
-                setInputValue={setInputValue}
-                handleSend={handleSend}
-                adaAffect={adaAffect}
-                adaSpeaking={adaSpeaking}
-                adaPiloting={adaPiloting}
-                micRef={micAudioDataRef}
-                audioError={audioError}
-            />
+            <>
+                <MobileApp
+                    socket={socket}
+                    isConnected={isConnected}
+                    isMuted={isMuted}
+                    togglePower={togglePower}
+                    toggleMute={toggleMute}
+                    messages={messages}
+                    aiAudioData={aiAudioData}
+                    audioAmp={audioAmp}
+                    inputValue={inputValue}
+                    setInputValue={setInputValue}
+                    handleSend={handleSend}
+                    handleStopGeneration={handleStopGeneration}
+                    handleEditMessage={handleEditMessage}
+                    handleCopyMessage={handleCopyMessage}
+                    conversations={sortedConversations}
+                    activeConversationId={activeConvId}
+                    onNewConversation={newConversation}
+                    onSelectConversation={selectConversation}
+                    onDeleteConversation={requestDeleteConversation}
+                    adaAffect={adaAffect}
+                    adaSpeaking={isGenerating}
+                    adaPiloting={adaPiloting}
+                    micRef={micAudioDataRef}
+                    audioError={audioError}
+                />
+                <ConfirmDialog
+                    open={Boolean(conversationToDelete)}
+                    title="Supprimer cette conversation ?"
+                    description={`« ${conversationToDelete?.title || 'Nouvelle conversation'} » sera supprimée de cet appareil.`}
+                    confirmLabel="Supprimer"
+                    onCancel={() => setConversationToDelete(null)}
+                    onConfirm={() => deleteConversation(conversationToDelete?.id)}
+                />
+            </>
         );
     }
 
     return (
         <div className={`ada-shell h-screen w-screen text-ink overflow-hidden flex flex-col relative selection:bg-accent/20 selection:text-ink ${isElectron ? 'electron-performance' : ''}`}>
+
+            <ConfirmDialog
+                open={Boolean(conversationToDelete)}
+                title="Supprimer cette conversation ?"
+                description={`« ${conversationToDelete?.title || 'Nouvelle conversation'} » sera supprimée de cet appareil.`}
+                confirmLabel="Supprimer"
+                onCancel={() => setConversationToDelete(null)}
+                onConfirm={() => deleteConversation(conversationToDelete?.id)}
+            />
 
             {/* Logic: Show AuthLock if we are NOT authenticated AND (Lock Screen is visible OR Auth is Enabled) 
                 Actually, simpler: isLockScreenVisible is the source of truth for visibility.
@@ -2359,8 +2466,9 @@ function App() {
                             onToggle={() => setSidebarCollapsed((v) => !v)}
                             onNew={newConversation}
                             onSelect={selectConversation}
-                            onDelete={deleteConversation}
+                            onDelete={requestDeleteConversation}
                             onRename={renameConversation}
+                            disabled={isGenerating}
                         />
                         <div className="flex min-h-0 flex-1 justify-center px-4">
                         <div className="flex w-full max-w-3xl flex-col min-h-0">
@@ -2421,11 +2529,14 @@ function App() {
                                             }
                                             if (m.sender === 'Bryan') {
                                                 return (
-                                                    <div key={i} className="ada-msg-in flex justify-end">
-                                                        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-ada-lg bg-accent px-4 py-2.5 text-sm leading-relaxed text-white shadow-ada-sm">
-                                                            {m.text}
-                                                        </div>
-                                                    </div>
+                                                    <EditableUserMessage
+                                                        key={i}
+                                                        text={m.text}
+                                                        edited={m.edited}
+                                                        disabled={isGenerating}
+                                                        onCopy={() => handleCopyMessage(m.text)}
+                                                        onSave={(nextText) => handleEditMessage(i, nextText)}
+                                                    />
                                                 );
                                             }
                                             const isLastAda = i === messages.length - 1;
@@ -2441,7 +2552,7 @@ function App() {
                                                         <MessageActions
                                                             onCopy={() => handleCopyMessage(m.text)}
                                                             onRegenerate={handleRegenerate}
-                                                            canRegenerate={isLastAda}
+                                                            canRegenerate={isLastAda && !isGenerating}
                                                         />
                                                     </div>
                                                 </div>

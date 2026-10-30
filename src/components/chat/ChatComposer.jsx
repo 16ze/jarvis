@@ -96,8 +96,8 @@ export default function ChatComposer({
                 title={isGenerating ? 'Arrêter' : 'Envoyer'}
                 className={
                     isGenerating
-                        ? 'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-line bg-surface2 text-ink transition hover:text-danger focus:outline-none focus-visible:shadow-[0_0_0_3px_rgb(var(--c-accent)/0.18)]'
-                        : 'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-white transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:bg-muted/40 disabled:text-muted focus:outline-none focus-visible:shadow-[0_0_0_3px_rgb(var(--c-accent)/0.18)]'
+                        ? 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line bg-surface2 text-ink transition hover:text-danger focus:outline-none focus-visible:shadow-[0_0_0_3px_rgb(var(--c-accent)/0.18)]'
+                        : 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-white transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:bg-muted/40 disabled:text-muted focus:outline-none focus-visible:shadow-[0_0_0_3px_rgb(var(--c-accent)/0.18)]'
                 }
             >
                 {isGenerating ? (
