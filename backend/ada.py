@@ -1063,17 +1063,22 @@ else:
 
 
 def _build_input_transcription_config() -> types.AudioTranscriptionConfig:
-    """Configure la transcription française et les noms propres fréquents."""
+    """Active la transcription, avec enrichissements si le SDK les supporte."""
     raw_vocabulary = os.getenv(
         "ADA_TRANSCRIPTION_VOCABULARY", "Ada,Bryan,Jarvis,Kairo Digital"
     )
     vocabulary = [
         term.strip() for term in raw_vocabulary.split(",") if term.strip()
     ][:100]
-    return types.AudioTranscriptionConfig(
-        language_codes=["fr-FR"],
-        custom_vocabulary=vocabulary,
+    supported_fields = getattr(
+        types.AudioTranscriptionConfig, "model_fields", {}
     )
+    if {"language_codes", "custom_vocabulary"} <= set(supported_fields):
+        return types.AudioTranscriptionConfig(
+            language_codes=["fr-FR"],
+            custom_vocabulary=vocabulary,
+        )
+    return types.AudioTranscriptionConfig()
 
 
 def _build_voice_config(
