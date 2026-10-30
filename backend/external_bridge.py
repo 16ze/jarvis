@@ -853,6 +853,16 @@ class TextAgent:
                 return "OsControlAgent non disponible pour exécuter cette tâche locale."
             return await self._os_control.run(args.get("task_description", ""))
 
+        if name == "find_person_location":
+            if not self._os_control:
+                return "OsControlAgent non disponible pour ouvrir Localiser."
+            try:
+                return await self._os_control.find_person_location(
+                    args.get("name", "")
+                )
+            except Exception as exc:
+                return f"Localiser erreur : {exc}"
+
         if name == "control_computer":
             if not self._os_control:
                 return "OsControlAgent non disponible pour contrôler le Mac."
@@ -1359,6 +1369,40 @@ class TextAgent:
             return await asyncio.to_thread(self._health.get_steps, args.get("days", 7))
         elif name == "health_sleep" and self._health:
             return await asyncio.to_thread(self._health.get_sleep, args.get("days", 7))
+
+        # ── FICHIERS ET BASES D'APPS (lecture seule, Mac entier) ─────────────
+        elif name == "ada_list_dir":
+            import filesystem_access
+
+            return await asyncio.to_thread(
+                filesystem_access.list_dir,
+                args.get("path", ""),
+                args.get("show_hidden", True),
+            )
+        elif name == "ada_read_file":
+            import filesystem_access
+
+            return await asyncio.to_thread(
+                filesystem_access.read_file, args.get("path", "")
+            )
+        elif name == "ada_search_files":
+            import filesystem_access
+
+            return await asyncio.to_thread(
+                filesystem_access.search_files,
+                args.get("query", ""),
+                root=args.get("root", "~"),
+                mode=args.get("mode", "name"),
+                max_results=args.get("max_results", 100),
+            )
+        elif name == "ada_read_sqlite":
+            import filesystem_access
+
+            return await asyncio.to_thread(
+                filesystem_access.read_sqlite,
+                args.get("path", ""),
+                query=args.get("query"),
+            )
 
         # ── SELF-CORRECTION ──────────────────────────────────────────────────
         elif name == "jarvis_read_file" and self._self_correction:

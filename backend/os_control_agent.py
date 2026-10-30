@@ -1226,7 +1226,7 @@ end timeout'''
             if line.strip() and line.strip().lower() not in generic
         ]
 
-    async def _find_my_locate(self, item: str) -> str:
+    async def find_person_location(self, item: str) -> str:
         """Localise un objet/appareil/personne dans l'app Localiser (FindMy),
         sans appel LLM : ouvre l'app, parcourt les onglets, sélectionne l'objet
         et lit sa position depuis la barre latérale (API accessibilité)."""
@@ -2098,7 +2098,7 @@ end timeout'''
         if locate_obj:
             if cb:
                 await cb({"image": None, "log": f"[PC] Localisation de « {locate_obj} »"})
-            return await self._find_my_locate(locate_obj)
+            return await self.find_person_location(locate_obj)
 
         local_interaction = await self._local_interaction_path(t, cb)
         if local_interaction is not None:
@@ -2157,7 +2157,7 @@ end timeout'''
                         r"^(?:(?:re)?trouve[sz]?|localise[sz]?|cherche[sz]?)\s+",
                         "", rest, flags=re.IGNORECASE,
                     )
-                    return await self._find_my_locate(obj)
+                    return await self.find_person_location(obj)
                 return None  # app ouverte, la suite de la tâche passe en vision loop
 
         # ── Recherche web ──────────────────────────────────────────────────────

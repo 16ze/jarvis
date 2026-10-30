@@ -1324,6 +1324,82 @@ jarvis_git_commit_tool = {
     }, "required": ["message"]}
 }
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# ACCÈS UNIVERSEL EN LECTURE SEULE AU SYSTÈME DE FICHIERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ada_list_dir_tool = {
+    "name": "ada_list_dir",
+    "description": (
+        "Liste n'importe quel dossier du Mac en lecture seule, y compris hors du "
+        "repo Jarvis et à partir de la racine du disque."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "path": {"type": "STRING", "description": "Chemin absolu ou avec ~ du dossier à lister."},
+            "show_hidden": {"type": "BOOLEAN", "description": "Inclure les fichiers cachés. Vrai par défaut."},
+        },
+        "required": ["path"],
+    },
+}
+
+ada_read_file_tool = {
+    "name": "ada_read_file",
+    "description": (
+        "Lit n'importe quel fichier texte du Mac en lecture seule. Pour un fichier "
+        "binaire, renvoie uniquement ses métadonnées."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "path": {"type": "STRING", "description": "Chemin absolu ou avec ~ du fichier à lire."},
+        },
+        "required": ["path"],
+    },
+}
+
+ada_search_files_tool = {
+    "name": "ada_search_files",
+    "description": (
+        "Recherche en lecture seule n'importe quels fichiers du Mac par nom ou "
+        "par contenu, sans restriction à JARVIS_ROOT."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "query": {"type": "STRING", "description": "Nom, motif fnmatch ou texte à rechercher."},
+            "root": {"type": "STRING", "description": "Dossier de départ. ~ par défaut."},
+            "mode": {
+                "type": "STRING",
+                "enum": ["name", "content"],
+                "description": "Recherche par nom ou dans le contenu des fichiers texte.",
+            },
+            "max_results": {"type": "INTEGER", "description": "Nombre maximal de résultats. 100 par défaut."},
+        },
+        "required": ["query"],
+    },
+}
+
+ada_read_sqlite_tool = {
+    "name": "ada_read_sqlite",
+    "description": (
+        "Lit en mode immuable une base SQLite de n'importe quelle app du Mac "
+        "(Messages, Notes, Localiser, etc.) sans la verrouiller ni la modifier."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "path": {"type": "STRING", "description": "Chemin absolu ou avec ~ de la base SQLite."},
+            "query": {
+                "type": "STRING",
+                "description": "Requête SELECT ou PRAGMA. Sans requête, liste les tables.",
+            },
+        },
+        "required": ["path"],
+    },
+}
+
 self_correct_file_tool = {
     "name": "self_correct_file",
     "description": "Utilise Claude Opus 4.6 pour analyser une erreur dans un fichier et appliquer automatiquement la correction. Crée un commit après. Utilise quand tu détectes une erreur dans ton propre code.",
@@ -1477,6 +1553,25 @@ execute_pc_task_tool = {
         "required": ["task_description"]
     },
     "behavior": "NON_BLOCKING"
+}
+
+find_person_location_tool = {
+    "name": "find_person_location",
+    "description": (
+        "Trouve une personne qui partage sa position avec Bryan dans l'app Localiser "
+        "du Mac. Ouvre Localiser, consulte l'onglet Personnes et lit la position "
+        "affichée via l'accessibilité macOS."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "name": {
+                "type": "STRING",
+                "description": "Nom de la personne à retrouver dans Localiser.",
+            }
+        },
+        "required": ["name"],
+    },
 }
 
 # ── CAMÉRA TUYA PTZ ──────────────────────────────────────────────────────────
@@ -1843,7 +1938,7 @@ MCP_TOOLS = [
     workspace_create_tool, workspace_research_tool, workspace_save_note_tool,
     workspace_list_tool, workspace_open_browser_tool,
     # ── Contrôle PC ───────────────────────────────────────────────────────────
-    execute_pc_task_tool, stop_pc_task_tool,
+    execute_pc_task_tool, stop_pc_task_tool, find_person_location_tool,
     # ── Caméra Tuya PTZ ───────────────────────────────────────────────────────
     camera_switch_tool, camera_ptz_move_tool, camera_goto_preset_tool, camera_look_tool,
     camera_tracking_tool, camera_motion_detect_tool, camera_watch_tool,
@@ -1854,6 +1949,9 @@ MCP_TOOLS = [
     # ── Self-correction & évolution ───────────────────────────────────────────
     jarvis_read_file_tool, jarvis_write_file_tool, jarvis_list_files_tool,
     jarvis_git_commit_tool, self_correct_file_tool, self_evolve_tool,
+    # ── Fichiers et bases d'apps (lecture seule, Mac entier) ──────────────────
+    ada_list_dir_tool, ada_read_file_tool, ada_search_files_tool,
+    ada_read_sqlite_tool,
     # ── Vision objet (YOLO) ───────────────────────────────────────────────────
     detect_objects_tool, query_seen_objects_tool, count_objects_seen_tool,
     # ── Création média (Replicate) ────────────────────────────────────────────

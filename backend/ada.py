@@ -4475,6 +4475,25 @@ class AudioLoop:
                                             )
                                         )
 
+                                    # ─── FICHIERS / DONNÉES D'APPS EN LECTURE SEULE ────────────────
+                                    elif fc.name in (
+                                        "ada_list_dir",
+                                        "ada_read_file",
+                                        "ada_search_files",
+                                        "ada_read_sqlite",
+                                        "find_person_location",
+                                    ):
+                                        result_str = await self._execute_text_tool(
+                                            fc.name, dict(fc.args)
+                                        )
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={"result": result_str},
+                                            )
+                                        )
+
                                     # ─── SELF-CORRECTION (Jarvis repo) ────────────────────────────────
                                     elif fc.name in (
                                         "jarvis_read_file",
@@ -6156,6 +6175,39 @@ class AudioLoop:
                 return await asyncio.to_thread(
                     self.google_agent.delete_event, args["event_id"]
                 )
+            # ── FICHIERS ET BASES D'APPS (lecture seule, Mac entier) ─────────
+            elif name == "ada_list_dir":
+                import filesystem_access
+
+                return await asyncio.to_thread(
+                    filesystem_access.list_dir,
+                    args.get("path", ""),
+                    args.get("show_hidden", True),
+                )
+            elif name == "ada_read_file":
+                import filesystem_access
+
+                return await asyncio.to_thread(
+                    filesystem_access.read_file, args.get("path", "")
+                )
+            elif name == "ada_search_files":
+                import filesystem_access
+
+                return await asyncio.to_thread(
+                    filesystem_access.search_files,
+                    args.get("query", ""),
+                    root=args.get("root", "~"),
+                    mode=args.get("mode", "name"),
+                    max_results=args.get("max_results", 100),
+                )
+            elif name == "ada_read_sqlite":
+                import filesystem_access
+
+                return await asyncio.to_thread(
+                    filesystem_access.read_sqlite,
+                    args.get("path", ""),
+                    query=args.get("query"),
+                )
             # ── SELF-CORRECTION (Jarvis repo) ──────────────────────────────────
             elif name == "jarvis_read_file":
                 path = args.get("path", "")
@@ -6382,6 +6434,15 @@ class AudioLoop:
                     )
                 except Exception as e:
                     return f"PC task erreur : {e}"
+            elif name == "find_person_location":
+                if not self.os_control_agent:
+                    return "OsControlAgent non disponible pour ouvrir Localiser."
+                try:
+                    return await self.os_control_agent.find_person_location(
+                        args.get("name", "")
+                    )
+                except Exception as e:
+                    return f"Localiser erreur : {e}"
             # ── MÉMOIRE ───────────────────────────────────────────────────────
             elif name == "search_memory":
                 # Rappel congruent à l'humeur : l'état courant pondère la remontée.

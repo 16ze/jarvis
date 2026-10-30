@@ -69,6 +69,7 @@ backend/
 | `memory_manager.py` | 4 types de mémoire : vectorielle (ChromaDB), entités (ChromaDB), procédurale (JSON), documents RAG (ChromaDB) |
 | `mcp_tools_declarations.py` | Source de vérité des déclarations d'outils Gemini — **tout nouvel outil doit y être ajouté** |
 | `self_correction_agent.py` | Gemini 2.5 Flash — lit/corrige/écrit des fichiers Python dans `JARVIS_ROOT` avec backup git automatique |
+| `filesystem_access.py` | Lecture seule universelle : dossiers, fichiers texte, recherche bornée et SQLite immuable |
 
 ---
 
@@ -104,6 +105,17 @@ Si l'outil est déclaré mais pas wiré dans l'un des deux agents → silencieus
 - `jarvis_list_files` — liste récursive
 - `jarvis_git_commit` — commit git avec message
 - `self_correct_file` — passe le fichier + description d'erreur à Claude Opus
+
+### Accès universel en lecture seule (filesystem_access.py)
+- `ada_list_dir` — liste n'importe quel dossier du Mac
+- `ada_read_file` — lit tout fichier texte et décrit les binaires
+- `ada_search_files` — recherche bornée par nom ou contenu
+- `ada_read_sqlite` — interroge les bases d'apps via SQLite `mode=ro&immutable=1`
+- `find_person_location` — lit via l'accessibilité la position affichée dans Localiser
+
+Les dossiers protégés de macOS exigent l'Accès complet au disque pour Terminal et
+le Python de l'environnement `ada_v2`. Localiser exige aussi l'autorisation
+Accessibilité pour le process qui lance Ada.
 
 ### MCP — services externes (mcps/)
 | Préfixe | Service | Fichier |
