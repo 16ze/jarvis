@@ -53,6 +53,8 @@ jobs:
         # + mobile) sans erreur de page. Attrape les crashs de render (TDZ, etc.)
         # que le build et les tests unitaires ne voient pas.
         run: |
-          npm run web > /tmp/vite.log 2>&1 &
+          # --host 127.0.0.1 : bind IPv4 explicite (sinon vite bind localhost/::1
+          # et wait-on/smoke en 127.0.0.1 ne le voient jamais → faux timeout).
+          npm run web -- --host 127.0.0.1 > /tmp/vite.log 2>&1 &
           npx wait-on -t 90000 http://127.0.0.1:5173/ || { echo "::error::vite non prêt (wait-on timeout)"; echo '--- vite.log ---'; cat /tmp/vite.log; exit 1; }
           SMOKE_URL=http://127.0.0.1:5173/ npm run smoke
