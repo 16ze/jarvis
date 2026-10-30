@@ -2,10 +2,9 @@ const { app, BrowserWindow, ipcMain, dialog, session, shell, systemPreferences, 
 const path = require('path');
 const { spawn } = require('child_process');
 
-// ── Token socket : lu directement dans le .env du backend et injecté dans les
-// renderers (bureau + vignette). Évite de devoir synchroniser VITE_ADA_API_TOKEN
-// avec ADA_API_TOKEN à la main — sinon le handshake Socket.IO est refusé et les
-// fenêtres ne reçoivent plus rien d'Ada.
+// ── Token socket : lu directement dans le .env du backend et transmis aux
+// renderers de confiance via IPC synchrone. Il ne doit jamais apparaître dans
+// process.argv, visible par les outils locaux de liste de processus.
 function readAdaToken() {
     const fs = require('fs');
     const files = [
@@ -26,7 +25,7 @@ function readAdaToken() {
     }
     return '';
 }
-const ADA_TOKEN_ARG = '--ada-token=' + readAdaToken();
+const ADA_TOKEN = readAdaToken();
 
 // Keep the Windows GPU workaround scoped to Windows. Forcing D3D/Vulkan on
 // other platforms can make Electron's compositor noticeably less responsive.
@@ -118,7 +117,6 @@ function createWindow() {
             nodeIntegration: true,
             contextIsolation: false, // For simple IPC/Socket.IO usage
             backgroundThrottling: false,
-            additionalArguments: [ADA_TOKEN_ARG], // token socket dispo via process.argv
             // Navigateur intégré du Workspace. Le <webview> lui-même tourne
             // SANS intégration Node et dans une session isolée (voir
             // will-attach-webview ci-dessous) : le contenu web distant n'a
@@ -248,7 +246,6 @@ function createWidgetWindow() {
             nodeIntegration: true,
             contextIsolation: false,
             backgroundThrottling: false,
-            additionalArguments: [ADA_TOKEN_ARG], // même token que la fenêtre principale
         },
         show: false,
     });
@@ -513,6 +510,9 @@ function applyCSP() {
 app.whenReady().then(() => {
     applyCSP();
     registerWidgetIpc();
+    ipcMain.on('ada-token:get', (event) => {
+        event.returnValue = ADA_TOKEN;
+    });
 
     // Autorise mic + caméra pour le renderer (sinon getUserMedia renvoie un stream
     // sans frames et enumerateDevices ne livre pas les labels).

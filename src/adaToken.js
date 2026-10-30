@@ -1,17 +1,19 @@
-// Résolution du token d'auth Socket.IO, robuste :
+// Résolution du token d'auth Socket.IO :
 //  1) VITE_ADA_API_TOKEN si défini au build (web/mobile),
-//  2) sinon le token injecté par Electron dans process.argv (--ada-token=…),
-//     lu directement depuis backend/.env → plus rien à synchroniser à la main.
+//  2) sinon IPC interne Electron, lu depuis backend/.env par le main process.
 // Sans token correct, le backend refuse le handshake et la fenêtre ne reçoit
 // plus rien d'Ada (humeur, parole, pilotage, chat).
-function fromArgv() {
+function fromElectronIpc(hostWindow = globalThis.window) {
     try {
-        const argv = (typeof window !== 'undefined' && window.process && window.process.argv) || [];
-        const a = argv.find((x) => typeof x === 'string' && x.startsWith('--ada-token='));
-        return a ? a.slice('--ada-token='.length) : '';
+        const ipcRenderer = hostWindow?.require?.('electron')?.ipcRenderer;
+        return ipcRenderer?.sendSync('ada-token:get') || '';
     } catch (_) {
         return '';
     }
 }
 
-export const ADA_TOKEN = (import.meta.env.VITE_ADA_API_TOKEN || '') || fromArgv() || '';
+export function resolveAdaToken(viteToken = '', hostWindow = globalThis.window) {
+    return viteToken || fromElectronIpc(hostWindow) || '';
+}
+
+export const ADA_TOKEN = resolveAdaToken(import.meta.env?.VITE_ADA_API_TOKEN || '');
