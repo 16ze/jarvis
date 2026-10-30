@@ -9,9 +9,8 @@ if sys.platform == 'win32':
 import socketio
 import engineio.payload
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, HTTPException, Security, status
+from fastapi import FastAPI, UploadFile, File, HTTPException, Security, status as http_status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 import asyncio
 import threading
@@ -32,6 +31,7 @@ import external_bridge
 from os_control_agent import OsControlAgent, is_local_first_task
 from dotenv import load_dotenv
 load_dotenv()
+from api_auth import require_token
 from authenticator import FaceAuthenticator
 from tuya_agent import TuyaAgent
 from web_agent import WebAgent
@@ -41,18 +41,6 @@ from workspace_event_bus import WorkspaceEventBus
 from workspace_manager import WorkspaceManager
 from workspace_policy import WorkspacePolicy
 from workspace_research_agent import WorkspaceResearchAgent
-
-# ─── API AUTH ─────────────────────────────────────────────────────────────────
-_bearer = HTTPBearer(auto_error=False)
-_ADA_TOKEN = os.getenv("ADA_API_TOKEN", "")
-
-def require_token(creds: HTTPAuthorizationCredentials = Security(_bearer)):
-    """Vérifie le Bearer token sur les endpoints HTTP sensibles."""
-    if not _ADA_TOKEN:
-        # Pas de token configuré → on bloque tout par sécurité
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "ADA_API_TOKEN non configuré")
-    if not creds or creds.credentials != _ADA_TOKEN:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token invalide ou manquant")
 
 # ─── SOCKETIO + APP ───────────────────────────────────────────────────────────
 # Audio chunks can arrive in bursts while the browser is still on polling.
@@ -499,7 +487,7 @@ async def sync_conversations(payload: dict, _: None = Security(require_token)):
             payload.get("tombstones", []),
         )
     except (TypeError, ValueError) as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+        raise HTTPException(http_status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
     if result.get("changed"):
         await sio.emit(
